@@ -1,7 +1,11 @@
 [package]
-name = "letui"
+name = "letui-ffi"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 crossterm = "0.29.0"
+
+[lib]
+name = "letui_ffi"
+crate-type = ["cdylib"]
