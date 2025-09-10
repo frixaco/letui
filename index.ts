@@ -1,63 +1,45 @@
-// index.ts
 import {
 	dlopen,
 	FFIType,
 	ptr,
+	read,
 	suffix,
 	toArrayBuffer,
 	type Pointer,
 } from "bun:ffi";
 
-// Path to Rust .so/.dylib
-const libPath = `./letui-ffi/target/release/libletui_ffi.${suffix}`;
+const path = `./letui-ffi/target/release/libletui_ffi.${suffix}`;
 
-const { symbols } = dlopen(libPath, {
-	init_buffer: { args: [FFIType.u64], returns: FFIType.i32 },
+const {
+	symbols: { init_buffer, get_buffer, free_buffer },
+} = dlopen(path, {
+	init_buffer: {
+		args: [FFIType.u64],
+		returns: FFIType.i32,
+	},
 	get_buffer: {
 		args: [FFIType.pointer, FFIType.pointer],
 		returns: FFIType.i32,
 	},
-	free_buffer: { returns: FFIType.i32 },
+	free_buffer: {
+		args: [],
+		returns: FFIType.i32,
+	},
 });
 
-symbols.init_buffer(10);
+console.log(`INIT BUFFER: ${init_buffer(128)}`);
+const outPtr = new BigUint64Array(1);
+const outLen = new BigUint64Array(1);
+console.log(`GET BUFFER: ${get_buffer(ptr(outPtr), ptr(outLen))}`);
+const bufPtr = Number(outPtr[0]);
+const bufLen = Number(outLen[0]);
+console.log(bufPtr, bufLen);
 
-// Create buffers to store the pointer and length values
-const ptrBuffer = new ArrayBuffer(8); // 8 bytes for pointer
-const lenBuffer = new ArrayBuffer(8); // 8 bytes for length
+const buffer = new BigUint64Array(
+	toArrayBuffer(bufPtr as Pointer, 0, bufLen * 8),
+);
+console.log(buffer[0]);
+buffer[0] = 1n;
+console.log(buffer[0]);
 
-// Call get_buffer(&ptr, &len) - pass pointers to our buffers
-const result = symbols.get_buffer(ptr(ptrBuffer), ptr(lenBuffer));
-
-if (result === 1) {
-	// Successfully got buffer info
-	const bufferPtr = new BigUint64Array(ptrBuffer)[0];
-	const bufferLen = Number(new BigUint64Array(lenBuffer)[0]);
-
-	console.log("Buffer pointer:", bufferPtr);
-	console.log("Buffer length:", bufferLen);
-
-	// Create ArrayBuffer from the Rust buffer pointer
-	// Each element is u64 (8 bytes), so total bytes = len * 8
-	const arrayBuffer = toArrayBuffer(
-		Number(bufferPtr) as Pointer,
-		0,
-		bufferLen * 8,
-	);
-	const view = new BigUint64Array(arrayBuffer);
-
-	console.log("Initial contents:", view);
-
-	// Write something from JS
-	view[0] = 42n;
-	view[1] = 1337n;
-	view[2] = 9999n;
-
-	console.log("JS wrote to Rust buffer!");
-	console.log("Updated contents:", view);
-} else {
-	console.error("Failed to get buffer");
-}
-
-// Clean up
-symbols.free_buffer();
+console.log(`FREE BUFFER: ${free_buffer()}`);
