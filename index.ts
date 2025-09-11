@@ -11,7 +11,7 @@ import {
 const path = `./letui-ffi/target/release/libletui_ffi.${suffix}`;
 
 const {
-	symbols: { init_buffer, get_buffer, free_buffer },
+	symbols: { init_buffer, get_buffer, free_buffer, debug_buffer },
 } = dlopen(path, {
 	init_buffer: {
 		args: [FFIType.u64],
@@ -24,6 +24,10 @@ const {
 	free_buffer: {
 		args: [],
 		returns: FFIType.i32,
+	},
+	debug_buffer: {
+		args: [FFIType.u64],
+		returns: FFIType.u64,
 	},
 });
 
@@ -39,7 +43,8 @@ const buffer = new BigUint64Array(
 	toArrayBuffer(bufPtr as Pointer, 0, bufLen * 8),
 );
 console.log(buffer[0]);
-buffer[0] = 1n;
+buffer[0] = 12n;
 console.log(buffer[0]);
+console.log(debug_buffer(0));
 
 console.log(`FREE BUFFER: ${free_buffer()}`);

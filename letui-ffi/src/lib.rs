@@ -37,3 +37,18 @@ pub extern "C" fn free_buffer() -> c_int {
     }
     1
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn debug_buffer(idx: u64) -> u64 {
+    unsafe {
+        if let Some(ref buf) = BUFFER {
+            if buf.len() < idx as usize {
+                return 0;
+            }
+            println!("{}", buf[idx as usize]);
+            return buf[idx as usize];
+        } else {
+            0
+        }
+    }
+}
