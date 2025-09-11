@@ -3,6 +3,10 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "build-ffi": "cd letui-ffi && cargo build --release",
+    "dev": "bun run build-ffi && bun run index.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },

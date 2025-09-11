@@ -2,7 +2,6 @@ import {
 	dlopen,
 	FFIType,
 	ptr,
-	read,
 	suffix,
 	toArrayBuffer,
 	type Pointer,
@@ -11,8 +10,12 @@ import {
 const path = `./letui-ffi/target/release/libletui_ffi.${suffix}`;
 
 const {
-	symbols: { init_buffer, get_buffer, free_buffer, debug_buffer },
+	symbols: { init_buffer, get_buffer, free_buffer, debug_buffer, init_letui },
 } = dlopen(path, {
+	init_letui: {
+		args: [],
+		returns: FFIType.i32,
+	},
 	init_buffer: {
 		args: [FFIType.u64],
 		returns: FFIType.i32,
@@ -48,3 +51,6 @@ console.log(buffer[0]);
 console.log(debug_buffer(0));
 
 console.log(`FREE BUFFER: ${free_buffer()}`);
+
+process.stdin.resume();
+init_letui();

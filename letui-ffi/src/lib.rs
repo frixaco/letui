@@ -1,6 +1,26 @@
-use std::os::raw::c_int;
+use crossterm::{
+    execute,
+    terminal::{Clear, ClearType, EnterAlternateScreen, enable_raw_mode},
+};
+use std::{
+    io::{Write, stdout},
+    os::raw::c_int,
+};
 
 static mut BUFFER: Option<Vec<u64>> = None;
+
+#[unsafe(no_mangle)]
+pub extern "C" fn init_letui() -> c_int {
+    execute!(stdout(), EnterAlternateScreen, Clear(ClearType::All)).unwrap();
+    stdout().flush().unwrap();
+    enable_raw_mode().unwrap();
+    1
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn deinit_letui() -> c_int {
+    1
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn init_buffer(len: u64) -> c_int {
