@@ -10,14 +10,26 @@ import {
 const path = `./letui-ffi/target/release/libletui_ffi.${suffix}`;
 
 const {
-	symbols: { init_buffer, get_buffer, free_buffer, debug_buffer, init_letui },
+	symbols: {
+		init_buffer,
+		get_buffer,
+		free_buffer,
+		debug_buffer,
+		init_letui,
+		deinit_letui,
+		render,
+	},
 } = dlopen(path, {
 	init_letui: {
 		args: [],
 		returns: FFIType.i32,
 	},
+	deinit_letui: {
+		args: [],
+		returns: FFIType.i32,
+	},
 	init_buffer: {
-		args: [FFIType.u64],
+		args: [],
 		returns: FFIType.i32,
 	},
 	get_buffer: {
@@ -32,9 +44,13 @@ const {
 		args: [FFIType.u64],
 		returns: FFIType.u64,
 	},
+	render: {
+		args: [],
+		returns: FFIType.i32,
+	},
 });
 
-console.log(`INIT BUFFER: ${init_buffer(128)}`);
+console.log(`INIT BUFFER: ${init_buffer()}`);
 const outPtr = new BigUint64Array(1);
 const outLen = new BigUint64Array(1);
 console.log(`GET BUFFER: ${get_buffer(ptr(outPtr), ptr(outLen))}`);
@@ -50,7 +66,23 @@ buffer[0] = 12n;
 console.log(buffer[0]);
 console.log(debug_buffer(0));
 
-console.log(`FREE BUFFER: ${free_buffer()}`);
-
-process.stdin.resume();
 init_letui();
+process.stdin.resume();
+process.stdin.on("data", (data) => {
+	if (data.toString() === "q") {
+		deinit_letui();
+		free_buffer();
+		process.exit(0);
+	} else {
+	}
+});
+
+buffer[0] = BigInt("H".codePointAt(0)!);
+buffer[1] = BigInt(0x00ffff);
+buffer[2] = BigInt(0x12a61f);
+
+buffer[3] = BigInt("W".codePointAt(0)!);
+buffer[4] = BigInt(0x1e1e8e);
+buffer[5] = BigInt(0xf0ff0f);
+
+render();
