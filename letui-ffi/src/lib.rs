@@ -42,12 +42,22 @@ pub extern "C" fn deinit_letui() -> c_int {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn get_size(w: *mut u16, h: *mut u16) -> c_int {
+    unsafe {
+        (*w, *h) = size().unwrap();
+    }
+    1
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn render() -> c_int {
     unsafe {
         match CURRENT_BUFFER {
             Some(ref buf) => match LAST_BUFFER {
                 Some(ref last_buf) => {
                     let mut stdout = stdout();
+                    let (w, _h) = size().unwrap();
+
                     for (cell_idx, (new, old)) in buf
                         .chunks_exact(3)
                         .zip(last_buf.chunks_exact(3))
@@ -68,7 +78,6 @@ pub extern "C" fn render() -> c_int {
                                 b: (bg & 0xFf) as u8,
                             };
 
-                            let (w, _h) = size().unwrap();
                             let x = cell_idx % w as usize;
                             let y = cell_idx / w as usize;
 

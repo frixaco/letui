@@ -6,6 +6,9 @@ import {
 	toArrayBuffer,
 	type Pointer,
 } from "bun:ffi";
+import { COLORS } from "./colors";
+
+const cl = COLORS.default;
 
 const path = `./letui-ffi/target/release/libletui_ffi.${suffix}`;
 
@@ -13,6 +16,7 @@ const {
 	symbols: {
 		init_buffer,
 		get_buffer,
+		get_size,
 		free_buffer,
 		debug_buffer,
 		init_letui,
@@ -33,6 +37,10 @@ const {
 		returns: FFIType.i32,
 	},
 	get_buffer: {
+		args: [FFIType.pointer, FFIType.pointer],
+		returns: FFIType.i32,
+	},
+	get_size: {
 		args: [FFIType.pointer, FFIType.pointer],
 		returns: FFIType.i32,
 	},
@@ -66,6 +74,13 @@ buffer[0] = 12n;
 console.log(buffer[0]);
 console.log(debug_buffer(0));
 
+const wp = new Uint16Array(1);
+const hp = new Uint16Array(1);
+get_size(ptr(wp), ptr(hp));
+const width = Number(wp[0]);
+const height = Number(hp[0]);
+console.log("size:", width, height);
+
 init_letui();
 process.stdin.resume();
 process.stdin.on("data", (data) => {
@@ -77,12 +92,22 @@ process.stdin.on("data", (data) => {
 	}
 });
 
-buffer[0] = BigInt("H".codePointAt(0)!);
-buffer[1] = BigInt(0x00ffff);
-buffer[2] = BigInt(0x12a61f);
+let cursor = 0;
+const show_text = (
+	text: string,
+	fg: number,
+	bg: number,
+	// border: boolean = false,
+) => {
+	let cells = [];
+	for (let c of text) {
+		cells.push(BigInt(c.codePointAt(0)!), BigInt(fg), BigInt(bg));
+	}
+	buffer.set(cells, cursor);
+	cursor = text.length * 3;
+};
 
-buffer[3] = BigInt("W".codePointAt(0)!);
-buffer[4] = BigInt(0x1e1e8e);
-buffer[5] = BigInt(0xf0ff0f);
+show_text("HELLO", cl.yellow, cl.grey);
+show_text("WORLD", cl.purple, cl.bg_highlight);
 
 render();
