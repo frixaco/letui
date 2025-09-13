@@ -92,22 +92,41 @@ process.stdin.on("data", (data) => {
 	}
 });
 
-let cursor = 0;
-const show_text = (
-	text: string,
-	fg: number,
-	bg: number,
-	// border: boolean = false,
-) => {
-	let cells = [];
-	for (let c of text) {
-		cells.push(BigInt(c.codePointAt(0)!), BigInt(fg), BigInt(bg));
-	}
-	buffer.set(cells, cursor);
-	cursor = text.length * 3;
-};
+class Container {}
+class Content {}
 
-show_text("HELLO", cl.yellow, cl.grey);
-show_text("WORLD", cl.purple, cl.bg_highlight);
+class View extends Container {
+	child(item: Container | Content) {}
+}
+
+class Row extends Container {
+	child(item: Content) {}
+}
+
+class Text extends Content {}
+
+const v = new View();
+const r = new Row();
+const t1 = new Text();
+const t2 = new Text();
+r.child(t1);
+r.child(t2);
+v.child(r);
+
+// const show_text = (
+// 	text: string,
+// 	fg: number,
+// 	bg: number,
+// 	// border: boolean = false,
+// ) => {
+// 	let cells = [];
+// 	for (let c of text) {
+// 		cells.push(BigInt(c.codePointAt(0)!), BigInt(fg), BigInt(bg));
+// 	}
+// 	buffer.set(cells, cursor);
+// 	cursor = text.length * 3;
+// };
+// show_text("HELLO", cl.yellow, cl.grey);
+// show_text("WORLD", cl.purple, cl.bg_highlight);
 
 render();

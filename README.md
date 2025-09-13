@@ -3,12 +3,14 @@
 A minimal TUI renderer using Rust (crossterm) + Bun FFI. This plan targets a 2â€“3 day MVP with truecolor, sub-8ms input-to-render latency, and basic widgets (text, list, button). Borders are optional and included if time allows.
 
 ## Goals
+
 - Truecolor output (24-bit RGB) and Unicode text.
 - Sub-8ms input-to-render latency by rendering on demand (dirty-only), not fixed FPS.
 - Widgets: text, list, button. Optional: simple box borders.
 - Minimal API over Bun FFI. No new dependencies beyond crossterm.
 
 ## Current code (baseline)
+
 - Renderer and buffers in Rust:
   - init buffer: [`init_buffer()`](file:///Users/frixaco/personal/letui/letui-ffi/src/lib.rs#L18-L27)
   - terminal init: [`init_letui()`](file:///Users/frixaco/personal/letui/letui-ffi/src/lib.rs#L30-L35)
@@ -19,6 +21,7 @@ A minimal TUI renderer using Rust (crossterm) + Bun FFI. This plan targets a 2â€
 - Bun side setup and FFI calls: [`index.ts`](file:///Users/frixaco/personal/letui/index.ts#L1-L88)
 
 ## Scope & architecture
+
 - Renderer in Rust, front-end in Bun/TS.
 - Shared linear cell buffer owned by Rust, memory-mapped in Bun via `bun:ffi` `toArrayBuffer` as `BigUint64Array`.
 - Cell format (per 3 u64s): `[codepoint:u64, fg_rgb:u64, bg_rgb:u64]`; RGB is 24-bit in lower bits. Indexing: `idx = (y * width + x) * 3`.
@@ -26,6 +29,7 @@ A minimal TUI renderer using Rust (crossterm) + Bun FFI. This plan targets a 2â€
 - Input handled in Rust with `crossterm::event::poll(Duration)` + `read()` (non-blocking) and exposed over FFI.
 
 ## API plan
+
 - Rust FFI (existing and keep):
   - [`init_buffer()`](file:///Users/frixaco/personal/letui/letui-ffi/src/lib.rs#L18-L27): allocate `(w*h*3)` cells, clone to last buffer.
   - [`init_letui()`](file:///Users/frixaco/personal/letui/letui-ffi/src/lib.rs#L30-L35): enter alternate screen, clear, enable raw mode.
@@ -44,6 +48,7 @@ A minimal TUI renderer using Rust (crossterm) + Bun FFI. This plan targets a 2â€
   - Borders: `drawRect(x,y,w,h, style)` using Unicode box-drawing; optional ASCII fallback.
 
 ## Performance tactics
+
 - Truecolor via crosstermâ€™s `Color::Rgb{r,g,b}` for FG/BG; supported on UNIX & Windows 10+ terminals.
 - Batch outputs using `queue!` and one `flush()` per frame (avoid per-cell syscalls).
 - Cache terminal size per render (or update on resize) instead of calling `size()` per cell.
@@ -54,17 +59,20 @@ A minimal TUI renderer using Rust (crossterm) + Bun FFI. This plan targets a 2â€
 - Concurrency note: JS should not write while `render()` runs. In practice, Bunâ€™s single-threaded model makes "write then call render()" safe; documenting this avoids UB with `static mut`.
 
 ## Input
+
 - Add `poll_event()` FFI using `crossterm::event::poll(Duration)` + `read()`; return false if no event immediately available.
 - JS polling loop: `setInterval(poll, 4)` (~240 Hz) drains events each tick and updates state; widgets schedule a render.
 - Map common keys first (Up/Down/Enter/Escape/Tab/Space) and printable Unicode (treat width=1 for MVP).
 
 ## Widgets (MVP)
+
 - Text: write string as sequential cells with style.
 - List: vertical list with one selected index; selected row uses inverse/colored style; Up/Down navigates, Enter selects.
 - Button: label with normal/focus/active styles; Space/Enter toggles callback.
 - Borders (optional): `drawRect` with single-line box-drawing characters; clip to viewport.
 
 ## Milestones (2â€“3 days)
+
 - Day 1: Renderer core
   - Move `size()` out of inner loop; cache `(w,h)` per render.
   - Update `LAST_BUFFER` after a successful flush (copy or swap) so diffs work.
@@ -81,11 +89,13 @@ A minimal TUI renderer using Rust (crossterm) + Bun FFI. This plan targets a 2â€
   - Clean shutdown paths always call `deinit_letui()` and `free_buffer()`.
 
 ## Acceptance criteria
+
 - Truecolor visually verified; widgets render and respond with low latency.
 - Dirty-only updates; runs coalesced; single flush per frame; size cached.
 - Input-to-render under ~8 ms in demo; no flicker; proper deinit restores terminal.
 
 ## References
+
 - Crossterm Color::Rgb (truecolor): https://docs.rs/crossterm/latest/crossterm/style/enum.Color.html
 - Raw mode APIs: https://docs.rs/crossterm/latest/crossterm/terminal/index.html
 - Non-blocking input (`event::poll`): https://docs.rs/crossterm/latest/crossterm/event/index.html and https://docs.rs/crossterm/latest/crossterm/event/fn.poll.html
