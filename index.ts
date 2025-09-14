@@ -92,23 +92,76 @@ process.stdin.on("data", (data) => {
 	}
 });
 
-class Container {}
-class Content {}
+type Border = "none" | "square" | "rounded";
 
-class View extends Container {
-	child(item: Container | Content) {}
+class View {
+	constructor() {
+		this.render();
+	}
+
+	render() {}
+
+	child(item: Row | Text) {}
 }
 
-class Row extends Container {
-	child(item: Content) {}
+class Row {
+	border: Border;
+	width: number = 0;
+	height: number = 0;
+
+	constructor(border: Border = "none") {
+		this.border = border;
+
+		this.render();
+	}
+
+	render() {}
+
+	child(item: Text) {
+		this.width = item.size().w;
+		this.height = item.size().h;
+	}
+
+	size(): { w: number; h: number } {
+		const w = this.border !== "none" ? this.width + 2 : this.width;
+		const h = this.border !== "none" ? 3 : 1;
+		return { w, h };
+	}
 }
 
-class Text extends Content {}
+class Text {
+	text: string;
+	fg: number;
+	bg: number;
+	border: Border;
+
+	constructor(
+		text: string,
+		fg: number = cl.fg,
+		bg: number = cl.bg,
+		border: Border = "none",
+	) {
+		this.text = text;
+		this.fg = fg;
+		this.bg = bg;
+		this.border = border;
+
+		this.render();
+	}
+
+	render() {}
+
+	size(): { w: number; h: number } {
+		const w = this.border !== "none" ? this.text.length + 2 : this.text.length;
+		const h = this.border !== "none" ? 3 : 1;
+		return { w, h };
+	}
+}
 
 const v = new View();
 const r = new Row();
-const t1 = new Text();
-const t2 = new Text();
+const t1 = new Text("HELLO", cl.cyan, cl.yellow);
+const t2 = new Text("WORLD", cl.purple, cl.bg);
 r.child(t1);
 r.child(t2);
 v.child(r);

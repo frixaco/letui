@@ -92,6 +92,9 @@ pub extern "C" fn render() -> c_int {
                         }
                     }
                     stdout.flush().unwrap();
+                    if let Some(ref buf) = CURRENT_BUFFER {
+                        LAST_BUFFER = Some(buf.clone());
+                    }
                 }
                 None => (),
             },
