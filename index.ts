@@ -21,7 +21,7 @@ const {
 		debug_buffer,
 		init_letui,
 		deinit_letui,
-		render,
+		flush,
 	},
 } = dlopen(path, {
 	init_letui: {
@@ -52,34 +52,31 @@ const {
 		args: [FFIType.u64],
 		returns: FFIType.u64,
 	},
-	render: {
+	flush: {
 		args: [],
 		returns: FFIType.i32,
 	},
 });
 
-console.log(`INIT BUFFER: ${init_buffer()}`);
+init_buffer();
 const outPtr = new BigUint64Array(1);
 const outLen = new BigUint64Array(1);
-console.log(`GET BUFFER: ${get_buffer(ptr(outPtr), ptr(outLen))}`);
+get_buffer(ptr(outPtr), ptr(outLen));
+
 const bufPtr = Number(outPtr[0]);
 const bufLen = Number(outLen[0]);
-console.log(bufPtr, bufLen);
 
 const buffer = new BigUint64Array(
 	toArrayBuffer(bufPtr as Pointer, 0, bufLen * 8),
 );
-console.log(buffer[0]);
-buffer[0] = 12n;
-console.log(buffer[0]);
-console.log(debug_buffer(0));
 
 const wp = new Uint16Array(1);
 const hp = new Uint16Array(1);
+
 get_size(ptr(wp), ptr(hp));
-const width = Number(wp[0]);
-const height = Number(hp[0]);
-console.log("size:", width, height);
+
+const terminalWidth = Number(wp[0]);
+const terminalHeight = Number(hp[0]);
 
 init_letui();
 process.stdin.resume();
@@ -95,37 +92,178 @@ process.stdin.on("data", (data) => {
 type Border = "none" | "square" | "rounded";
 
 class View {
-	constructor() {
-		this.render();
+	children: (Column | Row | Text)[] = [];
+
+	constructor() {}
+
+	add(child: Column | Row | Text) {
+		this.children.push(child);
+
+		return this;
 	}
 
-	render() {}
+	render() {
+		let x = 0;
+		let y = 0;
+		for (const child of this.children) {
+			child.render(x, y);
+			y += child.size().h;
+			x = child.size().w > x ? child.size().w : x;
+		}
 
-	child(item: Row | Text) {}
+		flush();
+	}
 }
 
 class Row {
-	border: Border;
-	width: number = 0;
-	height: number = 0;
+	children: (Column | Row | Text)[] = [];
+
+	border: Border = "none";
 
 	constructor(border: Border = "none") {
 		this.border = border;
-
-		this.render();
 	}
 
-	render() {}
-
-	child(item: Text) {
-		this.width = item.size().w;
-		this.height = item.size().h;
+	add(child: Column | Row | Text) {
+		this.children.push(child);
+		return this;
 	}
 
-	size(): { w: number; h: number } {
-		const w = this.border !== "none" ? this.width + 2 : this.width;
-		const h = this.border !== "none" ? 3 : 1;
-		return { w, h };
+	size() {
+		let w = 0;
+		let h = 0;
+
+		for (const c of this.children) {
+			w += c.size().w;
+			h = c.size().h > h ? c.size().h : h;
+		}
+
+		return {
+			w: w + (this.border !== "none" ? 2 : 0),
+			h: h + (this.border !== "none" ? 2 : 0),
+		};
+	}
+
+	render(xo: number, yo: number) {
+		let cx = this.border !== "none" ? 1 : 0;
+
+		if (this.border === "square") {
+			let topLeft = yo * terminalWidth + xo + 1;
+			let fg = cl.fg;
+			let bg = cl.bg;
+
+			let cells: bigint[] = [];
+			for (let i = 0; i < this.size().w - 2; i++) {
+				cells.push(BigInt("─".codePointAt(0)!), BigInt(fg), BigInt(bg));
+			}
+			let prebuilt = new BigUint64Array(cells);
+
+			buffer.set(prebuilt, topLeft * 3);
+
+			let bottomLeft =
+				yo * terminalWidth + xo + terminalWidth * (this.size().h - 1) + 1;
+			buffer.set(prebuilt, bottomLeft * 3);
+
+			topLeft -= 1;
+			bottomLeft -= 1;
+			buffer.set(
+				new BigUint64Array([
+					BigInt("┌".codePointAt(0)!),
+					BigInt(fg),
+					BigInt(bg),
+				]),
+				topLeft * 3,
+			);
+			buffer.set(
+				new BigUint64Array([
+					BigInt("└".codePointAt(0)!),
+					BigInt(fg),
+					BigInt(bg),
+				]),
+				bottomLeft * 3,
+			);
+
+			let middleLeft = topLeft + terminalWidth;
+			let topRight = topLeft + this.size().w - 1;
+			let middleRight = topRight + terminalWidth;
+			let bottomRight = middleRight + terminalWidth;
+
+			buffer.set(
+				new BigUint64Array([
+					BigInt("│".codePointAt(0)!),
+					BigInt(fg),
+					BigInt(bg),
+				]),
+				middleLeft * 3,
+			);
+
+			buffer.set(
+				new BigUint64Array([
+					BigInt("┐".codePointAt(0)!),
+					BigInt(fg),
+					BigInt(bg),
+				]),
+				topRight * 3,
+			);
+			buffer.set(
+				new BigUint64Array([
+					BigInt("│".codePointAt(0)!),
+					BigInt(fg),
+					BigInt(bg),
+				]),
+				middleRight * 3,
+			);
+			buffer.set(
+				new BigUint64Array([
+					BigInt("┘".codePointAt(0)!),
+					BigInt(fg),
+					BigInt(bg),
+				]),
+				bottomRight * 3,
+			);
+		}
+
+		for (const c of this.children) {
+			c.render(cx + xo, yo + (this.border !== "none" ? 1 : 0));
+			cx += c.size().w;
+		}
+	}
+}
+
+class Column {
+	children: (Column | Row | Text)[] = [];
+
+	border: Border = "none";
+
+	constructor(border: Border = "none") {}
+
+	add(child: Column | Row | Text) {
+		this.children.push(child);
+		return this;
+	}
+
+	size() {
+		let w = 0;
+		let h = 0;
+
+		for (const c of this.children) {
+			w = c.size().w > w ? c.size().w : w;
+			h += c.size().h;
+		}
+
+		return {
+			w: w + (this.border !== "none" ? 2 : 0),
+			h: h + (this.border !== "none" ? 2 : 0),
+		};
+	}
+
+	render(xo: number, yo: number) {
+		let cy = this.border !== "none" ? 1 : 0;
+
+		for (const c of this.children) {
+			c.render(xo, cy + yo);
+			cy += c.size().h;
+		}
 	}
 }
 
@@ -133,53 +271,52 @@ class Text {
 	text: string;
 	fg: number;
 	bg: number;
-	border: Border;
 
-	constructor(
-		text: string,
-		fg: number = cl.fg,
-		bg: number = cl.bg,
-		border: Border = "none",
-	) {
+	border: Border = "none";
+	prebuilt: BigUint64Array = new BigUint64Array();
+
+	width: number;
+	height: number;
+
+	constructor(text: string, fg: number, bg: number, border: Border = "none") {
+		this.border = border;
+		this.width = [...text].length + (border !== "none" ? 2 : 0);
+		this.height = 1;
+
 		this.text = text;
 		this.fg = fg;
 		this.bg = bg;
-		this.border = border;
 
-		this.render();
+		this.prerender();
 	}
 
-	render() {}
+	prerender() {
+		const cells: bigint[] = [];
+		for (const c of this.text) {
+			cells.push(BigInt(c.codePointAt(0)!), BigInt(this.fg), BigInt(this.bg));
+		}
+		this.prebuilt = new BigUint64Array(cells);
+	}
 
-	size(): { w: number; h: number } {
-		const w = this.border !== "none" ? this.text.length + 2 : this.text.length;
-		const h = this.border !== "none" ? 3 : 1;
-		return { w, h };
+	size() {
+		return { w: this.width, h: this.height };
+	}
+
+	render(xo: number, yo: number) {
+		const cursor = terminalWidth * yo + xo;
+		buffer.set(this.prebuilt.subarray(0), cursor * 3);
 	}
 }
 
 const v = new View();
-const r = new Row();
-const t1 = new Text("HELLO", cl.cyan, cl.yellow);
-const t2 = new Text("WORLD", cl.purple, cl.bg);
-r.child(t1);
-r.child(t2);
-v.child(r);
-
-// const show_text = (
-// 	text: string,
-// 	fg: number,
-// 	bg: number,
-// 	// border: boolean = false,
-// ) => {
-// 	let cells = [];
-// 	for (let c of text) {
-// 		cells.push(BigInt(c.codePointAt(0)!), BigInt(fg), BigInt(bg));
-// 	}
-// 	buffer.set(cells, cursor);
-// 	cursor = text.length * 3;
-// };
-// show_text("HELLO", cl.yellow, cl.grey);
-// show_text("WORLD", cl.purple, cl.bg_highlight);
-
-render();
+const c = new Column();
+const r1 = new Row("square");
+r1.add(new Text("Hello", cl.cyan, cl.yellow));
+r1.add(new Text(" World", cl.cyan, cl.yellow));
+c.add(r1);
+const r2 = new Row();
+r2.add(new Text("Le", cl.red, cl.blue));
+r2.add(new Text("Tui", cl.grey, cl.magenta));
+c.add(r2);
+v.add(c);
+v.render();

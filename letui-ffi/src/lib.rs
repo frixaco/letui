@@ -50,7 +50,7 @@ pub extern "C" fn get_size(w: *mut u16, h: *mut u16) -> c_int {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn render() -> c_int {
+pub extern "C" fn flush() -> c_int {
     unsafe {
         match CURRENT_BUFFER {
             Some(ref buf) => match LAST_BUFFER {
