@@ -10,7 +10,8 @@ import { COLORS } from "./colors";
 
 const cl = COLORS.default;
 
-const path = `./letui-ffi/target/release/libletui_ffi.${suffix}`;
+const prefix = process.platform === "win32" ? "" : "lib";
+const path = `./letui-ffi/target/release/${prefix}letui_ffi.${suffix}`;
 
 const {
 	symbols: {
