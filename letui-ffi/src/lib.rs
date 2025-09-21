@@ -42,7 +42,6 @@ pub extern "C" fn init_buffer() -> c_int {
 #[unsafe(no_mangle)]
 pub extern "C" fn init_letui() -> c_int {
     execute!(stdout(), EnterAlternateScreen, Clear(ClearType::All), Hide).unwrap();
-    // stdout().flush().unwrap();
     enable_raw_mode().unwrap();
     1
 }
@@ -50,7 +49,6 @@ pub extern "C" fn init_letui() -> c_int {
 #[unsafe(no_mangle)]
 pub extern "C" fn deinit_letui() -> c_int {
     execute!(stdout(), LeaveAlternateScreen).unwrap();
-    // disable_raw_mode();
     1
 }
 

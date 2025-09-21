@@ -25,7 +25,6 @@ const {
 		get_buffer_len,
 		get_width,
 		get_height,
-		get_size,
 		free_buffer,
 		debug_buffer,
 		init_letui,
@@ -124,7 +123,7 @@ class View {
 		let x = 0;
 		let y = 0;
 		for (const child of this.children) {
-			child.render(x, y);
+			child.render(x, y, { w: terminalWidth, h: terminalHeight });
 			y += child.size().h;
 			x = child.size().w > x ? child.size().w : x;
 		}
@@ -162,7 +161,7 @@ class Row {
 		};
 	}
 
-	render(xo: number, yo: number) {
+	render(xo: number, yo: number, { w, h }: { w: number; h: number }) {
 		let cx = this.border !== "none" ? 1 : 0;
 
 		if (this.border === "square") {
@@ -171,7 +170,7 @@ class Row {
 			let bg = cl.bg;
 
 			let cells: bigint[] = [];
-			for (let i = 0; i < this.size().w - 2; i++) {
+			for (let i = 0; i < w - 2; i++) {
 				cells.push(BigInt("─".codePointAt(0)!), BigInt(fg), BigInt(bg));
 			}
 			let prebuilt = new BigUint64Array(cells);
@@ -202,7 +201,7 @@ class Row {
 			);
 
 			let middleLeft = topLeft + terminalWidth;
-			let topRight = topLeft + this.size().w - 1;
+			let topRight = topLeft + w - 1;
 			let middleRight = topRight + terminalWidth;
 			let bottomRight = middleRight + terminalWidth;
 
@@ -242,7 +241,10 @@ class Row {
 		}
 
 		for (const c of this.children) {
-			c.render(cx + xo, yo + (this.border !== "none" ? 1 : 0));
+			c.render(cx + xo, yo + (this.border !== "none" ? 1 : 0), {
+				w: w - (this.border !== "none" ? 2 : 0),
+				h: h - (this.border !== "none" ? 2 : 0),
+			});
 			cx += c.size().w;
 		}
 	}
@@ -275,11 +277,14 @@ class Column {
 		};
 	}
 
-	render(xo: number, yo: number) {
+	render(xo: number, yo: number, { w, h }: { w: number; h: number }) {
 		let cy = this.border !== "none" ? 1 : 0;
 
 		for (const c of this.children) {
-			c.render(xo, cy + yo);
+			c.render(xo, cy + yo, {
+				w: w - (this.border !== "none" ? 2 : 0),
+				h: h - (this.border !== "none" ? 2 : 0),
+			});
 			cy += c.size().h;
 		}
 	}
