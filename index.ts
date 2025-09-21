@@ -80,12 +80,15 @@ const {
 });
 
 init_buffer();
-const bufPtr = get_buffer_ptr()!;
-const bufLen = Number(get_buffer_len()!);
 
-const buffer = new BigUint64Array(
-	toArrayBuffer(bufPtr as Pointer, 0, bufLen * 8),
-);
+const getBuffer = () => {
+	const bufPtr = get_buffer_ptr()!;
+	const bufLen = Number(get_buffer_len()!);
+
+	return new BigUint64Array(toArrayBuffer(bufPtr as Pointer, 0, bufLen * 8));
+};
+
+let buffer = getBuffer();
 
 let terminalWidth = get_width();
 let terminalHeight = get_height();
@@ -104,9 +107,16 @@ process.stdout.on("resize", () => {
 	update_terminal_size();
 	terminalWidth = get_width();
 	terminalHeight = get_height();
+
+	free_buffer();
+	init_buffer();
+	buffer = getBuffer();
+
+	v.render();
 });
 
 type Border = "none" | "square" | "rounded";
+type Justify = "start" | "end";
 
 class View {
 	children: (Column | Row | Text)[] = [];
@@ -136,9 +146,11 @@ class Row {
 	children: (Column | Row | Text)[] = [];
 
 	border: Border = "none";
+	justify: Justify = "start";
 
-	constructor(border: Border = "none") {
+	constructor(border: Border = "none", justify: Justify = "start") {
 		this.border = border;
+		this.justify = justify;
 	}
 
 	add(child: Column | Row | Text) {
@@ -162,8 +174,6 @@ class Row {
 	}
 
 	render(xo: number, yo: number, { w, h }: { w: number; h: number }) {
-		let cx = this.border !== "none" ? 1 : 0;
-
 		if (this.border === "square") {
 			let topLeft = yo * terminalWidth + xo + 1;
 			let fg = cl.fg;
@@ -240,6 +250,11 @@ class Row {
 			);
 		}
 
+		let pad = 0;
+		if (this.justify === "end") {
+			pad = w - this.size().w;
+		}
+		let cx = pad + (this.border !== "none" ? 1 : 0);
 		for (const c of this.children) {
 			c.render(cx + xo, yo + (this.border !== "none" ? 1 : 0), {
 				w: w - (this.border !== "none" ? 2 : 0),
@@ -333,7 +348,7 @@ class Text {
 
 const v = new View();
 const c = new Column();
-const r1 = new Row("square");
+const r1 = new Row("square", "end");
 r1.add(new Text("Hello", cl.cyan, cl.yellow));
 r1.add(new Text(" World", cl.cyan, cl.yellow));
 c.add(r1);

@@ -143,6 +143,14 @@ pub extern "C" fn get_buffer_len() -> u64 {
 pub extern "C" fn free_buffer() -> c_int {
     *CURRENT_BUFFER.lock().unwrap() = None;
     *LAST_BUFFER.lock().unwrap() = None;
+
+    execute!(
+        stdout(),
+        SetBackgroundColor(Color::Reset),
+        SetForegroundColor(Color::Reset),
+        Clear(ClearType::All)
+    )
+    .unwrap();
     1
 }
 
