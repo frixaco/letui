@@ -97,8 +97,8 @@ init_letui();
 process.stdin.resume();
 process.stdin.on("data", (data) => {
 	if (data.toString() === "q") {
-		deinit_letui();
 		free_buffer();
+		deinit_letui();
 		process.exit(0);
 	} else {
 	}
@@ -269,8 +269,12 @@ class Column {
 	children: (Column | Row | Text)[] = [];
 
 	border: Border = "none";
+	justify: Justify = "start";
 
-	constructor(border: Border = "none") {}
+	constructor(border: Border = "none", justify: Justify = "start") {
+		this.border = border;
+		this.justify = justify;
+	}
 
 	add(child: Column | Row | Text) {
 		this.children.push(child);
@@ -294,6 +298,9 @@ class Column {
 
 	render(xo: number, yo: number, { w, h }: { w: number; h: number }) {
 		let cy = this.border !== "none" ? 1 : 0;
+		if (this.justify === "end") {
+			cy = h - this.size().h;
+		}
 
 		for (const c of this.children) {
 			c.render(xo, cy + yo, {
@@ -347,7 +354,7 @@ class Text {
 }
 
 const v = new View();
-const c = new Column();
+const c = new Column("none", "end");
 const r1 = new Row("square", "end");
 r1.add(new Text("Hello", cl.cyan, cl.yellow));
 r1.add(new Text(" World", cl.cyan, cl.yellow));
