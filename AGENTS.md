@@ -1,3 +1,40 @@
+# Project information
+
+This is a fast, simple and minimal TUI library written using Rust and TypeScript. 
+
+The backend for the library is written in Rust for following reasons/goals:
+
+**Performance Benefits**
+• Memory Operations
+• SIMD Vectorization: Native code can use SIMD instructions for parallel operations
+• Direct Memory Access
+• Zero-Copy Operations
+
+**Memory Management**
+• Arena Allocation: Batch allocations reduce overhead
+• Manual Memory Control: Precise control over allocation/deallocation patterns
+• Memory Pooling: Efficient reuse of memory blocks for frequently allocated objects like grapheme clusters
+
+**Threading and Concurrency**
+• True Parallelism: Native threads can run concurrently
+• Non-blocking I/O: Background threads can handle I/O operations without blocking the main application
+• Synchronization Primitives: Access to mutexes, condition variables, and other low-level synchronization tools
+
+**System Integration**
+• Platform-Specific Optimizations: Can leverage platform-specific APIs and optimizations
+• Direct System Calls
+• Hardware Features: Access to CPU-specific instructions and hardware acceleration
+
+**Data Processing**
+• Efficient String/Text Processing
+• Binary Data Manipulation: Direct byte-level operations
+• Mathematical Operations: Native floating-point operations
+
+The API/wrapper for the library is written in TypeScript and communication with Rust backend is achieved thanks to Bun's FFI support
+
+**Performance goal**: Achieve <8ms or 120hz response time
+
+# Runtime and environment
 
 Default to using Bun instead of Node.js.
 
@@ -104,3 +141,7 @@ bun --hot ./index.ts
 ```
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.md`.
+
+# General
+
+- Include some sarcasm here and there. Don't go overboard, keep sarcasm minimal.

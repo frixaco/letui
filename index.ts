@@ -1,3 +1,8 @@
+/**
+ * Wrapper for the Rust backend of my TUI library
+ * that exposes composable components for UI
+ */
+
 import {
 	dlopen,
 	FFIType,
@@ -16,13 +21,17 @@ const path = `./letui-ffi/target/release/${prefix}letui_ffi.${suffix}`;
 const {
 	symbols: {
 		init_buffer,
-		get_buffer,
+		get_buffer_ptr,
+		get_buffer_len,
+		get_width,
+		get_height,
 		get_size,
 		free_buffer,
 		debug_buffer,
 		init_letui,
 		deinit_letui,
 		flush,
+		update_terminal_size,
 	},
 } = dlopen(path, {
 	init_letui: {
@@ -37,13 +46,21 @@ const {
 		args: [],
 		returns: FFIType.i32,
 	},
-	get_buffer: {
-		args: [FFIType.pointer, FFIType.pointer],
-		returns: FFIType.i32,
+	get_buffer_ptr: {
+		args: [],
+		returns: FFIType.pointer,
 	},
-	get_size: {
-		args: [FFIType.pointer, FFIType.pointer],
-		returns: FFIType.i32,
+	get_buffer_len: {
+		args: [],
+		returns: FFIType.u64,
+	},
+	get_width: {
+		args: [],
+		returns: FFIType.u16,
+	},
+	get_height: {
+		args: [],
+		returns: FFIType.u16,
 	},
 	free_buffer: {
 		args: [],
@@ -57,27 +74,22 @@ const {
 		args: [],
 		returns: FFIType.i32,
 	},
+	update_terminal_size: {
+		args: [],
+		returns: FFIType.i32,
+	},
 });
 
 init_buffer();
-const outPtr = new BigUint64Array(1);
-const outLen = new BigUint64Array(1);
-get_buffer(ptr(outPtr), ptr(outLen));
-
-const bufPtr = Number(outPtr[0]);
-const bufLen = Number(outLen[0]);
+const bufPtr = get_buffer_ptr()!;
+const bufLen = Number(get_buffer_len()!);
 
 const buffer = new BigUint64Array(
 	toArrayBuffer(bufPtr as Pointer, 0, bufLen * 8),
 );
 
-const wp = new Uint16Array(1);
-const hp = new Uint16Array(1);
-
-get_size(ptr(wp), ptr(hp));
-
-const terminalWidth = Number(wp[0]);
-const terminalHeight = Number(hp[0]);
+let terminalWidth = get_width();
+let terminalHeight = get_height();
 
 init_letui();
 process.stdin.resume();
@@ -88,6 +100,11 @@ process.stdin.on("data", (data) => {
 		process.exit(0);
 	} else {
 	}
+});
+process.stdout.on("resize", () => {
+	update_terminal_size();
+	terminalWidth = get_width();
+	terminalHeight = get_height();
 });
 
 type Border = "none" | "square" | "rounded";
