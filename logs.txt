@@ -1,0 +1,274 @@
+"\u001b[<35;18;4M"
+
+isMouseEvent
+"\u001b[<35;17;4M"
+
+parsed: ["35","18","4"]
+isMouseEvent
+parsed: ["35","17","4"]
+"\u001b[<35;16;4M"
+
+isMouseEvent
+parsed: ["35","16","4"]
+"\u001b[<35;15;4M"
+
+isMouseEvent
+parsed: ["35","15","4"]
+"\u001b[<35;14;4M"
+
+isMouseEvent
+parsed: ["35","14","4"]
+"\u001b[<35;13;4M"
+
+isMouseEvent
+parsed: ["35","13","4"]
+"\u001b[<35;12;4M"
+
+isMouseEvent
+parsed: ["35","12","4"]
+"\u001b[<35;11;4M"
+
+isMouseEvent
+parsed: ["35","11","4"]
+"\u001b[<35;10;3M"
+
+isMouseEvent
+parsed: ["35","10","3"]
+"\u001b[<35;9;3M"
+
+isMouseEvent
+parsed: ["35","9","3"]
+"\u001b[<35;8;3M"
+
+isMouseEvent
+parsed: ["35","8","3"]
+"\u001b[<35;7;3M"
+
+isMouseEvent
+parsed: ["35","7","3"]
+"\u001b[<35;6;3M"
+
+isMouseEvent
+parsed: ["35","6","3"]
+"\u001b[<35;5;3M"
+
+isMouseEvent
+parsed: ["35","5","3"]
+"\u001b[<35;5;2M"
+
+isMouseEvent
+parsed: ["35","5","2"]
+"\u001b[<35;4;2M"
+
+isMouseEvent
+parsed: ["35","4","2"]
+"\u001b[<35;3;2M"
+
+isMouseEvent
+parsed: ["35","3","2"]
+"\u001b[<35;2;2M"
+
+isMouseEvent
+parsed: ["35","2","2"]
+"\u001b[<35;1;2M"
+
+isMouseEvent
+parsed: ["35","1","2"]
+"\u001b[<35;1;1M"
+
+isMouseEvent
+parsed: ["35","1","1"]
+"\u001b[<35;2;1M"
+
+isMouseEvent
+parsed: ["35","2","1"]
+"\u001b[<35;3;1M"
+
+isMouseEvent
+parsed: ["35","3","1"]
+"\u001b[<35;4;1M"
+
+isMouseEvent
+parsed: ["35","4","1"]
+"\u001b[<35;5;1M"
+
+isMouseEvent
+parsed: ["35","5","1"]
+"\u001b[<35;6;1M"
+
+isMouseEvent
+parsed: ["35","6","1"]
+"\u001b[<35;7;1M"
+
+isMouseEvent
+parsed: ["35","7","1"]
+"\u001b[<35;8;1M"
+
+isMouseEvent
+parsed: ["35","8","1"]
+"\u001b[<35;9;1M"
+
+isMouseEvent
+parsed: ["35","9","1"]
+"\u001b[<35;9;2M"
+
+isMouseEvent
+parsed: ["35","9","2"]
+"\u001b[<35;10;2M"
+
+isMouseEvent
+parsed: ["35","10","2"]
+"\u001b[<35;11;2M"
+
+isMouseEvent
+parsed: ["35","11","2"]
+"\u001b[<35;11;3M"
+
+isMouseEvent
+parsed: ["35","11","3"]
+"\u001b[<35;12;3M"
+
+isMouseEvent
+parsed: ["35","12","3"]
+"\u001b[<35;12;2M"
+
+isMouseEvent
+parsed: ["35","12","2"]
+"\u001b[<35;13;2M"
+
+isMouseEvent
+parsed: ["35","13","2"]
+"\u001b[<35;14;2M"
+
+isMouseEvent
+parsed: ["35","14","2"]
+"\u001b[<35;15;2M"
+
+isMouseEvent
+parsed: ["35","15","2"]
+"\u001b[<35;16;2M"
+
+isMouseEvent
+parsed: ["35","16","2"]
+"\u001b[<35;17;2M"
+
+isMouseEvent
+parsed: ["35","17","2"]
+"\u001b[<35;16;2M"
+
+isMouseEvent
+parsed: ["35","16","2"]
+"\u001b[<35;15;2M"
+
+isMouseEvent
+parsed: ["35","15","2"]
+"\u001b[<35;14;2M"
+
+isMouseEvent
+parsed: ["35","14","2"]
+"\u001b[<0;14;2M"
+
+isMouseEvent
+parsed: ["0","14","2"]
+mouse left button at (13, 1)
+hitMap key: 58
+hitMap has key: true
+pressed
+"\u001b[<0;14;2m"
+
+isMouseEvent
+parsed: ["0","14","2"]
+mouse left button at (13, 1)
+hitMap key: 58
+hitMap has key: true
+released
+"\u001b[<0;14;2M"
+
+isMouseEvent
+parsed: ["0","14","2"]
+mouse left button at (13, 1)
+hitMap key: 58
+hitMap has key: true
+pressed
+"\u001b[<0;14;2m"
+
+isMouseEvent
+parsed: ["0","14","2"]
+mouse left button at (13, 1)
+hitMap key: 58
+hitMap has key: true
+released
+"\u001b[<0;14;2M"
+
+isMouseEvent
+parsed: ["0","14","2"]
+mouse left button at (13, 1)
+hitMap key: 58
+hitMap has key: true
+pressed
+"\u001b[<0;14;2m"
+
+isMouseEvent
+parsed: ["0","14","2"]
+mouse left button at (13, 1)
+hitMap key: 58
+hitMap has key: true
+released
+"\u001b[<0;14;2M"
+
+isMouseEvent
+parsed: ["0","14","2"]
+mouse left button at (13, 1)
+hitMap key: 58
+hitMap has key: true
+pressed
+"\u001b[<0;14;2m"
+
+isMouseEvent
+parsed: ["0","14","2"]
+mouse left button at (13, 1)
+hitMap key: 58
+hitMap has key: true
+released
+"\u001b[<0;14;2M"
+
+isMouseEvent
+parsed: ["0","14","2"]
+mouse left button at (13, 1)
+hitMap key: 58
+hitMap has key: true
+pressed
+"\u001b[<0;14;2m"
+
+isMouseEvent
+parsed: ["0","14","2"]
+mouse left button at (13, 1)
+hitMap key: 58
+hitMap has key: true
+released
+"\u001b[<0;14;2M"
+
+isMouseEvent
+parsed: ["0","14","2"]
+mouse left button at (13, 1)
+hitMap key: 58
+hitMap has key: true
+pressed
+"\u001b[<0;14;2m"
+
+isMouseEvent
+parsed: ["0","14","2"]
+mouse left button at (13, 1)
+hitMap key: 58
+hitMap has key: true
+released
+"\u001b[<35;14;2M"
+
+isMouseEvent
+parsed: ["35","14","2"]
+"\u001b[<35;14;3M"
+
+isMouseEvent
+parsed: ["35","14","3"]
+"\u0011"
+

@@ -12,6 +12,7 @@ import {
   type Pointer,
 } from "bun:ffi";
 import { COLORS } from "./colors";
+import { appendFile } from "node:fs/promises";
 
 const cl = COLORS.default;
 
@@ -90,19 +91,96 @@ const getBuffer = () => {
 
 let buffer = getBuffer();
 
+let canQuit = true;
+
 let terminalWidth = get_width();
 let terminalHeight = get_height();
 
+const debugLogPath = "./logs.txt";
+
+const MOUSE_EVENT_PREFIX = "\u001b[<";
+const isMouseEvent = (d: string) => {
+  if (d.startsWith(MOUSE_EVENT_PREFIX)) {
+    return true;
+  }
+  return false;
+};
+
+let hitIdCounter = 0;
+const componentMap = new Map<number, Button>();
+const hitMap = new Map<number, number>();
+const getHitComponent = (x: number, y: number): Button => {
+  const component = componentMap.get(hitMap.get(y * terminalWidth + x)!);
+  return component!;
+};
+
+const handleMouseEvent = async (d: string) => {
+  const i = d.indexOf("<") + 1;
+  const j = d.length - 1;
+  const c = d.slice(i, j).split(";");
+  await appendFile(debugLogPath, `parsed: ${JSON.stringify(c)}\n`);
+  const isPress = d[d.length - 1] === "M";
+  const isRelease = d[d.length - 1] === "m";
+  const x = Number(c[1]!) - 1;
+  const y = Number(c[2]!) - 1;
+
+  if (c[0] == "0") {
+    await appendFile(debugLogPath, `mouse left button at (${x}, ${y})\n`);
+    await appendFile(debugLogPath, `hitMap key: ${y * terminalWidth + x}\n`);
+    await appendFile(
+      debugLogPath,
+      `hitMap has key: ${hitMap.has(y * terminalWidth + x)}\n`,
+    );
+
+    const hitComponent: Button = getHitComponent(x, y);
+    if (isPress) {
+      await appendFile(debugLogPath, "pressed\n");
+      hitComponent?.press();
+    }
+    if (isRelease) {
+      await appendFile(debugLogPath, "released\n");
+      hitComponent?.release();
+    }
+  }
+};
+
+let canType = false;
+
+const handleKeyboardEvent = (d: string) => {
+  if (!canType) return;
+};
+
 init_letui();
 process.stdin.resume();
-process.stdin.on("data", (data) => {
-  if (data.toString() === "q") {
+Bun.write(debugLogPath, "");
+process.stdin.on("data", async (data) => {
+  // hex notation
+  // await appendFile(
+  //   debugLogPath,
+  //   Array.from(data)
+  //     .map((b) => `0x${b.toString(16).padStart(2, "0")}`)
+  //     .join(" ") + "\n",
+  // );
+  // unicode escape sequence (code point)
+  await appendFile(debugLogPath, JSON.stringify(data.toString()) + "\n\n");
+
+  const d = data.toString();
+
+  if (isMouseEvent(d)) {
+    await appendFile(debugLogPath, "isMouseEvent\n");
+    await handleMouseEvent(d);
+    return;
+  }
+
+  if (d === "\u0011" && canQuit) {
     free_buffer();
     deinit_letui();
     process.exit(0);
-  } else {
   }
+
+  handleKeyboardEvent(d);
 });
+
 process.stdout.on("resize", () => {
   update_terminal_size();
   terminalWidth = get_width();
@@ -143,6 +221,7 @@ class View {
 }
 
 class Row {
+  id: number;
   children: (Column | Row | Text)[] = [];
 
   border: Border = "none";
@@ -151,6 +230,7 @@ class Row {
   constructor(border: Border = "none", justify: Justify = "start") {
     this.border = border;
     this.justify = justify;
+    this.id = hitIdCounter++;
   }
 
   add(child: Column | Row | Text) {
@@ -266,6 +346,7 @@ class Row {
 }
 
 class Column {
+  id: number;
   children: (Column | Row | Text | Button)[] = [];
 
   border: Border = "none";
@@ -274,6 +355,7 @@ class Column {
   constructor(border: Border = "none", justify: Justify = "start") {
     this.border = border;
     this.justify = justify;
+    this.id = hitIdCounter++;
   }
 
   add(child: Column | Row | Text | Button) {
@@ -299,7 +381,7 @@ class Column {
   render(xo: number, yo: number, { w, h }: { w: number; h: number }) {
     let cy = this.border !== "none" ? 1 : 0;
     if (this.justify === "end") {
-      cy = h - this.size().h;
+      cy += h - this.size().h;
     }
 
     for (const c of this.children) {
@@ -313,6 +395,7 @@ class Column {
 }
 
 class Text {
+  id: number;
   text: string;
   fg: number;
   bg: number;
@@ -331,6 +414,8 @@ class Text {
     this.text = text;
     this.fg = fg;
     this.bg = bg;
+
+    this.id = hitIdCounter++;
 
     this.prerender();
   }
@@ -370,6 +455,7 @@ const lightenRgb = ({ r, g, b }: RGB, amount: number = 8) => ({
 });
 
 class Button {
+  id: number;
   px = 4;
   py = 1;
   text: string;
@@ -402,12 +488,19 @@ class Button {
 
     this.active_fg = active_fg || rgbToHex(lightenRgb(hexToRgb(fg)));
     this.active_bg = active_bg || rgbToHex(lightenRgb(hexToRgb(bg)));
+
+    this.id = hitIdCounter++;
+    componentMap.set(this.id, this);
   }
 
-  prerender() {
+  prerender(active: boolean = false) {
     const cells: bigint[] = [];
     for (const c of this.text) {
-      cells.push(BigInt(c.codePointAt(0)!), BigInt(this.fg), BigInt(this.bg));
+      cells.push(
+        BigInt(c.codePointAt(0)!),
+        BigInt(active ? this.active_fg : this.fg),
+        BigInt(active ? this.active_bg : this.bg),
+      );
     }
     this.prebuilt = new BigUint64Array(cells);
   }
@@ -416,7 +509,14 @@ class Button {
     return { w: this.width + 2 * this.px, h: this.height + 2 * this.py };
   }
 
+  xo: number = 0;
+  yo: number = 0;
   render(xo: number, yo: number, { w, h }: { w: number; h: number }) {
+    this.xo = xo;
+    this.yo = yo;
+
+    this.prerender();
+
     for (let cy = yo; cy < this.py + yo; cy++) {
       for (let cx = xo; cx < xo + this.size().w; cx++) {
         buffer.set(
@@ -462,16 +562,146 @@ class Button {
       }
     }
 
-    this.prerender();
     buffer.set(
       this.prebuilt.subarray(0),
       (terminalWidth * (yo + this.py) + xo + this.px) * 3,
     );
+
+    this.updateHitMap(xo, yo);
+  }
+
+  updateHitMap(xo: number, yo: number) {
+    for (let cy = yo; cy < yo + this.size().h; cy++) {
+      for (let cx = xo; cx < xo + this.size().w; cx++) {
+        hitMap.set(cy * terminalWidth + cx, this.id);
+      }
+    }
+  }
+
+  release() {
+    const xo = this.xo;
+    const yo = this.yo;
+
+    this.prerender();
+
+    for (let cy = yo; cy < this.py + yo; cy++) {
+      for (let cx = xo; cx < xo + this.size().w; cx++) {
+        buffer.set(
+          new BigUint64Array([
+            BigInt(" ".codePointAt(0)!),
+            BigInt(this.fg),
+            BigInt(this.bg),
+          ]),
+          (terminalWidth * cy + cx) * 3,
+        );
+      }
+    }
+
+    for (let cy = yo + this.size().h - this.py; cy < yo + this.size().h; cy++) {
+      for (let cx = xo; cx < xo + this.size().w; cx++) {
+        buffer.set(
+          new BigUint64Array([
+            BigInt(" ".codePointAt(0)!),
+            BigInt(this.fg),
+            BigInt(this.bg),
+          ]),
+          (terminalWidth * cy + cx) * 3,
+        );
+      }
+    }
+
+    for (
+      let cy = yo + this.size().h - 2 * this.py;
+      cy < yo + this.size().h - 2 * this.py + this.height;
+      cy++
+    ) {
+      for (let cx = xo; cx < xo + this.size().w; cx++) {
+        if (cx < xo + this.px || cx > xo + this.px + this.width - 1) {
+          buffer.set(
+            new BigUint64Array([
+              BigInt(" ".codePointAt(0)!),
+              BigInt(this.fg),
+              BigInt(this.bg),
+            ]),
+            (terminalWidth * cy + cx) * 3,
+          );
+        }
+      }
+    }
+
+    buffer.set(
+      this.prebuilt.subarray(0),
+      (terminalWidth * (yo + this.py) + xo + this.px) * 3,
+    );
+    flush();
+  }
+
+  press() {
+    const xo = this.xo;
+    const yo = this.yo;
+
+    this.prerender(true);
+
+    for (let cy = yo; cy < this.py + yo; cy++) {
+      for (let cx = xo; cx < xo + this.size().w; cx++) {
+        buffer.set(
+          new BigUint64Array([
+            BigInt(" ".codePointAt(0)!),
+            BigInt(this.active_fg),
+            BigInt(this.active_bg),
+          ]),
+          (terminalWidth * cy + cx) * 3,
+        );
+      }
+    }
+
+    for (let cy = yo + this.size().h - this.py; cy < yo + this.size().h; cy++) {
+      for (let cx = xo; cx < xo + this.size().w; cx++) {
+        buffer.set(
+          new BigUint64Array([
+            BigInt(" ".codePointAt(0)!),
+            BigInt(this.active_fg),
+            BigInt(this.active_bg),
+          ]),
+          (terminalWidth * cy + cx) * 3,
+        );
+      }
+    }
+
+    for (
+      let cy = yo + this.size().h - 2 * this.py;
+      cy < yo + this.size().h - 2 * this.py + this.height;
+      cy++
+    ) {
+      for (let cx = xo; cx < xo + this.size().w; cx++) {
+        if (cx < xo + this.px || cx > xo + this.px + this.width - 1) {
+          buffer.set(
+            new BigUint64Array([
+              BigInt(" ".codePointAt(0)!),
+              BigInt(this.active_fg),
+              BigInt(this.active_bg),
+            ]),
+            (terminalWidth * cy + cx) * 3,
+          );
+        }
+      }
+    }
+
+    buffer.set(
+      this.prebuilt.subarray(0),
+      (terminalWidth * (yo + this.py) + xo + this.px) * 3,
+    );
+    flush();
   }
 }
 
 const v = new View();
-const c = new Column("none", "end");
+const c = new Column("none", "start");
+const b1 = new Button("button", cl.bg, cl.green, "none", cl.cyan, cl.yellow);
+c.add(b1);
+v.add(c);
+v.render();
+
 // const r1 = new Row("square", "end");
 // r1.add(new Text("Hello", cl.cyan, cl.yellow));
 // r1.add(new Text(" World", cl.cyan, cl.yellow));
@@ -480,6 +710,3 @@ const c = new Column("none", "end");
 // r2.add(new Text("Le", cl.red, cl.blue));
 // r2.add(new Text("Tui", cl.grey, cl.magenta));
 // c.add(r2);
-c.add(new Button("button", cl.bg, cl.green, "none", cl.cyan, cl.yellow));
-v.add(c);
-v.render();

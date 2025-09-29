@@ -5,6 +5,7 @@
 
 use crossterm::{
     cursor::{Hide, MoveTo},
+    event::EnableMouseCapture,
     execute, queue,
     style::{Color, Print, SetBackgroundColor, SetForegroundColor},
     terminal::{
@@ -41,7 +42,14 @@ pub extern "C" fn init_buffer() -> c_int {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn init_letui() -> c_int {
-    execute!(stdout(), EnterAlternateScreen, Clear(ClearType::All), Hide).unwrap();
+    execute!(
+        stdout(),
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        Clear(ClearType::All),
+        Hide
+    )
+    .unwrap();
     enable_raw_mode().unwrap();
     1
 }
@@ -174,3 +182,15 @@ pub extern "C" fn debug_buffer(idx: u64) -> u64 {
         0
     }
 }
+
+// fn print_events() -> io::Result<bool> {
+//     loop {
+//         if poll(Duration::from_millis(100))? {
+//             // It's guaranteed that `read` won't block, because `poll` returned
+//             // `Ok(true)`.
+//             println!("{:?}", read()?);
+//         } else {
+//             // Timeout expired, no `Event` is available
+//         }
+//     }
+// }

@@ -12,5 +12,5 @@
   },
   "peerDependencies": {
     "typescript": "^5"
-  },
+  }
 }
