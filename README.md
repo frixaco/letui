@@ -1,10 +1,9 @@
 # letui
 
-A minimal TUI renderer using Rust (crossterm) + Bun FFI.
+A minimal no-dependency (except `crossterm`) TUI library using Rust and TypeScript with Bun FFI.
 
 ## Goals
 
 - Truecolor output (24-bit RGB) and Unicode text
 - Sub-8ms input-to-render latency
-- Widgets: text, list, button, borders, containers (row, column) and more
-- Minimal API over Bun FFI. No new dependencies beyond crossterm.
+- Widgets: text, list, button, borders, containers (row, column), input box and more
