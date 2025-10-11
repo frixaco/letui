@@ -107,9 +107,9 @@ const isMouseEvent = (d: string) => {
 };
 
 let hitIdCounter = 0;
-const componentMap = new Map<number, Button>();
+const componentMap = new Map<number, Button | Input>();
 const hitMap = new Map<number, number>();
-const getHitComponent = (x: number, y: number): Button => {
+const getHitComponent = (x: number, y: number): Button | Input => {
   const component = componentMap.get(hitMap.get(y * terminalWidth + x)!);
   return component!;
 };
@@ -132,22 +132,30 @@ const handleMouseEvent = async (d: string) => {
       `hitMap has key: ${hitMap.has(y * terminalWidth + x)}\n`,
     );
 
-    const hitComponent: Button = getHitComponent(x, y);
-    if (isPress) {
-      await appendFile(debugLogPath, "pressed\n");
-      hitComponent?.press();
+    const hitComponent: Button | Input = getHitComponent(x, y);
+    if (hitComponent instanceof Button) {
+      if (isPress) {
+        await appendFile(debugLogPath, "pressed\n");
+        hitComponent?.press();
+      }
+      if (isRelease) {
+        await appendFile(debugLogPath, "released\n");
+        hitComponent?.release();
+      }
     }
-    if (isRelease) {
-      await appendFile(debugLogPath, "released\n");
-      hitComponent?.release();
+    if (hitComponent instanceof Input) {
+      canType = hitComponent.id;
     }
   }
 };
 
-let canType = false;
+let canType = 0;
 
 const handleKeyboardEvent = (d: string) => {
-  if (!canType) return;
+  if (canType === 0) return;
+
+  let input = componentMap.get(canType)! as Input;
+  input.setText(d);
 };
 
 init_letui();
@@ -355,7 +363,7 @@ class Row {
 
 class Column {
   id: number;
-  children: (Column | Row | Text | Button)[] = [];
+  children: (Column | Row | Text | Button | Input)[] = [];
 
   border: Border = "none";
   justify: Justify = "start";
@@ -366,7 +374,7 @@ class Column {
     this.id = hitIdCounter++;
   }
 
-  add(child: Column | Row | Text | Button) {
+  add(child: Column | Row | Text | Button | Input) {
     this.children.push(child);
     return this;
   }
@@ -493,7 +501,7 @@ class Text {
   fg: number;
   bg: number;
 
-  border: Border = "none";
+  border: Border;
   prebuilt: BigUint64Array = new BigUint64Array();
 
   width: number;
@@ -557,7 +565,7 @@ class Button {
   bg: number;
   active_bg: number;
 
-  border: Border = "none";
+  border: Border;
   prebuilt: BigUint64Array = new BigUint64Array();
 
   width: number;
@@ -788,6 +796,176 @@ class Button {
   }
 }
 
+class Input {
+  id: number;
+  text: string = "";
+  fg: number;
+  bg: number;
+  multiline: boolean;
+  border: Border;
+
+  constructor(
+    fg: number,
+    bg: number,
+    border: Border,
+    multiline: boolean = false,
+  ) {
+    this.multiline = multiline;
+    this.border = border;
+
+    this.fg = fg;
+    this.bg = bg;
+
+    this.id = hitIdCounter++;
+    componentMap.set(this.id, this);
+
+    this.prerender();
+  }
+
+  getMultilineTextHeight() {
+    return 1;
+  }
+
+  size() {
+    return {
+      w: [...this.text].length + (this.border !== "none" ? 2 : 0),
+      h: this.multiline
+        ? this.getMultilineTextHeight()
+        : 1 + (this.border !== "none" ? 2 : 0),
+    };
+  }
+
+  prebuilt: BigUint64Array = new BigUint64Array();
+  prerender() {
+    const cells: bigint[] = [];
+    for (const c of this.text) {
+      cells.push(BigInt(c.codePointAt(0)!), BigInt(this.fg), BigInt(this.bg));
+    }
+    this.prebuilt = new BigUint64Array(cells);
+  }
+
+  xo: number = 0;
+  yo: number = 0;
+  containerSize: { w: number; h: number } = { w: 0, h: 0 };
+  render(xo: number, yo: number, { w, h }: { w: number; h: number }) {
+    this.xo = xo;
+    this.yo = yo;
+    this.containerSize = { w, h };
+
+    if (this.border !== "none") {
+      let topLeft = yo * terminalWidth + xo + 1;
+      let fg = cl.fg;
+      let bg = cl.bg;
+
+      let cells: bigint[] = [];
+      for (let i = 0; i < w - 2; i++) {
+        cells.push(BigInt("─".codePointAt(0)!), BigInt(fg), BigInt(bg));
+      }
+      let prebuilt = new BigUint64Array(cells);
+
+      buffer.set(prebuilt, topLeft * 3);
+
+      let bottomLeft =
+        yo * terminalWidth + xo + terminalWidth * (this.size().h - 1) + 1;
+      buffer.set(prebuilt, bottomLeft * 3);
+
+      topLeft -= 1;
+      bottomLeft -= 1;
+      buffer.set(
+        new BigUint64Array([
+          this.border === "square"
+            ? BigInt("┌".codePointAt(0)!)
+            : BigInt("╭".codePointAt(0)!),
+          BigInt(fg),
+          BigInt(bg),
+        ]),
+        topLeft * 3,
+      );
+      buffer.set(
+        new BigUint64Array([
+          this.border === "square"
+            ? BigInt("└".codePointAt(0)!)
+            : BigInt("╰".codePointAt(0)!),
+          BigInt(fg),
+          BigInt(bg),
+        ]),
+        bottomLeft * 3,
+      );
+
+      let middleLeft = topLeft + terminalWidth;
+      let topRight = topLeft + w - 1;
+      let middleRight = topRight + terminalWidth;
+      let bottomRight = middleRight + terminalWidth;
+
+      buffer.set(
+        new BigUint64Array([
+          BigInt("│".codePointAt(0)!),
+          BigInt(fg),
+          BigInt(bg),
+        ]),
+        middleLeft * 3,
+      );
+
+      buffer.set(
+        new BigUint64Array([
+          this.border === "square"
+            ? BigInt("┐".codePointAt(0)!)
+            : BigInt("╮".codePointAt(0)!),
+          BigInt(fg),
+          BigInt(bg),
+        ]),
+        topRight * 3,
+      );
+      buffer.set(
+        new BigUint64Array([
+          BigInt("│".codePointAt(0)!),
+          BigInt(fg),
+          BigInt(bg),
+        ]),
+        middleRight * 3,
+      );
+      buffer.set(
+        new BigUint64Array([
+          this.border === "square"
+            ? BigInt("┘".codePointAt(0)!)
+            : BigInt("╯".codePointAt(0)!),
+          BigInt(fg),
+          BigInt(bg),
+        ]),
+        bottomRight * 3,
+      );
+    }
+
+    const cursor =
+      terminalWidth * (this.border === "none" ? yo : yo + 1) +
+      xo +
+      (this.border === "none" ? 2 : 1);
+    buffer.set(this.prebuilt.subarray(0), cursor * 3);
+
+    this.updateHitMap(xo, yo);
+
+    flush();
+  }
+
+  updateHitMap(xo: number, yo: number) {
+    for (let cy = yo; cy < yo + this.size().h; cy++) {
+      for (let cx = xo; cx < xo + this.containerSize.w; cx++) {
+        hitMap.set(cy * terminalWidth + cx, this.id);
+      }
+    }
+  }
+
+  press() {}
+
+  release() {}
+
+  setText(v: string) {
+    this.text += v;
+    this.prerender();
+    this.render(this.xo, this.yo, this.containerSize);
+  }
+}
+
 const v = new View();
 const c = new Column("square", "end");
 const b1 = new Button("button", cl.bg, cl.green, "none", cl.cyan, cl.yellow);
@@ -803,6 +981,9 @@ const r2 = new Row();
 r2.add(new Text("Le", cl.red, cl.blue));
 r2.add(new Text("Tui", cl.grey, cl.magenta));
 c.add(r2);
+
+const i1 = new Input(cl.magenta, cl.bg, "square", false);
+c.add(i1);
 
 v.add(c);
 v.render();

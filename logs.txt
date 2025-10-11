@@ -1,46 +1,44 @@
-"\u001b[<35;15;47M"
+"\u001b[<0;13;54M"
 
 isMouseEvent
-parsed: ["35","15","47"]
-"\u001b[<35;14;48M"
-
-isMouseEvent
-parsed: ["35","14","48"]
-"\u001b[<35;14;49M"
-
-isMouseEvent
-parsed: ["35","14","49"]
-"\u001b[<0;14;49M"
-
-isMouseEvent
-parsed: ["0","14","49"]
-mouse left button at (13, 48)
-hitMap key: 8413
+parsed: ["0","13","54"]
+mouse left button at (12, 53)
+hitMap key: 9287
 hitMap has key: true
-pressed
-"\u001b[<0;14;49m"
+"\u001b[<0;13;54m"
 
 isMouseEvent
-parsed: ["0","14","49"]
-mouse left button at (13, 48)
-hitMap key: 8413
+parsed: ["0","13","54"]
+mouse left button at (12, 53)
+hitMap key: 9287
 hitMap has key: true
-released
-"\u001b[<0;14;49M"
+"d"
 
-isMouseEvent
-parsed: ["0","14","49"]
-mouse left button at (13, 48)
-hitMap key: 8413
-hitMap has key: true
-pressed
-"\u001b[<0;14;49m"
+"w"
 
-isMouseEvent
-parsed: ["0","14","49"]
-mouse left button at (13, 48)
-hitMap key: 8413
-hitMap has key: true
-released
+"e"
+
+"k"
+
+"j"
+
+"q"
+
+"k"
+
+"w"
+
+"j"
+
+"e"
+
+"q"
+
+"k"
+
+"w"
+
+"j"
+
 "\u0011"
 
