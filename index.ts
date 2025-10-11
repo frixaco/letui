@@ -254,7 +254,7 @@ class Row {
   }
 
   render(xo: number, yo: number, { w, h }: { w: number; h: number }) {
-    if (this.border === "square") {
+    if (this.border !== "none") {
       let topLeft = yo * terminalWidth + xo + 1;
       let fg = cl.fg;
       let bg = cl.bg;
@@ -275,7 +275,9 @@ class Row {
       bottomLeft -= 1;
       buffer.set(
         new BigUint64Array([
-          BigInt("┌".codePointAt(0)!),
+          this.border === "square"
+            ? BigInt("┌".codePointAt(0)!)
+            : BigInt("╭".codePointAt(0)!),
           BigInt(fg),
           BigInt(bg),
         ]),
@@ -283,7 +285,9 @@ class Row {
       );
       buffer.set(
         new BigUint64Array([
-          BigInt("└".codePointAt(0)!),
+          this.border === "square"
+            ? BigInt("└".codePointAt(0)!)
+            : BigInt("╰".codePointAt(0)!),
           BigInt(fg),
           BigInt(bg),
         ]),
@@ -306,7 +310,9 @@ class Row {
 
       buffer.set(
         new BigUint64Array([
-          BigInt("┐".codePointAt(0)!),
+          this.border === "square"
+            ? BigInt("┐".codePointAt(0)!)
+            : BigInt("╮".codePointAt(0)!),
           BigInt(fg),
           BigInt(bg),
         ]),
@@ -322,7 +328,9 @@ class Row {
       );
       buffer.set(
         new BigUint64Array([
-          BigInt("┘".codePointAt(0)!),
+          this.border === "square"
+            ? BigInt("┘".codePointAt(0)!)
+            : BigInt("╯".codePointAt(0)!),
           BigInt(fg),
           BigInt(bg),
         ]),
@@ -379,13 +387,98 @@ class Column {
   }
 
   render(xo: number, yo: number, { w, h }: { w: number; h: number }) {
+    if (this.border !== "none") {
+      let topLeft = yo * terminalWidth + xo + 1;
+      let fg = cl.fg;
+      let bg = cl.bg;
+
+      let cells: bigint[] = [];
+      for (let i = 0; i < w - 2; i++) {
+        cells.push(BigInt("─".codePointAt(0)!), BigInt(fg), BigInt(bg));
+      }
+      let prebuilt = new BigUint64Array(cells);
+
+      buffer.set(prebuilt, topLeft * 3);
+
+      let bottomLeft = yo * terminalWidth + xo + terminalWidth * (h - 1) + 1;
+      buffer.set(prebuilt, bottomLeft * 3);
+
+      topLeft -= 1;
+      bottomLeft -= 1;
+      buffer.set(
+        new BigUint64Array([
+          this.border === "square"
+            ? BigInt("┌".codePointAt(0)!)
+            : BigInt("╭".codePointAt(0)!),
+          BigInt(fg),
+          BigInt(bg),
+        ]),
+        topLeft * 3,
+      );
+      buffer.set(
+        new BigUint64Array([
+          this.border === "square"
+            ? BigInt("└".codePointAt(0)!)
+            : BigInt("╰".codePointAt(0)!),
+          BigInt(fg),
+          BigInt(bg),
+        ]),
+        bottomLeft * 3,
+      );
+
+      for (let i = 1; i < h - 1; i++) {
+        buffer.set(
+          new BigUint64Array([
+            BigInt("│".codePointAt(0)!),
+            BigInt(fg),
+            BigInt(bg),
+          ]),
+          (topLeft + i * terminalWidth) * 3,
+        );
+      }
+
+      let topRight = topLeft + w - 1;
+      let bottomRight = topRight + (h - 1) * terminalWidth;
+      for (let i = 1; i < h - 1; i++) {
+        buffer.set(
+          new BigUint64Array([
+            BigInt("│".codePointAt(0)!),
+            BigInt(fg),
+            BigInt(bg),
+          ]),
+          (topRight + i * terminalWidth) * 3,
+        );
+      }
+
+      buffer.set(
+        new BigUint64Array([
+          this.border === "square"
+            ? BigInt("┐".codePointAt(0)!)
+            : BigInt("╮".codePointAt(0)!),
+          BigInt(fg),
+          BigInt(bg),
+        ]),
+        topRight * 3,
+      );
+      buffer.set(
+        new BigUint64Array([
+          this.border === "square"
+            ? BigInt("┘".codePointAt(0)!)
+            : BigInt("╯".codePointAt(0)!),
+          BigInt(fg),
+          BigInt(bg),
+        ]),
+        bottomRight * 3,
+      );
+    }
+
     let cy = this.border !== "none" ? 1 : 0;
     if (this.justify === "end") {
       cy += h - this.size().h;
     }
 
     for (const c of this.children) {
-      c.render(xo, cy + yo, {
+      c.render(xo + this.border === "none" ? 0 : 1, cy + yo, {
         w: w - (this.border !== "none" ? 2 : 0),
         h: h - (this.border !== "none" ? 2 : 0),
       });
@@ -696,17 +789,20 @@ class Button {
 }
 
 const v = new View();
-const c = new Column("none", "start");
+const c = new Column("square", "end");
 const b1 = new Button("button", cl.bg, cl.green, "none", cl.cyan, cl.yellow);
 c.add(b1);
+
+const r1 = new Row("rounded", "end");
+r1.add(new Text("Hello", cl.cyan, cl.yellow));
+r1.add(new Text(" World", cl.cyan, cl.yellow));
+
+c.add(r1);
+
+const r2 = new Row();
+r2.add(new Text("Le", cl.red, cl.blue));
+r2.add(new Text("Tui", cl.grey, cl.magenta));
+c.add(r2);
+
 v.add(c);
 v.render();
-
-// const r1 = new Row("square", "end");
-// r1.add(new Text("Hello", cl.cyan, cl.yellow));
-// r1.add(new Text(" World", cl.cyan, cl.yellow));
-// c.add(r1);
-// const r2 = new Row();
-// r2.add(new Text("Le", cl.red, cl.blue));
-// r2.add(new Text("Tui", cl.grey, cl.magenta));
-// c.add(r2);
