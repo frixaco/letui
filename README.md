@@ -2,6 +2,10 @@
 
 A minimal no-dependency (except `crossterm`) TUI library using Rust and TypeScript with Bun FFI.
 
+**TODO**:
+
+- [ ] Pluggable prettier file logging
+
 ## Goals
 
 - Truecolor output (24-bit RGB) and Unicode text
