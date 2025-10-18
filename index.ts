@@ -136,11 +136,11 @@ const handleMouseEvent = async (d: string) => {
     if (hitComponent instanceof Button) {
       if (isPress) {
         await appendFile(debugLogPath, "pressed\n");
-        hitComponent?.press();
+        await hitComponent?.press();
       }
       if (isRelease) {
         await appendFile(debugLogPath, "released\n");
-        hitComponent?.release();
+        await hitComponent?.release();
       }
     }
     if (hitComponent instanceof Input) {
@@ -205,11 +205,11 @@ type Border = "none" | "square" | "rounded";
 type Justify = "start" | "end";
 
 class View {
-  children: (Column | Row | Text | Button)[] = [];
+  children: (Column | Row | Text | Button | Input)[] = [];
 
   constructor() {}
 
-  add(child: Column | Row | Text | Button) {
+  add(child: Column | Row | Text | Button | Input) {
     this.children.push(child);
 
     return this;
@@ -230,7 +230,7 @@ class View {
 
 class Row {
   id: number;
-  children: (Column | Row | Text)[] = [];
+  children: (Column | Row | Text | Input | Button)[] = [];
 
   border: Border = "none";
   justify: Justify = "start";
@@ -241,7 +241,7 @@ class Row {
     this.id = hitIdCounter++;
   }
 
-  add(child: Column | Row | Text) {
+  add(child: Column | Row | Text | Input | Button) {
     this.children.push(child);
     return this;
   }
@@ -281,6 +281,7 @@ class Row {
 
       topLeft -= 1;
       bottomLeft -= 1;
+
       buffer.set(
         new BigUint64Array([
           this.border === "square"
@@ -302,19 +303,33 @@ class Row {
         bottomLeft * 3,
       );
 
-      let middleLeft = topLeft + terminalWidth;
       let topRight = topLeft + w - 1;
-      let middleRight = topRight + terminalWidth;
-      let bottomRight = middleRight + terminalWidth;
+      let bottomRight = bottomLeft + w - 1;
 
-      buffer.set(
-        new BigUint64Array([
-          BigInt("│".codePointAt(0)!),
-          BigInt(fg),
-          BigInt(bg),
-        ]),
-        middleLeft * 3,
-      );
+      let middleLeft = topLeft;
+      let middleRight = topRight;
+      for (let i = 0; i < this.size().h - 2; i++) {
+        middleLeft += terminalWidth;
+        middleRight += terminalWidth;
+
+        buffer.set(
+          new BigUint64Array([
+            BigInt("│".codePointAt(0)!),
+            BigInt(fg),
+            BigInt(bg),
+          ]),
+          middleLeft * 3,
+        );
+
+        buffer.set(
+          new BigUint64Array([
+            BigInt("│".codePointAt(0)!),
+            BigInt(fg),
+            BigInt(bg),
+          ]),
+          middleRight * 3,
+        );
+      }
 
       buffer.set(
         new BigUint64Array([
@@ -325,14 +340,6 @@ class Row {
           BigInt(bg),
         ]),
         topRight * 3,
-      );
-      buffer.set(
-        new BigUint64Array([
-          BigInt("│".codePointAt(0)!),
-          BigInt(fg),
-          BigInt(bg),
-        ]),
-        middleRight * 3,
       );
       buffer.set(
         new BigUint64Array([
@@ -352,11 +359,22 @@ class Row {
     }
     let cx = pad + (this.border !== "none" ? 1 : 0);
     for (const c of this.children) {
+      let cw = w - (this.border !== "none" ? 2 : 0);
+
+      if (c instanceof Input) {
+        let x = 0;
+        for (let c of this.children) {
+          if (c instanceof Input) continue;
+          x += c.size().w;
+        }
+        cw = w - x - 2; // "- 2" because in size() Input.size().w doesn't account for container filling
+      }
+
       c.render(cx + xo, yo + (this.border !== "none" ? 1 : 0), {
-        w: w - (this.border !== "none" ? 2 : 0),
+        w: cw,
         h: h - (this.border !== "none" ? 2 : 0),
       });
-      cx += c.size().w;
+      cx += c instanceof Input ? cw : c.size().w;
     }
   }
 }
@@ -486,7 +504,7 @@ class Column {
     }
 
     for (const c of this.children) {
-      c.render(xo + this.border === "none" ? 0 : 1, cy + yo, {
+      c.render(xo + this.border !== "none" ? 1 : 0, cy + yo, {
         w: w - (this.border !== "none" ? 2 : 0),
         h: h - (this.border !== "none" ? 2 : 0),
       });
@@ -571,6 +589,8 @@ class Button {
   width: number;
   height: number;
 
+  onClick: (() => Promise<void>) | (() => void) | null = null;
+
   constructor(
     text: string,
     fg: number,
@@ -618,6 +638,7 @@ class Button {
 
     this.prerender();
 
+    // top part
     for (let cy = yo; cy < this.py + yo; cy++) {
       for (let cx = xo; cx < xo + this.size().w; cx++) {
         buffer.set(
@@ -631,6 +652,7 @@ class Button {
       }
     }
 
+    // bottom part
     for (let cy = yo + this.size().h - this.py; cy < yo + this.size().h; cy++) {
       for (let cx = xo; cx < xo + this.size().w; cx++) {
         buffer.set(
@@ -644,6 +666,7 @@ class Button {
       }
     }
 
+    // middle part
     for (
       let cy = yo + this.size().h - 2 * this.py;
       cy < yo + this.size().h - 2 * this.py + this.height;
@@ -663,6 +686,7 @@ class Button {
       }
     }
 
+    // actual text
     buffer.set(
       this.prebuilt.subarray(0),
       (terminalWidth * (yo + this.py) + xo + this.px) * 3,
@@ -679,7 +703,7 @@ class Button {
     }
   }
 
-  release() {
+  async release() {
     const xo = this.xo;
     const yo = this.yo;
 
@@ -737,7 +761,9 @@ class Button {
     flush();
   }
 
-  press() {
+  async press() {
+    await this.onClick?.();
+
     const xo = this.xo;
     const yo = this.yo;
 
@@ -964,26 +990,48 @@ class Input {
     this.prerender();
     this.render(this.xo, this.yo, this.containerSize);
   }
+
+  clearText() {
+    this.text = "";
+    this.prerender();
+    this.render(this.xo, this.yo, this.containerSize);
+  }
 }
 
 const v = new View();
-const c = new Column("square", "end");
+const c = new Column("rounded", "start");
+
+const r1 = new Row("rounded", "start");
+const i1 = new Input(cl.magenta, cl.bg, "rounded", false);
 const b1 = new Button("button", cl.bg, cl.green, "none", cl.cyan, cl.yellow);
-c.add(b1);
-
-const r1 = new Row("rounded", "end");
-r1.add(new Text("Hello", cl.cyan, cl.yellow));
-r1.add(new Text(" World", cl.cyan, cl.yellow));
-
+r1.add(i1);
+r1.add(b1);
 c.add(r1);
-
-const r2 = new Row();
-r2.add(new Text("Le", cl.red, cl.blue));
-r2.add(new Text("Tui", cl.grey, cl.magenta));
-c.add(r2);
-
-const i1 = new Input(cl.magenta, cl.bg, "square", false);
-c.add(i1);
-
 v.add(c);
+
+type Activity = {
+  platform: string;
+  title: string;
+  url: string;
+  date: string;
+};
+let results: Array<Activity> = [];
+
+b1.onClick = async () => {
+  const searchTerm = i1.text;
+  const r = await fetch("https://api.whatmedoin.frixaco.com/activity");
+  const d = (await r.json()) as Activity;
+  i1.clearText();
+
+  results.push(d);
+
+  for (const r of results) {
+    const item = new Row("rounded", "start");
+    item.add(new Text(r.title, cl.fg, cl.bg));
+    c.add(item);
+    v.render();
+    results = [];
+  }
+};
+
 v.render();
