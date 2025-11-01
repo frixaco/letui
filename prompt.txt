@@ -1,0 +1,35 @@
+ok, so i'm thinking of how layout is gonna work on conceptual
+level. here are my thought:
+
+Every component needs to know parent height and width. For Column
+and Row it can also be the height/width of the terminal. For
+Input, Button and Text it will be width/height of Column or Row.
+Each components needs to know some data:
+- Column/Row: parent W/H, alignement (like
+justify-between/center/ .. ), padding and gap
+Text: parent W/H (text length is not necessary as it will be
+cut off always; it should alse must be able to handle multiline
+based on pW/pH)
+- Button: pW, pH, own width and height (maybe padding is better)
+- Input: pW, pH (pH is needed if it's multiline input)
+
+As you can see Text, Input, Button all need parent width and
+height from parents (pW, pH).
+
+Another important topic is about width. I want to be able to have
+a Row with Input taking 70% and Button 30% and resize. I imagine
+this can be done by passing pW*0.7 or pW*0.3 to children (Input)
+from parent (Row). So I want to be able to RECALCULATE the layout
+whenever pW, pH changes (+ when inner Component state changes).
+
+To summarize, we have a tree like structure where we pass down
+some data from parents to calculate the layout. Now I have no
+idea how to represent all that in the code.
+
+MY QUESTION:
+Without going into implementation details yet, give me some hints
+on how should I approach painting process?
+(If I understand right, in my previous messy approach I was
+painting while doing layout)
+
+Use Oracle
