@@ -102,7 +102,7 @@ export function af<T>(srcOrFn: () => Promise<T | null>): {
   loading: Signal<boolean>;
 };
 export function af<T>(
-  srcOrFn: Signal<T | null>,
+  srcOrFn: Signal<T>,
   fn: (src: T) => Promise<T | null>,
 ): {
   data: Signal<T | null>;
@@ -161,7 +161,7 @@ export function af<T>(
   };
 }
 
-const counter = $(0);
+// const counter = $(0);
 
 // const { data, loading } = af(counter, async (c) => {
 //   console.log("--- async effect running");
@@ -173,17 +173,17 @@ const counter = $(0);
 //   console.log(`loading: ${loading()} data: ${data()}`);
 // });
 
-ff(() => {
-  console.log(counter());
-});
+// ff(() => {
+//   console.log(counter());
+// });
+//
+// counter(1);
+// console.log("first set called");
+//
+// counter(2);
+// console.log("second set called");
 
-counter(1);
-console.log("first set called");
-
-counter(2);
-console.log("second set called");
-
-function wait(ms: number = 1000): Promise<void> {
+export function wait(ms: number = 1000): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
