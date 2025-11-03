@@ -68,7 +68,7 @@ export function dd<T>(fn: () => T): ReadonlySignal<T> {
       caller = prev;
     }
 
-    if (!initialized && !Object.is(v, newV)) {
+    if (!initialized || !Object.is(v, newV)) {
       v = newV;
       initialized = true;
       for (const s of subs) schedule(s);
