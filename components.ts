@@ -3,8 +3,19 @@ import { COLORS } from "./colors.ts";
 import api from "./index.ts";
 import { $, ff, type Signal } from "./signals";
 
-let text = $("Hello World");
-let text2 = $("Hello World");
+function randomString(length = 6) {
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  return Array.from(
+    { length },
+    () => chars[Math.floor(Math.random() * chars.length)],
+  ).join("");
+}
+
+let text = $("Hello World!");
+let text2 = $("How are you?");
+let text3 = $("CLICK ME");
+let text4 = $("");
 
 run(
   Column(
@@ -81,6 +92,52 @@ run(
           }),
         ],
       ),
+
+      Row(
+        {
+          bg: COLORS.default.red,
+          border: {
+            color: COLORS.default.fg,
+            style: "square",
+          },
+          gap: 4,
+          padding: 0,
+        },
+        [
+          Button({
+            fg: COLORS.default.fg,
+            bg: COLORS.default.bg,
+            border: {
+              color: COLORS.default.fg,
+              style: "square",
+            },
+            padding: "4 1",
+            text: text3,
+            onClick: () => {
+              text("WASSUP");
+            },
+          }),
+
+          InputBox({
+            fg: COLORS.default.fg,
+            bg: COLORS.default.bg,
+            border: {
+              color: COLORS.default.fg,
+              style: "square",
+            },
+            text: text4,
+            onType: (value: string) => {
+              text4(value);
+            },
+            onFocus: () => {
+              // set border color
+            },
+            onBlur: () => {
+              // reset border color
+            },
+          }),
+        ],
+      ),
     ],
   ),
 );
@@ -90,7 +147,59 @@ function run(node: Node) {
   api.init_letui();
   process.stdin.resume();
 
-  process.stdin.on("data", async (data) => {
+  let canType = "k";
+  let pressedComponentId = $("");
+
+  function handleKeyboardEvent(d: string) {
+    if (canType === "") return;
+
+    if (d === "\x7f") {
+      text4(text4().slice(0, -1));
+    } else {
+      text4(text4() + d);
+    }
+  }
+
+  function handleMouseEvent(d: string) {
+    const i = d.indexOf("<") + 1;
+    const j = d.length - 1;
+    const c = d.slice(i, j).split(";");
+    const isPress = d[d.length - 1] === "M";
+    const isRelease = d[d.length - 1] === "m";
+    const x = Number(c[1]!) - 1;
+    const y = Number(c[2]!) - 1;
+
+    if (c[0] == "0") {
+      for (let item of hitMap) {
+        if (
+          x >= item.x &&
+          x < item.x + item.width &&
+          y >= item.y &&
+          y < item.y + item.height
+        ) {
+          if (isPress) {
+            pressedComponentId(item.id);
+            api.flush();
+          }
+          if (isRelease) {
+            pressedComponentId("");
+            item.onHit();
+            api.flush();
+          }
+        }
+      }
+    }
+  }
+
+  const MOUSE_EVENT_PREFIX = "\u001b[<";
+  const isMouseEvent = (d: string) => {
+    if (d.startsWith(MOUSE_EVENT_PREFIX)) {
+      return true;
+    }
+    return false;
+  };
+
+  process.stdin.on("data", (data) => {
     const d = data.toString();
 
     if (d === "\u0011") {
@@ -98,6 +207,13 @@ function run(node: Node) {
       api.deinit_letui();
       process.exit(0);
     }
+
+    if (isMouseEvent(d)) {
+      handleMouseEvent(d);
+      return;
+    }
+
+    handleKeyboardEvent(d);
   });
 
   let getBuffer = () => {
@@ -110,6 +226,8 @@ function run(node: Node) {
 
   let terminalWidth = $(api.get_width());
   let terminalHeight = $(api.get_height());
+
+  let hitMap: Array<HitMapItem> = [];
 
   process.stdout.on("resize", () => {
     api.update_terminal_size();
@@ -204,17 +322,85 @@ function run(node: Node) {
         node.frame.height += 2;
       }
     }
+
+    if (node.type === "button") {
+      const {
+        text: buttonText,
+        border = "none",
+        padding = 0,
+      } = node.props as ButtonProps;
+      let borderSize = border !== "none" ? 1 : 0;
+
+      let paddingX = padding as number;
+      let paddingY = padding as number;
+      if (typeof padding === "string") {
+        [paddingX, paddingY] = padding.split(" ").map(Number) as [
+          number,
+          number,
+        ];
+      }
+
+      node.frame.width =
+        [...buttonText()].length + 2 * paddingX + 2 * borderSize;
+      node.frame.height = 1 + 2 * paddingY + 2 * borderSize;
+
+      hitMap.push({
+        id: node.id,
+        ...node.frame,
+        onHit: (node.props as ButtonProps).onClick,
+      });
+    }
+
+    if (node.type === "input") {
+      const {
+        text: inputText,
+        border = "none",
+        padding = 0,
+      } = node.props as InputBoxProps;
+      let borderSize = border !== "none" ? 1 : 0;
+
+      let paddingX = padding as number;
+      let paddingY = padding as number;
+      if (typeof padding === "string") {
+        [paddingX, paddingY] = padding.split(" ").map(Number) as [
+          number,
+          number,
+        ];
+      }
+
+      node.frame.width =
+        ([...inputText()].length || 6) + 2 * paddingX + 2 * borderSize; // min width
+      node.frame.height = 1 + 2 * paddingY + 2 * borderSize; // min height
+
+      let contentWidth = node.frame.width - 2 * paddingX - 2 * borderSize;
+      let contentHeight = node.frame.height - 2 * paddingY - 2 * borderSize;
+
+      hitMap.push({
+        id: node.id,
+        ...node.frame,
+        onHit: () => {
+          canType = node.id;
+          (node.props as InputBoxProps).onFocus();
+        },
+      });
+    }
   }
 
   function paint(node: Node) {
-    let topLeft = node.frame.y * terminalWidth() + node.frame.x;
-    let bottomLeft = topLeft + (node.frame.height - 1) * terminalWidth();
-    let topRight = topLeft + node.frame.width - 1;
-    let bottomRight = bottomLeft + node.frame.width - 1;
+    function getContainerCorners(n: Node) {
+      let topLeft = n.frame.y * terminalWidth() + n.frame.x;
+      let bottomLeft = topLeft + (n.frame.height - 1) * terminalWidth();
+      let topRight = topLeft + n.frame.width - 1;
+      let bottomRight = bottomLeft + n.frame.width - 1;
+      return { topLeft, bottomLeft, topRight, bottomRight };
+    }
 
     if (node.type === "column") {
       let { bg = COLORS.default.bg, border = "none" } =
         node.props as ColumnProps;
+
+      let { topLeft, bottomLeft, topRight, bottomRight } =
+        getContainerCorners(node);
 
       drawBackground(buffer, node, bg, terminalWidth);
 
@@ -236,6 +422,8 @@ function run(node: Node) {
 
     if (node.type === "row") {
       let { bg = COLORS.default.bg, border = "none" } = node.props as RowProps;
+      let { topLeft, bottomLeft, topRight, bottomRight } =
+        getContainerCorners(node);
 
       drawBackground(buffer, node, bg, terminalWidth);
 
@@ -262,6 +450,9 @@ function run(node: Node) {
         border = "none",
         text,
       } = node.props as TextProps;
+
+      let { topLeft, bottomLeft, topRight, bottomRight } =
+        getContainerCorners(node);
 
       drawBackground(buffer, node, bg, terminalWidth);
 
@@ -294,6 +485,132 @@ function run(node: Node) {
       );
     }
 
+    if (node.type === "button") {
+      let {
+        fg = COLORS.default.fg,
+        bg = COLORS.default.bg,
+        border = "none",
+        text: buttonText,
+        padding,
+      } = node.props as ButtonProps;
+
+      let { topLeft, bottomLeft, topRight, bottomRight } =
+        getContainerCorners(node);
+
+      let isPressed = pressedComponentId() === node.id;
+
+      if (isPressed) {
+        drawBackground(buffer, node, fg, terminalWidth);
+      } else {
+        drawBackground(buffer, node, bg, terminalWidth);
+      }
+
+      if (border !== "none") {
+        drawBorder(
+          buffer,
+          node,
+          terminalWidth,
+          terminalHeight,
+          border.color || COLORS.default.fg,
+          bg,
+          topLeft,
+          bottomLeft,
+          topRight,
+          bottomRight,
+        );
+      }
+
+      let paddingX = padding as number;
+      let paddingY = padding as number;
+      if (typeof padding === "string") {
+        [paddingX, paddingY] = padding.split(" ").map(Number) as [
+          number,
+          number,
+        ];
+      }
+      let cells: bigint[] = [];
+      for (const c of buttonText()) {
+        cells.push(
+          BigInt(c.codePointAt(0)!),
+          BigInt(isPressed ? bg : fg),
+          BigInt(isPressed ? fg : bg),
+        );
+      }
+      let textBuffer = new BigUint64Array(cells);
+      buffer.set(
+        textBuffer,
+        ((node.frame.y + paddingY + (border !== "none" ? 1 : 0)) *
+          terminalWidth() +
+          node.frame.x +
+          paddingX +
+          (border !== "none" ? 1 : 0)) *
+          3,
+      );
+    }
+
+    if (node.type === "input") {
+      let {
+        fg = COLORS.default.fg,
+        bg = COLORS.default.bg,
+        border = "none",
+        text: buttonText,
+        padding = 0,
+      } = node.props as InputBoxProps;
+
+      let { topLeft, bottomLeft, topRight, bottomRight } =
+        getContainerCorners(node);
+
+      let isPressed = pressedComponentId() === node.id;
+
+      if (isPressed) {
+        drawBackground(buffer, node, fg, terminalWidth);
+      } else {
+        drawBackground(buffer, node, bg, terminalWidth);
+      }
+
+      if (border !== "none") {
+        drawBorder(
+          buffer,
+          node,
+          terminalWidth,
+          terminalHeight,
+          border.color || COLORS.default.fg,
+          bg,
+          topLeft,
+          bottomLeft,
+          topRight,
+          bottomRight,
+        );
+      }
+
+      let paddingX = padding as number;
+      let paddingY = padding as number;
+      if (typeof padding === "string") {
+        [paddingX, paddingY] = padding.split(" ").map(Number) as [
+          number,
+          number,
+        ];
+      }
+      let cells: bigint[] = [];
+      for (const c of buttonText()) {
+        cells.push(
+          BigInt(c.codePointAt(0)!),
+          BigInt(isPressed ? bg : fg),
+          BigInt(isPressed ? fg : bg),
+        );
+      }
+      let textBuffer = new BigUint64Array(cells);
+      buffer.set(
+        textBuffer,
+        ((node.frame.y + paddingY + (border !== "none" ? 1 : 0)) *
+          terminalWidth() +
+          node.frame.x +
+          paddingX +
+          (border !== "none" ? 1 : 0)) *
+          3,
+      );
+    }
+
     for (let child of node.children) {
       // TODO: pass as param to paint()
       child.props.bg = child.props.bg || node.props.bg;
@@ -303,6 +620,8 @@ function run(node: Node) {
   }
 
   ff(() => {
+    pressedComponentId();
+    hitMap = [];
     layout(node, terminalWidth(), terminalHeight());
     paint(node);
     api.flush();
@@ -378,6 +697,7 @@ function drawBorder(
 
 function Column(props: ColumnProps, children: Array<Node>): Node {
   return {
+    id: randomString(),
     type: "column",
     props,
     frame: getInitialFrame(),
@@ -387,6 +707,7 @@ function Column(props: ColumnProps, children: Array<Node>): Node {
 
 function Row(props: RowProps, children: Array<Node>): Node {
   return {
+    id: randomString(),
     type: "row",
     props,
     frame: getInitialFrame(),
@@ -396,7 +717,28 @@ function Row(props: RowProps, children: Array<Node>): Node {
 
 function Text(props: TextProps): Node {
   return {
+    id: randomString(),
     type: "text",
+    props,
+    frame: getInitialFrame(),
+    children: [],
+  };
+}
+
+function Button(props: ButtonProps): Node {
+  return {
+    id: randomString(),
+    type: "button",
+    props,
+    frame: getInitialFrame(),
+    children: [],
+  };
+}
+
+function InputBox(props: InputBoxProps): Node {
+  return {
+    id: randomString(),
+    type: "input",
     props,
     frame: getInitialFrame(),
     children: [],
@@ -412,6 +754,11 @@ function getInitialFrame(): Frame {
   };
 }
 
+type HitMapItem = Frame & {
+  id: string;
+  onHit: () => void;
+};
+
 type Frame = {
   x: number;
   y: number;
@@ -422,6 +769,7 @@ type Frame = {
 type ComponentType = "column" | "row" | "input" | "button" | "text";
 
 type Node = {
+  id: string;
   type: ComponentType;
   children: Array<Node>;
   props: ColumnProps | RowProps | InputBoxProps | ButtonProps | TextProps;
@@ -434,13 +782,16 @@ type ColumnProps = {
   border?: BorderProps;
   bg?: number;
 };
+
 type TextProps = {
   text: Signal<string>;
   fg?: number;
   bg?: number;
   border?: BorderProps;
 };
+
 type BorderStyle = "square" | "rounded";
+
 type BorderProps =
   | {
       color: number;
@@ -448,23 +799,29 @@ type BorderProps =
     }
   | "none";
 
-function Button(opts: ButtonProps) {}
-function InputBox(opts: InputBoxProps) {}
 type RowProps = {
   padding?: number | `${number} ${number}`;
   gap?: number;
   border?: BorderProps;
   bg?: number;
 };
+
 type ButtonProps = {
+  fg?: number;
   bg?: number;
   border?: BorderProps;
+  padding?: number | `${number} ${number}`;
+  text: Signal<string>;
+  onClick: () => void | Promise<void>;
 };
+
 type InputBoxProps = {
+  fg?: number;
   bg?: number;
-  text: string;
-  border: BorderProps;
+  text: Signal<string>;
+  border?: BorderProps;
+  padding?: number | `${number} ${number}`;
   onBlur: () => void;
   onFocus: () => void;
-  onType: () => void;
+  onType: (value: string) => void;
 };
