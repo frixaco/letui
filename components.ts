@@ -655,10 +655,9 @@ function setCell(
   fg: number,
   bg: number,
 ) {
-  buffer.set(
-    new BigUint64Array([BigInt(char.codePointAt(0)!), BigInt(fg), BigInt(bg)]),
-    offset,
-  );
+  buffer[offset] = BigInt(char.codePointAt(0)!);
+  buffer[offset + 1] = BigInt(fg);
+  buffer[offset + 2] = BigInt(bg);
 }
 
 function drawBorder(
