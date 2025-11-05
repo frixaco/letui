@@ -193,7 +193,7 @@ function run(node: Node) {
   api.init_letui();
   process.stdin.resume();
 
-  let canType = "k";
+  let canType = "";
   let pressedComponentId = $("");
   let focusedComponentId = $("");
 
@@ -202,8 +202,15 @@ function run(node: Node) {
 
     if (d === "\x7f") {
       text4(text4().slice(0, -1));
-    } else {
+    } else if (
+      d.length === 1 &&
+      d.charCodeAt(0) >= 32 &&
+      d.charCodeAt(0) <= 126
+    ) {
       text4(text4() + d);
+    } else if (d === "\r") {
+      // submit
+    } else {
     }
   }
 
@@ -232,6 +239,9 @@ function run(node: Node) {
           if (isPress) {
             pressedComponentId(item.id);
             focusedComponentId(item.id);
+            if (item.type === "input") {
+              canType = item.id;
+            }
             api.flush();
           }
           if (isRelease) {
@@ -409,6 +419,7 @@ function run(node: Node) {
 
       hitMap.push({
         id: node.id,
+        type: node.type,
         ...node.frame,
         onHit: (node.props as ButtonProps).onClick,
       });
@@ -441,6 +452,7 @@ function run(node: Node) {
 
       hitMap.push({
         id: node.id,
+        type: node.type,
         ...node.frame,
         onHit: () => {
           canType = node.id;
@@ -836,6 +848,7 @@ function getInitialFrame(): Frame {
 
 type HitMapItem = Frame & {
   id: string;
+  type: ComponentType;
   onHit: () => void;
 };
 
