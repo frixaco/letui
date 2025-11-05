@@ -58,6 +58,29 @@ run(
             },
             text: text2,
           }),
+
+          Row(
+            {
+              bg: COLORS.default.yellow,
+              border: {
+                color: COLORS.default.fg,
+                style: "square",
+              },
+              gap: 4,
+              padding: 1,
+            },
+            [
+              Text({
+                fg: COLORS.default.green,
+                bg: COLORS.default.fg,
+                border: {
+                  color: COLORS.default.fg,
+                  style: "square",
+                },
+                text: text2,
+              }),
+            ],
+          ),
         ],
       ),
 
@@ -138,6 +161,29 @@ run(
           }),
         ],
       ),
+
+      Column(
+        {
+          bg: COLORS.default.green,
+          border: {
+            color: COLORS.default.fg,
+            style: "square",
+          },
+          gap: 1,
+          padding: 0,
+        },
+        [
+          Text({
+            fg: COLORS.default.green,
+            bg: COLORS.default.fg,
+            border: {
+              color: COLORS.default.fg,
+              style: "square",
+            },
+            text: text2,
+          }),
+        ],
+      ),
     ],
   ),
 );
@@ -149,6 +195,7 @@ function run(node: Node) {
 
   let canType = "k";
   let pressedComponentId = $("");
+  let focusedComponentId = $("");
 
   function handleKeyboardEvent(d: string) {
     if (canType === "") return;
@@ -170,6 +217,11 @@ function run(node: Node) {
     const y = Number(c[2]!) - 1;
 
     if (c[0] == "0") {
+      if (isPress) {
+        focusedComponentId("");
+        api.flush();
+      }
+
       for (let item of hitMap) {
         if (
           x >= item.x &&
@@ -179,6 +231,7 @@ function run(node: Node) {
         ) {
           if (isPress) {
             pressedComponentId(item.id);
+            focusedComponentId(item.id);
             api.flush();
           }
           if (isRelease) {
@@ -270,14 +323,20 @@ function run(node: Node) {
       for (let child of node.children) {
         child.frame.x = node.frame.x + borderSize + paddingX;
         child.frame.y = node.frame.y + currentY;
-        layout(child, contentWidth, contentHeight);
+        layout(
+          child,
+          contentWidth,
+          // TODO: why need this for Row but not for Column:
+          // parentHeight - borderSize - paddingY - currentY,
+          contentHeight,
+        );
 
         currentY += child.frame.height + gap;
         maxChildWidth = Math.max(maxChildWidth, child.frame.width);
       }
 
       node.frame.height = currentY - gap + paddingY + borderSize;
-      node.frame.width = maxChildWidth + 2 * paddingX + 2 * borderSize;
+      // node.frame.width = maxChildWidth + 2 * paddingX + 2 * borderSize;
     }
 
     if (node.type === "row") {
@@ -302,13 +361,17 @@ function run(node: Node) {
       for (let child of node.children) {
         child.frame.x = node.frame.x + currentX;
         child.frame.y = node.frame.y + borderSize + paddingY;
-        layout(child, contentWidth, contentHeight);
+        layout(
+          child,
+          parentWidth - borderSize - paddingX - currentX,
+          contentHeight,
+        );
 
         currentX += child.frame.width + gap;
         maxChildHeight = Math.max(maxChildHeight, child.frame.height);
       }
 
-      node.frame.width = currentX - gap + paddingX + borderSize;
+      // node.frame.width = currentX - gap + paddingX + borderSize;
       node.frame.height = maxChildHeight + 2 * paddingY + 2 * borderSize;
     }
 
@@ -368,12 +431,13 @@ function run(node: Node) {
         ];
       }
 
-      node.frame.width =
-        ([...inputText()].length || 6) + 2 * paddingX + 2 * borderSize; // min width
-      node.frame.height = 1 + 2 * paddingY + 2 * borderSize; // min height
-
       let contentWidth = node.frame.width - 2 * paddingX - 2 * borderSize;
       let contentHeight = node.frame.height - 2 * paddingY - 2 * borderSize;
+
+      // node.frame.width =
+      //   ([...inputText()].length || 6) + 2 * paddingX + 2 * borderSize; // min width
+      // node.frame.width = contentWidth + borderSize + paddingX;
+      node.frame.height = 1 + 2 * paddingY + 2 * borderSize; // min height
 
       hitMap.push({
         id: node.id,
@@ -561,6 +625,7 @@ function run(node: Node) {
         getContainerCorners(node);
 
       let isPressed = pressedComponentId() === node.id;
+      let isFocused = focusedComponentId() === node.id;
 
       if (isPressed) {
         drawBackground(buffer, node, fg, terminalWidth);
@@ -569,18 +634,33 @@ function run(node: Node) {
       }
 
       if (border !== "none") {
-        drawBorder(
-          buffer,
-          node,
-          terminalWidth,
-          terminalHeight,
-          border.color || COLORS.default.fg,
-          bg,
-          topLeft,
-          bottomLeft,
-          topRight,
-          bottomRight,
-        );
+        if (isFocused) {
+          drawBorder(
+            buffer,
+            node,
+            terminalWidth,
+            terminalHeight,
+            bg,
+            border.color || COLORS.default.fg,
+            topLeft,
+            bottomLeft,
+            topRight,
+            bottomRight,
+          );
+        } else {
+          drawBorder(
+            buffer,
+            node,
+            terminalWidth,
+            terminalHeight,
+            border.color || COLORS.default.fg,
+            bg,
+            topLeft,
+            bottomLeft,
+            topRight,
+            bottomRight,
+          );
+        }
       }
 
       let paddingX = padding as number;
@@ -621,6 +701,7 @@ function run(node: Node) {
 
   ff(() => {
     pressedComponentId();
+    focusedComponentId();
     hitMap = [];
     layout(node, terminalWidth(), terminalHeight());
     paint(node);
