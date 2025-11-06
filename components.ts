@@ -12,10 +12,10 @@ function randomString(length = 6) {
   ).join("");
 }
 
-let text = $("Hello World!");
+let text = $("Search");
 let text2 = $("How are you?");
-let text3 = $("CLICK ME");
-let text4 = $("");
+let text3 = $("prev");
+let text4 = $("next");
 
 run(
   Column(
@@ -32,115 +32,10 @@ run(
       Row(
         {
           bg: COLORS.default.blue,
-          border: {
-            color: COLORS.default.fg,
-            style: "square",
-          },
           gap: 4,
           padding: 0,
         },
         [
-          Text({
-            fg: COLORS.default.orange,
-            bg: COLORS.default.grey,
-            border: {
-              color: COLORS.default.fg,
-              style: "square",
-            },
-            text: text,
-          }),
-          Text({
-            fg: COLORS.default.magenta,
-            bg: COLORS.default.fg,
-            border: {
-              color: COLORS.default.fg,
-              style: "square",
-            },
-            text: text2,
-          }),
-
-          Row(
-            {
-              bg: COLORS.default.yellow,
-              border: {
-                color: COLORS.default.fg,
-                style: "square",
-              },
-              gap: 4,
-              padding: 1,
-            },
-            [
-              Text({
-                fg: COLORS.default.green,
-                bg: COLORS.default.fg,
-                border: {
-                  color: COLORS.default.fg,
-                  style: "square",
-                },
-                text: text2,
-              }),
-            ],
-          ),
-        ],
-      ),
-
-      Row(
-        {
-          bg: COLORS.default.red,
-          border: {
-            color: COLORS.default.fg,
-            style: "square",
-          },
-          gap: 4,
-          padding: 0,
-        },
-        [
-          Text({
-            fg: COLORS.default.orange,
-            bg: COLORS.default.grey,
-            border: {
-              color: COLORS.default.fg,
-              style: "square",
-            },
-            text: text2,
-          }),
-          Text({
-            fg: COLORS.default.yellow,
-            bg: COLORS.default.cyan,
-            border: {
-              color: COLORS.default.fg,
-              style: "square",
-            },
-            text: text2,
-          }),
-        ],
-      ),
-
-      Row(
-        {
-          bg: COLORS.default.red,
-          border: {
-            color: COLORS.default.fg,
-            style: "square",
-          },
-          gap: 4,
-          padding: 0,
-        },
-        [
-          Button({
-            fg: COLORS.default.fg,
-            bg: COLORS.default.bg,
-            border: {
-              color: COLORS.default.fg,
-              style: "square",
-            },
-            padding: "4 1",
-            text: text3,
-            onClick: () => {
-              text("WASSUP");
-            },
-          }),
-
           InputBox({
             fg: COLORS.default.fg,
             bg: COLORS.default.bg,
@@ -159,6 +54,14 @@ run(
               // reset border color
             },
           }),
+
+          Button({
+            fg: COLORS.default.fg,
+            bg: COLORS.default.bg,
+            padding: "4 1",
+            text: text,
+            onClick: () => {},
+          }),
         ],
       ),
 
@@ -173,14 +76,57 @@ run(
           padding: 0,
         },
         [
-          Text({
-            fg: COLORS.default.green,
-            bg: COLORS.default.fg,
-            border: {
-              color: COLORS.default.fg,
-              style: "square",
+          Row(
+            {
+              bg: COLORS.default.red,
+              gap: 4,
+              padding: 0,
             },
-            text: text2,
+            [
+              Text({
+                fg: COLORS.default.orange,
+                bg: COLORS.default.grey,
+                border: {
+                  color: COLORS.default.fg,
+                  style: "square",
+                },
+                text: text2,
+              }),
+              Text({
+                fg: COLORS.default.yellow,
+                bg: COLORS.default.cyan,
+                border: {
+                  color: COLORS.default.fg,
+                  style: "square",
+                },
+                text: text2,
+              }),
+            ],
+          ),
+        ],
+      ),
+
+      Row(
+        {
+          bg: COLORS.default.red,
+          gap: 4,
+          padding: 0,
+        },
+        [
+          Button({
+            fg: COLORS.default.fg,
+            bg: COLORS.default.bg,
+            padding: "4 1",
+            text: text3,
+            onClick: () => {},
+          }),
+
+          Button({
+            fg: COLORS.default.fg,
+            bg: COLORS.default.bg,
+            padding: "4 1",
+            text: text4,
+            onClick: () => {},
           }),
         ],
       ),
@@ -330,23 +276,77 @@ function run(node: Node) {
       let currentY = borderSize + paddingY;
       let maxChildWidth = 0;
 
+      let fixedWidth: number[] = [];
+      let fixedHeight: number[] = [];
+      let flexWidth: number[] = [];
+      let flexHeight: number[] = [];
+
       for (let child of node.children) {
+        if (child.type === "text") {
+          const {
+            text: inputText,
+            border = "none",
+            padding = 0,
+          } = child.props as InputBoxProps;
+          let borderSize = border !== "none" ? 1 : 0;
+          let paddingX = padding as number;
+          let paddingY = padding as number;
+          if (typeof padding === "string") {
+            [paddingX, paddingY] = padding.split(" ").map(Number) as [
+              number,
+              number,
+            ];
+          }
+
+          let w = [...inputText()].length + 2 * (borderSize + paddingX);
+          let h = 1 + 2 * (borderSize + paddingX); // TODO: handle multiline
+          fixedWidth.push(w);
+          fixedHeight.push(h);
+        }
+
+        if (child.type === "button") {
+          const {
+            text: buttonText,
+            border = "none",
+            padding = 0,
+          } = node.props as ButtonProps;
+          let borderSize = border !== "none" ? 1 : 0;
+          let paddingX = padding as number;
+          let paddingY = padding as number;
+          if (typeof padding === "string") {
+            [paddingX, paddingY] = padding.split(" ").map(Number) as [
+              number,
+              number,
+            ];
+          }
+
+          let w = [...buttonText()].length + 2 * (paddingX + borderSize);
+          let h = 1 + 2 * (borderSize + paddingX);
+          fixedWidth.push(w);
+          fixedHeight.push(h);
+        }
+
+        if (child.type === "column") {
+          flexWidth.push(node.frame.width);
+          flexHeight.push(node.frame.height);
+        }
+
+        if (child.type === "row") {
+          flexWidth.push(node.frame.width);
+          flexHeight.push(node.frame.height);
+        }
+      }
+
+      for (let i = 0; i < node.children.length; i++) {
+        let child = node.children[i] as Node;
         child.frame.x = node.frame.x + borderSize + paddingX;
         child.frame.y = node.frame.y + currentY;
-        layout(
-          child,
-          contentWidth,
-          // TODO: why need this for Row but not for Column:
-          // parentHeight - borderSize - paddingY - currentY,
-          contentHeight,
-        );
+
+        layout(child, availableWidth, availableHeight);
 
         currentY += child.frame.height + gap;
         maxChildWidth = Math.max(maxChildWidth, child.frame.width);
       }
-
-      node.frame.height = currentY - gap + paddingY + borderSize;
-      // node.frame.width = maxChildWidth + 2 * paddingX + 2 * borderSize;
     }
 
     if (node.type === "row") {
@@ -918,3 +918,4 @@ type InputBoxProps = {
   onFocus: () => void;
   onType: (value: string) => void;
 };
+
