@@ -20,7 +20,6 @@ let text4 = $("next");
 run(
   Column(
     {
-      bg: COLORS.default.green,
       border: {
         color: COLORS.default.fg,
         style: "square",
@@ -31,14 +30,11 @@ run(
     [
       Row(
         {
-          bg: COLORS.default.blue,
           gap: 4,
           padding: 0,
         },
         [
           InputBox({
-            fg: COLORS.default.fg,
-            bg: COLORS.default.bg,
             border: {
               color: COLORS.default.fg,
               style: "square",
@@ -56,8 +52,6 @@ run(
           }),
 
           Button({
-            fg: COLORS.default.fg,
-            bg: COLORS.default.bg,
             padding: "4 1",
             text: text,
             onClick: () => {},
@@ -67,7 +61,6 @@ run(
 
       Column(
         {
-          bg: COLORS.default.green,
           border: {
             color: COLORS.default.fg,
             style: "square",
@@ -78,14 +71,11 @@ run(
         [
           Row(
             {
-              bg: COLORS.default.red,
               gap: 4,
               padding: 0,
             },
             [
               Text({
-                fg: COLORS.default.orange,
-                bg: COLORS.default.grey,
                 border: {
                   color: COLORS.default.fg,
                   style: "square",
@@ -93,8 +83,6 @@ run(
                 text: text2,
               }),
               Text({
-                fg: COLORS.default.yellow,
-                bg: COLORS.default.cyan,
                 border: {
                   color: COLORS.default.fg,
                   style: "square",
@@ -108,22 +96,17 @@ run(
 
       Row(
         {
-          bg: COLORS.default.red,
           gap: 4,
           padding: 0,
         },
         [
           Button({
-            fg: COLORS.default.fg,
-            bg: COLORS.default.bg,
             padding: "4 1",
             text: text3,
             onClick: () => {},
           }),
 
           Button({
-            fg: COLORS.default.fg,
-            bg: COLORS.default.bg,
             padding: "4 1",
             text: text4,
             onClick: () => {},
@@ -250,328 +233,65 @@ function run(node: Node) {
     buffer = getBuffer();
   });
 
-  function layout(node: Node, parentWidth: number, parentHeight: number) {
-    node.frame.width = parentWidth;
-    node.frame.height = parentHeight;
+  function layout(node: Node, parentWidth: number, parentHeight: number) {}
 
-    let contentWidth = 0;
-    let contentHeight = 0;
-
+  function paint(node: Node, overrideBg: number = COLORS.default.bg) {
     if (node.type === "column") {
-      let { border = "none", padding = 0, gap = 0 } = node.props as ColumnProps;
-      let borderSize = border !== "none" ? 1 : 0;
+      let { bg = overrideBg } = node.props as ColumnProps;
 
-      let paddingX = padding as number;
-      let paddingY = padding as number;
-      if (typeof padding === "string") {
-        [paddingX, paddingY] = padding.split(" ").map(Number) as [
-          number,
-          number,
-        ];
-      }
-
-      contentWidth = parentWidth - 2 * borderSize - 2 * paddingX;
-      contentHeight = parentHeight - 2 * borderSize - 2 * paddingY;
-
-      let currentY = borderSize + paddingY;
-      let maxChildWidth = 0;
-
-      let fixedWidth: number[] = [];
-      let fixedHeight: number[] = [];
-      let flexWidth: number[] = [];
-      let flexHeight: number[] = [];
-
-      for (let child of node.children) {
-        if (child.type === "text") {
-          const {
-            text: inputText,
-            border = "none",
-            padding = 0,
-          } = child.props as InputBoxProps;
-          let borderSize = border !== "none" ? 1 : 0;
-          let paddingX = padding as number;
-          let paddingY = padding as number;
-          if (typeof padding === "string") {
-            [paddingX, paddingY] = padding.split(" ").map(Number) as [
-              number,
-              number,
-            ];
-          }
-
-          let w = [...inputText()].length + 2 * (borderSize + paddingX);
-          let h = 1 + 2 * (borderSize + paddingX); // TODO: handle multiline
-          fixedWidth.push(w);
-          fixedHeight.push(h);
-        }
-
-        if (child.type === "button") {
-          const {
-            text: buttonText,
-            border = "none",
-            padding = 0,
-          } = node.props as ButtonProps;
-          let borderSize = border !== "none" ? 1 : 0;
-          let paddingX = padding as number;
-          let paddingY = padding as number;
-          if (typeof padding === "string") {
-            [paddingX, paddingY] = padding.split(" ").map(Number) as [
-              number,
-              number,
-            ];
-          }
-
-          let w = [...buttonText()].length + 2 * (paddingX + borderSize);
-          let h = 1 + 2 * (borderSize + paddingX);
-          fixedWidth.push(w);
-          fixedHeight.push(h);
-        }
-
-        if (child.type === "column") {
-          flexWidth.push(node.frame.width);
-          flexHeight.push(node.frame.height);
-        }
-
-        if (child.type === "row") {
-          flexWidth.push(node.frame.width);
-          flexHeight.push(node.frame.height);
-        }
-      }
-
-      for (let i = 0; i < node.children.length; i++) {
-        let child = node.children[i] as Node;
-        child.frame.x = node.frame.x + borderSize + paddingX;
-        child.frame.y = node.frame.y + currentY;
-
-        layout(child, availableWidth, availableHeight);
-
-        currentY += child.frame.height + gap;
-        maxChildWidth = Math.max(maxChildWidth, child.frame.width);
-      }
+      drawBackground(buffer, node, bg, terminalWidth);
+      drawBorder(buffer, node, terminalWidth);
     }
 
     if (node.type === "row") {
-      let { border = "none", padding = 0, gap = 0 } = node.props as RowProps;
-      let borderSize = border !== "none" ? 1 : 0;
-
-      let paddingX = padding as number;
-      let paddingY = padding as number;
-      if (typeof padding === "string") {
-        [paddingX, paddingY] = padding.split(" ").map(Number) as [
-          number,
-          number,
-        ];
-      }
-
-      contentWidth = parentWidth - 2 * borderSize - 2 * paddingX;
-      contentHeight = parentHeight - 2 * borderSize - 2 * paddingY;
-
-      let currentX = borderSize + paddingX;
-      let maxChildHeight = 0;
-
-      for (let child of node.children) {
-        child.frame.x = node.frame.x + currentX;
-        child.frame.y = node.frame.y + borderSize + paddingY;
-        layout(
-          child,
-          parentWidth - borderSize - paddingX - currentX,
-          contentHeight,
-        );
-
-        currentX += child.frame.width + gap;
-        maxChildHeight = Math.max(maxChildHeight, child.frame.height);
-      }
-
-      // node.frame.width = currentX - gap + paddingX + borderSize;
-      node.frame.height = maxChildHeight + 2 * paddingY + 2 * borderSize;
-    }
-
-    if (node.type === "text") {
-      const { text, border = "none" } = node.props as TextProps;
-      node.frame.width = [...text()].length;
-      node.frame.height = 1;
-
-      if (border && border !== "none") {
-        node.frame.width += 2;
-        node.frame.height += 2;
-      }
-    }
-
-    if (node.type === "button") {
-      const {
-        text: buttonText,
-        border = "none",
-        padding = 0,
-      } = node.props as ButtonProps;
-      let borderSize = border !== "none" ? 1 : 0;
-
-      let paddingX = padding as number;
-      let paddingY = padding as number;
-      if (typeof padding === "string") {
-        [paddingX, paddingY] = padding.split(" ").map(Number) as [
-          number,
-          number,
-        ];
-      }
-
-      node.frame.width =
-        [...buttonText()].length + 2 * paddingX + 2 * borderSize;
-      node.frame.height = 1 + 2 * paddingY + 2 * borderSize;
-
-      hitMap.push({
-        id: node.id,
-        type: node.type,
-        ...node.frame,
-        onHit: (node.props as ButtonProps).onClick,
-      });
-    }
-
-    if (node.type === "input") {
-      const {
-        text: inputText,
-        border = "none",
-        padding = 0,
-      } = node.props as InputBoxProps;
-      let borderSize = border !== "none" ? 1 : 0;
-
-      let paddingX = padding as number;
-      let paddingY = padding as number;
-      if (typeof padding === "string") {
-        [paddingX, paddingY] = padding.split(" ").map(Number) as [
-          number,
-          number,
-        ];
-      }
-
-      let contentWidth = node.frame.width - 2 * paddingX - 2 * borderSize;
-      let contentHeight = node.frame.height - 2 * paddingY - 2 * borderSize;
-
-      // node.frame.width =
-      //   ([...inputText()].length || 6) + 2 * paddingX + 2 * borderSize; // min width
-      // node.frame.width = contentWidth + borderSize + paddingX;
-      node.frame.height = 1 + 2 * paddingY + 2 * borderSize; // min height
-
-      hitMap.push({
-        id: node.id,
-        type: node.type,
-        ...node.frame,
-        onHit: () => {
-          canType = node.id;
-          (node.props as InputBoxProps).onFocus();
-        },
-      });
-    }
-  }
-
-  function paint(node: Node) {
-    function getContainerCorners(n: Node) {
-      let topLeft = n.frame.y * terminalWidth() + n.frame.x;
-      let bottomLeft = topLeft + (n.frame.height - 1) * terminalWidth();
-      let topRight = topLeft + n.frame.width - 1;
-      let bottomRight = bottomLeft + n.frame.width - 1;
-      return { topLeft, bottomLeft, topRight, bottomRight };
-    }
-
-    if (node.type === "column") {
-      let { bg = COLORS.default.bg, border = "none" } =
-        node.props as ColumnProps;
-
-      let { topLeft, bottomLeft, topRight, bottomRight } =
-        getContainerCorners(node);
+      let { bg = overrideBg } = node.props as RowProps;
 
       drawBackground(buffer, node, bg, terminalWidth);
-
-      if (border !== "none") {
-        drawBorder(
-          buffer,
-          node,
-          terminalWidth,
-          terminalHeight,
-          border.color || COLORS.default.fg,
-          bg,
-          topLeft,
-          bottomLeft,
-          topRight,
-          bottomRight,
-        );
-      }
-    }
-
-    if (node.type === "row") {
-      let { bg = COLORS.default.bg, border = "none" } = node.props as RowProps;
-      let { topLeft, bottomLeft, topRight, bottomRight } =
-        getContainerCorners(node);
-
-      drawBackground(buffer, node, bg, terminalWidth);
-
-      if (border !== "none") {
-        drawBorder(
-          buffer,
-          node,
-          terminalWidth,
-          terminalHeight,
-          border.color || COLORS.default.fg,
-          bg,
-          topLeft,
-          bottomLeft,
-          topRight,
-          bottomRight,
-        );
-      }
+      drawBorder(buffer, node, terminalWidth);
     }
 
     if (node.type === "text") {
       let {
         fg = COLORS.default.fg,
-        bg = COLORS.default.bg,
+        bg = overrideBg,
         border = "none",
+        padding,
         text,
       } = node.props as TextProps;
 
-      let { topLeft, bottomLeft, topRight, bottomRight } =
-        getContainerCorners(node);
-
       drawBackground(buffer, node, bg, terminalWidth);
+      drawBorder(buffer, node, terminalWidth);
 
-      if (border !== "none") {
-        drawBorder(
-          buffer,
-          node,
-          terminalWidth,
-          terminalHeight,
-          border.color || COLORS.default.fg,
-          bg,
-          topLeft,
-          bottomLeft,
-          topRight,
-          bottomRight,
-        );
+      let paddingX = padding as number;
+      let paddingY = padding as number;
+      if (typeof padding === "string") {
+        [paddingX, paddingY] = padding.split(" ").map(Number) as [
+          number,
+          number,
+        ];
       }
-
       let cells: bigint[] = [];
       for (const c of text()) {
         cells.push(BigInt(c.codePointAt(0)!), BigInt(fg), BigInt(bg));
       }
       let textBuffer = new BigUint64Array(cells);
-      buffer.set(
-        textBuffer,
-        ((node.frame.y + (border !== "none" ? 1 : 0)) * terminalWidth() +
-          node.frame.x +
-          (border !== "none" ? 1 : 0)) *
-          3,
-      );
+      let offset =
+        (node.frame.y + paddingY + (border !== "none" ? 1 : 0)) *
+          terminalWidth() +
+        node.frame.x +
+        paddingX +
+        (border !== "none" ? 1 : 0);
+      buffer.set(textBuffer, offset * 3);
     }
 
     if (node.type === "button") {
       let {
         fg = COLORS.default.fg,
-        bg = COLORS.default.bg,
+        bg = overrideBg,
         border = "none",
-        text: buttonText,
         padding,
+        text: buttonText,
       } = node.props as ButtonProps;
-
-      let { topLeft, bottomLeft, topRight, bottomRight } =
-        getContainerCorners(node);
 
       let isPressed = pressedComponentId() === node.id;
 
@@ -581,20 +301,7 @@ function run(node: Node) {
         drawBackground(buffer, node, bg, terminalWidth);
       }
 
-      if (border !== "none") {
-        drawBorder(
-          buffer,
-          node,
-          terminalWidth,
-          terminalHeight,
-          border.color || COLORS.default.fg,
-          bg,
-          topLeft,
-          bottomLeft,
-          topRight,
-          bottomRight,
-        );
-      }
+      drawBorder(buffer, node, terminalWidth);
 
       let paddingX = padding as number;
       let paddingY = padding as number;
@@ -627,14 +334,11 @@ function run(node: Node) {
     if (node.type === "input") {
       let {
         fg = COLORS.default.fg,
-        bg = COLORS.default.bg,
+        bg = overrideBg,
         border = "none",
         text: buttonText,
         padding = 0,
       } = node.props as InputBoxProps;
-
-      let { topLeft, bottomLeft, topRight, bottomRight } =
-        getContainerCorners(node);
 
       let isPressed = pressedComponentId() === node.id;
       let isFocused = focusedComponentId() === node.id;
@@ -645,34 +349,22 @@ function run(node: Node) {
         drawBackground(buffer, node, bg, terminalWidth);
       }
 
-      if (border !== "none") {
-        if (isFocused) {
-          drawBorder(
-            buffer,
-            node,
-            terminalWidth,
-            terminalHeight,
-            bg,
-            border.color || COLORS.default.fg,
-            topLeft,
-            bottomLeft,
-            topRight,
-            bottomRight,
-          );
-        } else {
-          drawBorder(
-            buffer,
-            node,
-            terminalWidth,
-            terminalHeight,
-            border.color || COLORS.default.fg,
-            bg,
-            topLeft,
-            bottomLeft,
-            topRight,
-            bottomRight,
-          );
-        }
+      if (isFocused) {
+        drawBorder(
+          buffer,
+          node,
+          terminalWidth,
+          bg,
+          border !== "none" ? border.color : COLORS.default.fg,
+        );
+      } else {
+        drawBorder(
+          buffer,
+          node,
+          terminalWidth,
+          border !== "none" ? border.color : COLORS.default.fg,
+          bg,
+        );
       }
 
       let paddingX = padding as number;
@@ -704,10 +396,7 @@ function run(node: Node) {
     }
 
     for (let child of node.children) {
-      // TODO: pass as param to paint()
-      child.props.bg = child.props.bg || node.props.bg;
-
-      paint(child);
+      paint(child, node.props.bg);
     }
   }
 
@@ -716,7 +405,7 @@ function run(node: Node) {
     focusedComponentId();
     hitMap = [];
     layout(node, terminalWidth(), terminalHeight());
-    paint(node);
+    paint(node, node.props.bg);
     api.flush();
   });
 }
@@ -753,22 +442,34 @@ function setCell(
   buffer[offset + 2] = BigInt(bg);
 }
 
+function getContainerCorners(node: Node, tw: number) {
+  let topLeft = node.frame.y * tw + node.frame.x;
+  let bottomLeft = topLeft + (node.frame.height - 1) * tw;
+  let topRight = topLeft + node.frame.width - 1;
+  let bottomRight = bottomLeft + node.frame.width - 1;
+  return { topLeft, bottomLeft, topRight, bottomRight };
+}
+
 function drawBorder(
   buffer: BigUint64Array<ArrayBuffer>,
   node: Node,
   terminalWidth: Signal<number>,
-  terminalHeight: Signal<number>,
-  fg: number,
-  bg: number,
-  topLeft: number,
-  bottomLeft: number,
-  topRight: number,
-  bottomRight: number,
+  overrideFg?: number,
+  overrideBg?: number,
 ) {
-  let { width, height } = node.frame;
   let border = node.props.border as BorderProps;
   if (border === "none") return;
+
+  let { width, height } = node.frame;
   let style = border.style;
+
+  let fg = overrideFg || border.color || COLORS.default.fg;
+  let bg = overrideBg || node.props.bg || COLORS.default.bg;
+
+  let { topLeft, bottomLeft, topRight, bottomRight } = getContainerCorners(
+    node,
+    terminalWidth(),
+  );
 
   setCell(buffer, topLeft * 3, style === "square" ? "┌" : "╭", fg, bg);
   setCell(buffer, bottomLeft * 3, style === "square" ? "└" : "╰", fg, bg);
@@ -877,10 +578,11 @@ type ColumnProps = {
 };
 
 type TextProps = {
-  text: Signal<string>;
   fg?: number;
   bg?: number;
   border?: BorderProps;
+  padding?: number | `${number} ${number}`;
+  text: Signal<string>;
 };
 
 type BorderStyle = "square" | "rounded";
@@ -918,4 +620,3 @@ type InputBoxProps = {
   onFocus: () => void;
   onType: (value: string) => void;
 };
-
