@@ -17,6 +17,45 @@ let text2 = $("How are you?");
 let text3 = $("prev");
 let text4 = $("next");
 
+// run(
+//   Column(
+//     {
+//       border: {
+//         color: COLORS.default.fg,
+//         style: "square",
+//       },
+//       gap: 1,
+//       padding: "3 1",
+//     },
+//
+//     [
+//       Row(
+//         {
+//           border: {
+//             color: COLORS.default.fg,
+//             style: "square",
+//           },
+//           gap: 1,
+//           padding: "3 1",
+//         },
+//         [
+//           Row(
+//             {
+//               border: {
+//                 color: COLORS.default.fg,
+//                 style: "square",
+//               },
+//               gap: 1,
+//               padding: "3 1",
+//             },
+//             [],
+//           ),
+//         ],
+//       ),
+//     ],
+//   ),
+// );
+
 run(
   Column(
     {
@@ -233,7 +272,160 @@ function run(node: Node) {
     buffer = getBuffer();
   });
 
-  function layout(node: Node, parentWidth: number, parentHeight: number) {}
+  function layout(node: Node, parentWidth: number, parentHeight: number) {
+    node.frame.x = node.frame.x || 0;
+    node.frame.y = node.frame.y || 0;
+    node.frame.width = parentWidth;
+    node.frame.height = parentHeight;
+
+    let fixed: Record<string, { w: number; h: number }> = {};
+    let flex: Record<string, { w: number; h: number }> = {};
+
+    for (let child of node.children) {
+      const { padding = 0, border = "none" } = child.props;
+      let borderSize = border !== "none" ? 1 : 0;
+      let paddingX = padding as number;
+      let paddingY = padding as number;
+      if (typeof padding === "string") {
+        [paddingX, paddingY] = padding.split(" ").map(Number) as [
+          number,
+          number,
+        ];
+      }
+
+      if (child.type === "button") {
+        let { text: cText } = child.props as TextProps;
+        fixed[child.id] = {
+          w: [...cText()].length + 2 * (borderSize + paddingX),
+          h: 1 + 2 * (borderSize + paddingX),
+        };
+      }
+      if (child.type === "text") {
+        let { text: cText } = child.props as TextProps;
+        fixed[child.id] = {
+          w: [...cText()].length + 2 * (borderSize + paddingX),
+          h: 1 + 2 * (borderSize + paddingX),
+        };
+      }
+    }
+
+    for (let child of node.children) {
+      const { padding = 0, border = "none" } = child.props;
+      let borderSize = border !== "none" ? 1 : 0;
+      let paddingX = padding as number;
+      let paddingY = padding as number;
+      if (typeof padding === "string") {
+        [paddingX, paddingY] = padding.split(" ").map(Number) as [
+          number,
+          number,
+        ];
+      }
+
+      let flexCount = node.children.reduce((a, c) => {
+        if (["row", "column", "input"].includes(c.type)) {
+          return a + 1;
+        }
+        return a;
+      }, 0);
+      let totalFixedWidth = Object.values(fixed).reduce((a, c) => a + c.w, 0);
+      let totalFixedHeight = Object.values(fixed).reduce((a, c) => a + c.h, 0);
+
+      if (child.type === "column") {
+        flex[child.id] = {
+          w: parentHeight - 2 * (borderSize + paddingX),
+          h:
+            node.frame.height -
+            totalFixedHeight -
+            (flexCount > 0 ? node.frame.height / flexCount : 0),
+        };
+      }
+      if (child.type === "row") {
+        flex[child.id] = {
+          w:
+            node.frame.width -
+            totalFixedWidth -
+            (flexCount > 0 ? node.frame.width / flexCount : 0),
+          h: parentHeight - 2 * (borderSize + paddingY),
+        };
+      }
+      if (child.type === "input") {
+        flex[child.id] = {
+          w:
+            node.frame.width -
+            totalFixedWidth -
+            (flexCount > 0 ? node.frame.width / flexCount : 0),
+          h: parentHeight - 2 * (borderSize + paddingY),
+        };
+      }
+    }
+
+    const { padding = 0, border = "none" } = node.props as CommonProps;
+    let borderSize = border !== "none" ? 1 : 0;
+    let paddingX = padding as number;
+    let paddingY = padding as number;
+    if (typeof padding === "string") {
+      [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
+    }
+
+    if (node.type === "column") {
+      let { gap = 0 } = node.props as ColumnProps;
+      let currentY = node.frame.y + borderSize + paddingY;
+
+      for (let child of node.children) {
+        child.frame.x = node.frame.x + borderSize + paddingX;
+        child.frame.y = currentY;
+
+        let availableWidth =
+          flex[child.id]?.w ||
+          fixed[child.id]?.w ||
+          node.frame.width - 2 * (borderSize + paddingX);
+        let availableHeight =
+          flex[child.id]?.h ||
+          fixed[child.id]?.h ||
+          node.frame.height - 2 * (borderSize + paddingX);
+        layout(child, availableWidth, availableHeight);
+
+        currentY += availableHeight + gap;
+      }
+    }
+
+    if (node.type === "row") {
+      let { gap = 0 } = node.props as RowProps;
+      let currentX = node.frame.x + borderSize + paddingX;
+
+      for (let child of node.children) {
+        child.frame.x = currentX;
+        child.frame.y = node.frame.y + borderSize + paddingY;
+
+        let availableWidth =
+          flex[child.id]?.w ||
+          fixed[child.id]?.w ||
+          node.frame.width - 2 * (borderSize + paddingX);
+        let availableHeight =
+          flex[child.id]?.h ||
+          fixed[child.id]?.h ||
+          node.frame.height - 2 * (borderSize + paddingX);
+        layout(child, availableWidth, availableHeight);
+
+        currentX += availableWidth + gap;
+      }
+    }
+
+    Bun.write(
+      Bun.file("log.txt"),
+      JSON.stringify(
+        {
+          parentWidth,
+          parentHeight,
+          node,
+          fixed,
+          flex,
+        },
+        null,
+        2,
+      ),
+    );
+  }
 
   function paint(node: Node, overrideBg: number = COLORS.default.bg) {
     if (node.type === "column") {
@@ -457,7 +649,7 @@ function drawBorder(
   overrideFg?: number,
   overrideBg?: number,
 ) {
-  let border = node.props.border as BorderProps;
+  let border = (node.props?.border as BorderProps) || "none";
   if (border === "none") return;
 
   let { width, height } = node.frame;
@@ -570,18 +762,19 @@ type Node = {
   frame: Frame;
 };
 
-type ColumnProps = {
+type CommonProps = {
   padding?: number | `${number} ${number}`;
-  gap?: number;
   border?: BorderProps;
+};
+
+type ColumnProps = CommonProps & {
+  gap?: number;
   bg?: number;
 };
 
-type TextProps = {
+type TextProps = CommonProps & {
   fg?: number;
   bg?: number;
-  border?: BorderProps;
-  padding?: number | `${number} ${number}`;
   text: Signal<string>;
 };
 
@@ -594,28 +787,22 @@ type BorderProps =
     }
   | "none";
 
-type RowProps = {
-  padding?: number | `${number} ${number}`;
+type RowProps = CommonProps & {
   gap?: number;
-  border?: BorderProps;
   bg?: number;
 };
 
-type ButtonProps = {
+type ButtonProps = CommonProps & {
   fg?: number;
   bg?: number;
-  border?: BorderProps;
-  padding?: number | `${number} ${number}`;
   text: Signal<string>;
   onClick: () => void | Promise<void>;
 };
 
-type InputBoxProps = {
+type InputBoxProps = CommonProps & {
   fg?: number;
   bg?: number;
   text: Signal<string>;
-  border?: BorderProps;
-  padding?: number | `${number} ${number}`;
   onBlur: () => void;
   onFocus: () => void;
   onType: (value: string) => void;
