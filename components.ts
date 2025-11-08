@@ -1,7 +1,8 @@
-import { toArrayBuffer, type Pointer } from "bun:ffi";
+import { ptr, toArrayBuffer, type Pointer } from "bun:ffi";
 import { COLORS } from "./colors.ts";
 import api from "./index.ts";
 import { $, ff, type Signal } from "./signals";
+import { Children } from "react";
 
 function randomString(length = 6) {
   const chars =
@@ -16,6 +17,41 @@ let text = $("Search");
 let text2 = $("How are you?");
 let text3 = $("prev");
 let text4 = $("next");
+
+run(
+  Column(
+    {
+      border: {
+        color: COLORS.default.fg,
+        style: "square",
+      },
+      gap: 1,
+      padding: "3 1",
+    },
+    [
+      Row(
+        {
+          border: {
+            color: COLORS.default.fg,
+            style: "square",
+          },
+          gap: 1,
+          padding: "3 1",
+        },
+        [
+          Text({
+            border: {
+              color: COLORS.default.fg,
+              style: "square",
+            },
+            padding: "3 1",
+            text: text,
+          }),
+        ],
+      ),
+    ],
+  ),
+);
 
 // run(
 //   Column(
@@ -56,105 +92,127 @@ let text4 = $("next");
 //   ),
 // );
 
-run(
-  Column(
-    {
-      border: {
-        color: COLORS.default.fg,
-        style: "square",
-      },
-      gap: 1,
-      padding: 0,
-    },
-    [
-      Row(
-        {
-          gap: 4,
-          padding: 0,
-        },
-        [
-          InputBox({
-            border: {
-              color: COLORS.default.fg,
-              style: "square",
-            },
-            text: text4,
-            onType: (value: string) => {
-              text4(value);
-            },
-            onFocus: () => {
-              // set border color
-            },
-            onBlur: () => {
-              // reset border color
-            },
-          }),
+// run(
+//   Column(
+//     {
+//       border: {
+//         color: COLORS.default.fg,
+//         style: "square",
+//       },
+//       gap: 1,
+//       padding: "1 0",
+//     },
+//     [
+//       Row(
+//         {
+//           gap: 1,
+//           padding: "1 0",
+//         },
+//         [
+//           InputBox({
+//             border: {
+//               color: COLORS.default.fg,
+//               style: "square",
+//             },
+//             text: text4,
+//             onType: (value: string) => {
+//               text4(value);
+//             },
+//             onFocus: () => {
+//               // set border color
+//             },
+//             onBlur: () => {
+//               // reset border color
+//             },
+//           }),
+//
+//           Button({
+//             padding: "3 1",
+//             text: text,
+//             onClick: () => {},
+//           }),
+//         ],
+//       ),
+//
+//       Column(
+//         {
+//           border: {
+//             color: COLORS.default.fg,
+//             style: "square",
+//           },
+//           gap: 1,
+//           padding: "1 0",
+//         },
+//         [
+//           Row(
+//             {
+//               gap: 1,
+//               padding: "1 0",
+//             },
+//             [
+//               Text({
+//                 border: {
+//                   color: COLORS.default.fg,
+//                   style: "square",
+//                 },
+//                 text: text2,
+//               }),
+//               Text({
+//                 border: {
+//                   color: COLORS.default.fg,
+//                   style: "square",
+//                 },
+//                 text: text2,
+//               }),
+//             ],
+//           ),
+//         ],
+//       ),
+//
+//       Row(
+//         {
+//           gap: 12,
+//           padding: "1 0",
+//         },
+//         [
+//           Button({
+//             padding: "3 1",
+//             text: text3,
+//             onClick: () => {},
+//           }),
+//
+//           Button({
+//             padding: "3 1",
+//             text: text4,
+//             onClick: () => {},
+//           }),
+//         ],
+//       ),
+//     ],
+//   ),
+// );
 
-          Button({
-            padding: "4 1",
-            text: text,
-            onClick: () => {},
-          }),
-        ],
-      ),
+function getNodeFrame(node: Node) {
+  const { padding = 0, border = "none" } = node.props;
+  let borderSize = border !== "none" ? 1 : 0;
+  let paddingX = padding as number;
+  let paddingY = padding as number;
+  if (typeof padding === "string") {
+    [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
+  }
 
-      Column(
-        {
-          border: {
-            color: COLORS.default.fg,
-            style: "square",
-          },
-          gap: 1,
-          padding: 0,
-        },
-        [
-          Row(
-            {
-              gap: 4,
-              padding: 0,
-            },
-            [
-              Text({
-                border: {
-                  color: COLORS.default.fg,
-                  style: "square",
-                },
-                text: text2,
-              }),
-              Text({
-                border: {
-                  color: COLORS.default.fg,
-                  style: "square",
-                },
-                text: text2,
-              }),
-            ],
-          ),
-        ],
-      ),
+  let gap = 0;
+  if ("gap" in node.props) {
+    gap = node.props.gap || 0;
+  }
 
-      Row(
-        {
-          gap: 4,
-          padding: 0,
-        },
-        [
-          Button({
-            padding: "4 1",
-            text: text3,
-            onClick: () => {},
-          }),
-
-          Button({
-            padding: "4 1",
-            text: text4,
-            onClick: () => {},
-          }),
-        ],
-      ),
-    ],
-  ),
-);
+  return {
+    borderSize,
+    paddingX,
+    paddingY,
+    gap,
+  };
+}
 
 function run(node: Node) {
   api.init_buffer();
@@ -272,159 +330,54 @@ function run(node: Node) {
     buffer = getBuffer();
   });
 
-  function layout(node: Node, parentWidth: number, parentHeight: number) {
-    node.frame.x = node.frame.x || 0;
-    node.frame.y = node.frame.y || 0;
-    node.frame.width = parentWidth;
-    node.frame.height = parentHeight;
-
-    let fixed: Record<string, { w: number; h: number }> = {};
-    let flex: Record<string, { w: number; h: number }> = {};
-
-    for (let child of node.children) {
-      const { padding = 0, border = "none" } = child.props;
-      let borderSize = border !== "none" ? 1 : 0;
-      let paddingX = padding as number;
-      let paddingY = padding as number;
-      if (typeof padding === "string") {
-        [paddingX, paddingY] = padding.split(" ").map(Number) as [
-          number,
-          number,
-        ];
-      }
-
-      if (child.type === "button") {
-        let { text: cText } = child.props as TextProps;
-        fixed[child.id] = {
-          w: [...cText()].length + 2 * (borderSize + paddingX),
-          h: 1 + 2 * (borderSize + paddingX),
-        };
-      }
-      if (child.type === "text") {
-        let { text: cText } = child.props as TextProps;
-        fixed[child.id] = {
-          w: [...cText()].length + 2 * (borderSize + paddingX),
-          h: 1 + 2 * (borderSize + paddingX),
-        };
-      }
+  function serializeNodes(node: Node) {
+    let nodeCount = 0;
+    function toTree(n: Node): Record<string, any> {
+      nodeCount++;
+      return {
+        id: n.id,
+        type: n.type,
+        gap: (n.props as any).gap || 0,
+        padding: (n.props as any).padding || 0,
+        border: (n.props as any).border !== "none" ? 1 : 0,
+        text: (n.props as any).text ? (n.props as any).text() : "",
+        children: n.children.map(toTree),
+      };
     }
 
-    for (let child of node.children) {
-      const { padding = 0, border = "none" } = child.props;
-      let borderSize = border !== "none" ? 1 : 0;
-      let paddingX = padding as number;
-      let paddingY = padding as number;
-      if (typeof padding === "string") {
-        [paddingX, paddingY] = padding.split(" ").map(Number) as [
-          number,
-          number,
-        ];
-      }
+    return {
+      tree: toTree(node),
+      nodeCount,
+    };
+  }
 
-      let flexCount = node.children.reduce((a, c) => {
-        if (["row", "column", "input"].includes(c.type)) {
-          return a + 1;
-        }
-        return a;
-      }, 0);
-      let totalFixedWidth = Object.values(fixed).reduce((a, c) => a + c.w, 0);
-      let totalFixedHeight = Object.values(fixed).reduce((a, c) => a + c.h, 0);
+  function layout(node: Node) {
+    let { tree, nodeCount } = serializeNodes(node);
 
-      if (child.type === "column") {
-        flex[child.id] = {
-          w: parentHeight - 2 * (borderSize + paddingX),
-          h:
-            node.frame.height -
-            totalFixedHeight -
-            (flexCount > 0 ? node.frame.height / flexCount : 0),
-        };
-      }
-      if (child.type === "row") {
-        flex[child.id] = {
-          w:
-            node.frame.width -
-            totalFixedWidth -
-            (flexCount > 0 ? node.frame.width / flexCount : 0),
-          h: parentHeight - 2 * (borderSize + paddingY),
-        };
-      }
-      if (child.type === "input") {
-        flex[child.id] = {
-          w:
-            node.frame.width -
-            totalFixedWidth -
-            (flexCount > 0 ? node.frame.width / flexCount : 0),
-          h: parentHeight - 2 * (borderSize + paddingY),
-        };
-      }
-    }
+    let jsonTree = JSON.stringify({
+      node: tree,
+      width: terminalWidth(),
+      heigth: terminalHeight(),
+    });
+    let jsonBytes = Buffer.from(jsonTree, "utf-8");
+    let frameArrayPtr = api.calculate_layout(
+      ptr(jsonBytes),
+      jsonBytes.byteLength,
+    )!;
 
-    const { padding = 0, border = "none" } = node.props as CommonProps;
-    let borderSize = border !== "none" ? 1 : 0;
-    let paddingX = padding as number;
-    let paddingY = padding as number;
-    if (typeof padding === "string") {
-      [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
-    }
-
-    if (node.type === "column") {
-      let { gap = 0 } = node.props as ColumnProps;
-      let currentY = node.frame.y + borderSize + paddingY;
-
-      for (let child of node.children) {
-        child.frame.x = node.frame.x + borderSize + paddingX;
-        child.frame.y = currentY;
-
-        let availableWidth =
-          flex[child.id]?.w ||
-          fixed[child.id]?.w ||
-          node.frame.width - 2 * (borderSize + paddingX);
-        let availableHeight =
-          flex[child.id]?.h ||
-          fixed[child.id]?.h ||
-          node.frame.height - 2 * (borderSize + paddingX);
-        layout(child, availableWidth, availableHeight);
-
-        currentY += availableHeight + gap;
-      }
-    }
-
-    if (node.type === "row") {
-      let { gap = 0 } = node.props as RowProps;
-      let currentX = node.frame.x + borderSize + paddingX;
-
-      for (let child of node.children) {
-        child.frame.x = currentX;
-        child.frame.y = node.frame.y + borderSize + paddingY;
-
-        let availableWidth =
-          flex[child.id]?.w ||
-          fixed[child.id]?.w ||
-          node.frame.width - 2 * (borderSize + paddingX);
-        let availableHeight =
-          flex[child.id]?.h ||
-          fixed[child.id]?.h ||
-          node.frame.height - 2 * (borderSize + paddingX);
-        layout(child, availableWidth, availableHeight);
-
-        currentX += availableWidth + gap;
-      }
-    }
-
-    Bun.write(
-      Bun.file("log.txt"),
-      JSON.stringify(
-        {
-          parentWidth,
-          parentHeight,
-          node,
-          fixed,
-          flex,
-        },
-        null,
-        2,
-      ),
+    let frameArray = new Uint32Array(
+      toArrayBuffer(frameArrayPtr, nodeCount * 4 * 4), // x,y,w,h; 4 bytes each
     );
+
+    let idx = 0;
+    function updateFrames(n: Node) {
+      n.frame.x = frameArray![idx++]!;
+      n.frame.y = frameArray![idx++]!;
+      n.frame.width = frameArray![idx++]!;
+      n.frame.height = frameArray![idx++]!;
+      n.children.forEach(updateFrames);
+    }
+    updateFrames(node);
   }
 
   function paint(node: Node, overrideBg: number = COLORS.default.bg) {
@@ -770,6 +723,15 @@ type CommonProps = {
 type ColumnProps = CommonProps & {
   gap?: number;
   bg?: number;
+  growH?: boolean;
+  growV?: boolean;
+};
+
+type RowProps = CommonProps & {
+  gap?: number;
+  bg?: number;
+  growH?: boolean;
+  growV?: boolean;
 };
 
 type TextProps = CommonProps & {
@@ -786,11 +748,6 @@ type BorderProps =
       style: BorderStyle;
     }
   | "none";
-
-type RowProps = CommonProps & {
-  gap?: number;
-  bg?: number;
-};
 
 type ButtonProps = CommonProps & {
   fg?: number;
