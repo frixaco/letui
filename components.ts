@@ -1,8 +1,7 @@
 import { ptr, toArrayBuffer, type Pointer } from "bun:ffi";
 import { COLORS } from "./colors.ts";
-import api from "./index.ts";
+import api from "./ffi.ts";
 import { $, ff, type Signal } from "./signals";
-import { Children } from "react";
 
 function randomString(length = 6) {
   const chars =
@@ -12,185 +11,6 @@ function randomString(length = 6) {
     () => chars[Math.floor(Math.random() * chars.length)],
   ).join("");
 }
-
-let text = $("Search");
-let text2 = $("How are you?");
-let text3 = $("prev");
-let text4 = $("next");
-
-run(
-  Column(
-    {
-      border: {
-        color: COLORS.default.fg,
-        style: "square",
-      },
-      gap: 1,
-      padding: "3 1",
-    },
-    [
-      Row(
-        {
-          border: {
-            color: COLORS.default.fg,
-            style: "square",
-          },
-          gap: 1,
-          padding: "3 1",
-        },
-        [
-          Text({
-            border: {
-              color: COLORS.default.fg,
-              style: "square",
-            },
-            padding: "3 1",
-            text: text,
-          }),
-        ],
-      ),
-    ],
-  ),
-);
-
-// run(
-//   Column(
-//     {
-//       border: {
-//         color: COLORS.default.fg,
-//         style: "square",
-//       },
-//       gap: 1,
-//       padding: "3 1",
-//     },
-//
-//     [
-//       Row(
-//         {
-//           border: {
-//             color: COLORS.default.fg,
-//             style: "square",
-//           },
-//           gap: 1,
-//           padding: "3 1",
-//         },
-//         [
-//           Row(
-//             {
-//               border: {
-//                 color: COLORS.default.fg,
-//                 style: "square",
-//               },
-//               gap: 1,
-//               padding: "3 1",
-//             },
-//             [],
-//           ),
-//         ],
-//       ),
-//     ],
-//   ),
-// );
-
-// run(
-//   Column(
-//     {
-//       border: {
-//         color: COLORS.default.fg,
-//         style: "square",
-//       },
-//       gap: 1,
-//       padding: "1 0",
-//     },
-//     [
-//       Row(
-//         {
-//           gap: 1,
-//           padding: "1 0",
-//         },
-//         [
-//           InputBox({
-//             border: {
-//               color: COLORS.default.fg,
-//               style: "square",
-//             },
-//             text: text4,
-//             onType: (value: string) => {
-//               text4(value);
-//             },
-//             onFocus: () => {
-//               // set border color
-//             },
-//             onBlur: () => {
-//               // reset border color
-//             },
-//           }),
-//
-//           Button({
-//             padding: "3 1",
-//             text: text,
-//             onClick: () => {},
-//           }),
-//         ],
-//       ),
-//
-//       Column(
-//         {
-//           border: {
-//             color: COLORS.default.fg,
-//             style: "square",
-//           },
-//           gap: 1,
-//           padding: "1 0",
-//         },
-//         [
-//           Row(
-//             {
-//               gap: 1,
-//               padding: "1 0",
-//             },
-//             [
-//               Text({
-//                 border: {
-//                   color: COLORS.default.fg,
-//                   style: "square",
-//                 },
-//                 text: text2,
-//               }),
-//               Text({
-//                 border: {
-//                   color: COLORS.default.fg,
-//                   style: "square",
-//                 },
-//                 text: text2,
-//               }),
-//             ],
-//           ),
-//         ],
-//       ),
-//
-//       Row(
-//         {
-//           gap: 12,
-//           padding: "1 0",
-//         },
-//         [
-//           Button({
-//             padding: "3 1",
-//             text: text3,
-//             onClick: () => {},
-//           }),
-//
-//           Button({
-//             padding: "3 1",
-//             text: text4,
-//             onClick: () => {},
-//           }),
-//         ],
-//       ),
-//     ],
-//   ),
-// );
 
 function getNodeFrame(node: Node) {
   const { padding = 0, border = "none" } = node.props;
@@ -214,7 +34,7 @@ function getNodeFrame(node: Node) {
   };
 }
 
-function run(node: Node) {
+export function run(node: Node) {
   api.init_buffer();
   api.init_letui();
   process.stdin.resume();
@@ -227,13 +47,13 @@ function run(node: Node) {
     if (canType === "") return;
 
     if (d === "\x7f") {
-      text4(text4().slice(0, -1));
+      // text4(text4().slice(0, -1));
     } else if (
       d.length === 1 &&
       d.charCodeAt(0) >= 32 &&
       d.charCodeAt(0) <= 126
     ) {
-      text4(text4() + d);
+      // text4(text4() + d);
     } else if (d === "\r") {
       // submit
     } else {
@@ -334,11 +154,26 @@ function run(node: Node) {
     let nodeCount = 0;
     function toTree(n: Node): Record<string, any> {
       nodeCount++;
+
+      let paddingX = 0;
+      let paddingY = 0;
+
+      const { padding = 0 } = n.props;
+      if (typeof padding === "number") {
+        paddingX = padding;
+        paddingY = padding;
+      } else {
+        [paddingX, paddingY] = padding.split(" ").map(Number) as [
+          number,
+          number,
+        ];
+      }
+
       return {
-        id: n.id,
         type: n.type,
         gap: (n.props as any).gap || 0,
-        padding: (n.props as any).padding || 0,
+        paddingX,
+        paddingY,
         border: (n.props as any).border !== "none" ? 1 : 0,
         text: (n.props as any).text ? (n.props as any).text() : "",
         children: n.children.map(toTree),
@@ -548,9 +383,14 @@ function run(node: Node) {
   ff(() => {
     pressedComponentId();
     focusedComponentId();
+    terminalWidth();
+    terminalHeight();
+
     hitMap = [];
-    layout(node, terminalWidth(), terminalHeight());
+
+    layout(node);
     paint(node, node.props.bg);
+
     api.flush();
   });
 }
@@ -633,7 +473,7 @@ function drawBorder(
   }
 }
 
-function Column(props: ColumnProps, children: Array<Node>): Node {
+export function Column(props: ColumnProps, children: Array<Node>): Node {
   return {
     id: randomString(),
     type: "column",
@@ -643,7 +483,7 @@ function Column(props: ColumnProps, children: Array<Node>): Node {
   };
 }
 
-function Row(props: RowProps, children: Array<Node>): Node {
+export function Row(props: RowProps, children: Array<Node>): Node {
   return {
     id: randomString(),
     type: "row",
@@ -653,7 +493,7 @@ function Row(props: RowProps, children: Array<Node>): Node {
   };
 }
 
-function Text(props: TextProps): Node {
+export function Text(props: TextProps): Node {
   return {
     id: randomString(),
     type: "text",
@@ -663,7 +503,7 @@ function Text(props: TextProps): Node {
   };
 }
 
-function Button(props: ButtonProps): Node {
+export function Button(props: ButtonProps): Node {
   return {
     id: randomString(),
     type: "button",
@@ -673,7 +513,7 @@ function Button(props: ButtonProps): Node {
   };
 }
 
-function InputBox(props: InputBoxProps): Node {
+export function InputBox(props: InputBoxProps): Node {
   return {
     id: randomString(),
     type: "input",
@@ -698,16 +538,16 @@ type HitMapItem = Frame & {
   onHit: () => void;
 };
 
-type Frame = {
+export type Frame = {
   x: number;
   y: number;
   width: number;
   height: number;
 };
 
-type ComponentType = "column" | "row" | "input" | "button" | "text";
+export type ComponentType = "column" | "row" | "input" | "button" | "text";
 
-type Node = {
+export type Node = {
   id: string;
   type: ComponentType;
   children: Array<Node>;
@@ -715,48 +555,48 @@ type Node = {
   frame: Frame;
 };
 
-type CommonProps = {
+export type CommonProps = {
   padding?: number | `${number} ${number}`;
   border?: BorderProps;
 };
 
-type ColumnProps = CommonProps & {
+export type ColumnProps = CommonProps & {
   gap?: number;
   bg?: number;
   growH?: boolean;
   growV?: boolean;
 };
 
-type RowProps = CommonProps & {
+export type RowProps = CommonProps & {
   gap?: number;
   bg?: number;
   growH?: boolean;
   growV?: boolean;
 };
 
-type TextProps = CommonProps & {
+export type TextProps = CommonProps & {
   fg?: number;
   bg?: number;
   text: Signal<string>;
 };
 
-type BorderStyle = "square" | "rounded";
+export type BorderStyle = "square" | "rounded";
 
-type BorderProps =
+export type BorderProps =
   | {
       color: number;
       style: BorderStyle;
     }
   | "none";
 
-type ButtonProps = CommonProps & {
+export type ButtonProps = CommonProps & {
   fg?: number;
   bg?: number;
   text: Signal<string>;
   onClick: () => void | Promise<void>;
 };
 
-type InputBoxProps = CommonProps & {
+export type InputBoxProps = CommonProps & {
   fg?: number;
   bg?: number;
   text: Signal<string>;

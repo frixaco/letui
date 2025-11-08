@@ -12,9 +12,11 @@ use crossterm::{
         Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, enable_raw_mode, size,
     },
 };
+use serde::Deserialize;
 use std::{
     io::{Write, stdout},
     os::raw::c_int,
+    slice,
     sync::Mutex,
 };
 
@@ -167,6 +169,67 @@ pub extern "C" fn update_terminal_size() -> c_int {
     let mut term_size = TERMINAL_SIZE.lock().unwrap();
     *term_size = size().unwrap();
     1
+}
+
+use taffy::prelude::*;
+
+#[derive(Deserialize)]
+struct Node {
+    #[serde(rename = "type")]
+    node_type: String,
+    gap: u64,
+    #[serde(rename = "paddingX")]
+    padding_x: u64,
+    #[serde(rename = "paddingY")]
+    padding_y: u64,
+    border: u64,
+    text: String,
+    children: Vec<Node>,
+}
+
+#[derive(Deserialize)]
+struct Tree {
+    node: Node,
+    width: u64,
+    height: u64,
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn calculate_layout(p: *const u8, l: u32) -> *mut u64 {
+    let json_bytes = unsafe { slice::from_raw_parts(p, l as usize) };
+    let node_tree = serde_json::from_slice::<Tree>(json_bytes).unwrap();
+
+    let mut taffy: TaffyTree<()> = TaffyTree::new();
+
+    let root = taffy
+        .new_with_children(
+            Style {
+                gap: Size {
+                    width: length(node_tree.width as f32),
+                    height: length(node_tree.height as f32),
+                },
+                ..Default::default()
+            },
+            &[],
+        )
+        .unwrap();
+
+    fn build_taffy_tree(n: &Tree) {
+        let node_style = Style {
+            size: Size {
+                width: length(n.width as f32),
+                height: length(n.height as f32),
+            },
+            ..Default::default()
+        };
+
+        taffy
+    }
+
+    let root = build_taffy_tree(&node_tree);
+
+    // push each number to frames array
+    // return pointer to array
 }
 
 #[unsafe(no_mangle)]
