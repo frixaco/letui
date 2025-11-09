@@ -563,15 +563,11 @@ export type CommonProps = {
 export type ColumnProps = CommonProps & {
   gap?: number;
   bg?: number;
-  growH?: boolean;
-  growV?: boolean;
 };
 
 export type RowProps = CommonProps & {
   gap?: number;
   bg?: number;
-  growH?: boolean;
-  growV?: boolean;
 };
 
 export type TextProps = CommonProps & {

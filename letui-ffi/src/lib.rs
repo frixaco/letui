@@ -195,7 +195,7 @@ struct Tree {
 }
 
 fn get_styles(node: &Node) -> Style {
-    Style {
+    let mut style = Style {
         gap: Size {
             width: length(node.gap),
             height: zero(),
@@ -213,21 +213,26 @@ fn get_styles(node: &Node) -> Style {
             bottom: length(node.border),
         },
         ..Default::default()
+    };
+
+    match node.node_type.as_str() {
+        "column" => {
+            style.flex_direction = FlexDirection::Column;
+            style.align_items = Some(AlignItems::Stretch);
+        }
+        "row" => {
+            style.flex_direction = FlexDirection::Row;
+            style.align_items = Some(AlignItems::Stretch);
+        }
+        _ => {}
     }
+
+    style
 }
 
 fn build_taffy_tree(taffy: &mut TaffyTree<()>, taffy_root: &NodeId, tree_node: &Node) {
     for child in &tree_node.children {
-        let mut child_styles = get_styles(child);
-
-        let flex_direction: Option<FlexDirection> = match child.node_type.as_str() {
-            "column" => Some(FlexDirection::Column),
-            "row" => Some(FlexDirection::Row),
-            _ => None,
-        };
-        if let Some(fd) = flex_direction {
-            child_styles.flex_direction = fd;
-        };
+        let child_styles = get_styles(child);
 
         let taffy_child = taffy.new_leaf(child_styles).unwrap();
         taffy.add_child(*taffy_root, taffy_child).unwrap();
@@ -272,15 +277,10 @@ pub extern "C" fn calculate_layout(p: *const u8, l: u32) -> c_int {
 
     let node = &tree.node;
 
-    let flex_direction: Option<FlexDirection> = match node.node_type.as_str() {
-        "column" => Some(FlexDirection::Column),
-        "row" => Some(FlexDirection::Row),
-        _ => None,
-    };
-
     let mut root_styles = get_styles(node);
-    if let Some(fd) = flex_direction {
-        root_styles.flex_direction = fd;
+    root_styles.size = Size {
+        width: length(tree.width),
+        height: length(tree.height),
     };
     let root = taffy.new_leaf(root_styles).unwrap();
 
