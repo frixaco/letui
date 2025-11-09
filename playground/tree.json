@@ -1,0 +1,33 @@
+{
+  "node": {
+    "type": "column",
+    "gap": 1,
+    "paddingX": 3,
+    "paddingY": 1,
+    "border": 1,
+    "text": "",
+    "children": [
+      {
+        "type": "row",
+        "gap": 1,
+        "paddingX": 3,
+        "paddingY": 1,
+        "border": 1,
+        "text": "",
+        "children": [
+          {
+            "type": "text",
+            "gap": 0,
+            "paddingX": 3,
+            "paddingY": 1,
+            "border": 1,
+            "text": "Search",
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  "width": 129,
+  "height": 27
+}

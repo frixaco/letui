@@ -187,21 +187,21 @@ export function run(node: Node) {
   }
 
   function layout(node: Node) {
-    let { tree, nodeCount } = serializeNodes(node);
+    let { tree } = serializeNodes(node);
 
     let jsonTree = JSON.stringify({
       node: tree,
       width: terminalWidth(),
-      heigth: terminalHeight(),
+      height: terminalHeight(),
     });
     let jsonBytes = Buffer.from(jsonTree, "utf-8");
-    let frameArrayPtr = api.calculate_layout(
-      ptr(jsonBytes),
-      jsonBytes.byteLength,
-    )!;
+    api.calculate_layout(ptr(jsonBytes), jsonBytes.byteLength);
 
-    let frameArray = new Uint32Array(
-      toArrayBuffer(frameArrayPtr, nodeCount * 4 * 4), // x,y,w,h; 4 bytes each
+    const framesPtr = api.get_frames_ptr()!;
+    const framesLen = Number(api.get_frames_len()!);
+
+    let frameArray = new Float32Array(
+      toArrayBuffer(framesPtr as Pointer, 0, framesLen * 4),
     );
 
     let idx = 0;

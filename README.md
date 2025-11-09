@@ -1,9 +1,16 @@
 # letui
 
-A minimal no-dependency (except `crossterm`) TUI library using Rust and TypeScript with Bun FFI.
+TUI library written using Rust and TypeScript
+
+**Core dependencies**:
+
+- [`crossterm`](https://github.com/crossterm-rs/crossterm) - cross-platform terminal manipulation library
+- [`taffy`](https://github.com/DioxusLabs/taffy) - UI layout engine
 
 **TODO**:
 
+- [ ] Account for text content when calculating width and height
+- [ ] ...
 - [ ] Pluggable prettier file logging
 
 ## Goals

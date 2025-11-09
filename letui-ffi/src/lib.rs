@@ -19,11 +19,13 @@ use std::{
     slice,
     sync::Mutex,
 };
+use taffy::prelude::*;
 
 static MAX_BUFFER_SIZE: usize = 2_000_000;
 static LAST_BUFFER: Mutex<Option<Box<[u64; MAX_BUFFER_SIZE]>>> = Mutex::new(None);
 static CURRENT_BUFFER: Mutex<Option<Box<[u64; MAX_BUFFER_SIZE]>>> = Mutex::new(None);
 static TERMINAL_SIZE: Mutex<(u16, u16)> = Mutex::new((0, 0));
+static FRAMES: Mutex<Option<Vec<f32>>> = Mutex::new(None);
 
 #[unsafe(no_mangle)]
 pub extern "C" fn init_buffer() -> c_int {
@@ -171,65 +173,152 @@ pub extern "C" fn update_terminal_size() -> c_int {
     1
 }
 
-use taffy::prelude::*;
-
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct Node {
     #[serde(rename = "type")]
     node_type: String,
-    gap: u64,
+    gap: f32,
     #[serde(rename = "paddingX")]
-    padding_x: u64,
+    padding_x: f32,
     #[serde(rename = "paddingY")]
-    padding_y: u64,
-    border: u64,
+    padding_y: f32,
+    border: f32,
     text: String,
     children: Vec<Node>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct Tree {
     node: Node,
-    width: u64,
-    height: u64,
+    width: f32,
+    height: f32,
+}
+
+fn get_styles(node: &Node) -> Style {
+    Style {
+        gap: Size {
+            width: length(node.gap),
+            height: zero(),
+        },
+        padding: Rect {
+            left: length(node.padding_x),
+            right: length(node.padding_x),
+            top: length(node.padding_y),
+            bottom: length(node.padding_y),
+        },
+        border: Rect {
+            left: length(node.border),
+            right: length(node.border),
+            top: length(node.border),
+            bottom: length(node.border),
+        },
+        ..Default::default()
+    }
+}
+
+fn build_taffy_tree(taffy: &mut TaffyTree<()>, taffy_root: &NodeId, tree_node: &Node) {
+    for child in &tree_node.children {
+        let mut child_styles = get_styles(child);
+
+        let flex_direction: Option<FlexDirection> = match child.node_type.as_str() {
+            "column" => Some(FlexDirection::Column),
+            "row" => Some(FlexDirection::Row),
+            _ => None,
+        };
+        if let Some(fd) = flex_direction {
+            child_styles.flex_direction = fd;
+        };
+
+        let taffy_child = taffy.new_leaf(child_styles).unwrap();
+        taffy.add_child(*taffy_root, taffy_child).unwrap();
+
+        build_taffy_tree(taffy, &taffy_child, child);
+    }
+}
+
+fn build_frames_array(
+    taffy: &mut TaffyTree<()>,
+    node: NodeId,
+    out: &mut Vec<f32>,
+    offset_x: f32,
+    offset_y: f32,
+) -> taffy::TaffyResult<()> {
+    let layout = taffy.layout(node).unwrap();
+
+    let absolute_x = offset_x + layout.location.x;
+    let absolute_y = offset_y + layout.location.y;
+
+    out.extend([
+        absolute_x,
+        absolute_y,
+        layout.size.width,
+        layout.size.height,
+    ]);
+
+    let children = taffy.children(node).unwrap();
+    for child in children {
+        build_frames_array(taffy, child, out, absolute_x, absolute_y)?;
+    }
+
+    Ok(())
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn calculate_layout(p: *const u8, l: u32) -> *mut u64 {
+pub extern "C" fn calculate_layout(p: *const u8, l: u32) -> c_int {
     let json_bytes = unsafe { slice::from_raw_parts(p, l as usize) };
-    let node_tree = serde_json::from_slice::<Tree>(json_bytes).unwrap();
+    let tree = serde_json::from_slice::<Tree>(json_bytes).unwrap();
 
     let mut taffy: TaffyTree<()> = TaffyTree::new();
 
-    let root = taffy
-        .new_with_children(
-            Style {
-                gap: Size {
-                    width: length(node_tree.width as f32),
-                    height: length(node_tree.height as f32),
-                },
-                ..Default::default()
-            },
-            &[],
-        )
-        .unwrap();
+    let node = &tree.node;
 
-    fn build_taffy_tree(n: &Tree) {
-        let node_style = Style {
-            size: Size {
-                width: length(n.width as f32),
-                height: length(n.height as f32),
-            },
-            ..Default::default()
-        };
+    let flex_direction: Option<FlexDirection> = match node.node_type.as_str() {
+        "column" => Some(FlexDirection::Column),
+        "row" => Some(FlexDirection::Row),
+        _ => None,
+    };
 
-        taffy
+    let mut root_styles = get_styles(node);
+    if let Some(fd) = flex_direction {
+        root_styles.flex_direction = fd;
+    };
+    let root = taffy.new_leaf(root_styles).unwrap();
+
+    build_taffy_tree(&mut taffy, &root, &tree.node);
+
+    let _ = taffy.compute_layout(
+        root,
+        Size {
+            width: length(tree.width),
+            height: length(tree.height),
+        },
+    );
+    // taffy.print_tree(root);
+
+    let mut frames: Vec<f32> = Vec::new();
+
+    build_frames_array(&mut taffy, root, &mut frames, 0.0, 0.0).unwrap();
+
+    *FRAMES.lock().unwrap() = Some(frames);
+    1
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_frames_ptr() -> *const f32 {
+    let frames = FRAMES.lock().unwrap();
+    match *frames {
+        Some(ref vec) => vec.as_ptr(),
+        None => std::ptr::null(),
     }
+}
 
-    let root = build_taffy_tree(&node_tree);
-
-    // push each number to frames array
-    // return pointer to array
+#[unsafe(no_mangle)]
+pub extern "C" fn get_frames_len() -> u64 {
+    let frames = FRAMES.lock().unwrap();
+    match *frames {
+        Some(ref vec) => vec.len() as u64,
+        None => 0,
+    }
 }
 
 #[unsafe(no_mangle)]

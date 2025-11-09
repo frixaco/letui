@@ -26,7 +26,15 @@ const { symbols: api } = dlopen(path, {
   },
   calculate_layout: {
     args: ["pointer", "u64"],
+    returns: "i32",
+  },
+  get_frames_ptr: {
+    args: [],
     returns: "pointer",
+  },
+  get_frames_len: {
+    args: [],
+    returns: "u64",
   },
   get_width: {
     args: [],
