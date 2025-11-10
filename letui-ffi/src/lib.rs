@@ -230,11 +230,21 @@ fn get_styles(node: &Node) -> Style {
     style
 }
 
-fn build_taffy_tree(taffy: &mut TaffyTree<()>, taffy_root: &NodeId, tree_node: &Node) {
+fn build_taffy_tree(taffy: &mut TaffyTree<NodeContext>, taffy_root: &NodeId, tree_node: &Node) {
     for child in &tree_node.children {
         let child_styles = get_styles(child);
 
-        let taffy_child = taffy.new_leaf(child_styles).unwrap();
+        let taffy_child = taffy
+            .new_leaf_with_context(
+                child_styles,
+                match child.node_type.as_str() {
+                    "column" | "row" => NodeContext::Container,
+                    "text" => NodeContext::Text(child.text.clone()),
+                    "button" => NodeContext::Button(child.text.clone()),
+                    _ => NodeContext::Container,
+                },
+            )
+            .unwrap();
         taffy.add_child(*taffy_root, taffy_child).unwrap();
 
         build_taffy_tree(taffy, &taffy_child, child);
@@ -242,12 +252,12 @@ fn build_taffy_tree(taffy: &mut TaffyTree<()>, taffy_root: &NodeId, tree_node: &
 }
 
 fn build_frames_array(
-    taffy: &mut TaffyTree<()>,
+    taffy: &mut TaffyTree<NodeContext>,
     node: NodeId,
     out: &mut Vec<f32>,
     offset_x: f32,
     offset_y: f32,
-) -> taffy::TaffyResult<()> {
+) -> () {
     let layout = taffy.layout(node).unwrap();
 
     let absolute_x = offset_x + layout.location.x;
@@ -262,10 +272,42 @@ fn build_frames_array(
 
     let children = taffy.children(node).unwrap();
     for child in children {
-        build_frames_array(taffy, child, out, absolute_x, absolute_y)?;
+        build_frames_array(taffy, child, out, absolute_x, absolute_y);
+    }
+}
+
+enum NodeContext {
+    Text(String),
+    Button(String),
+    Container,
+}
+
+fn measure_function(
+    known_dimensions: Size<Option<f32>>,
+    _available_space: Size<AvailableSpace>,
+    _node_id: NodeId,
+    node_context: Option<&mut NodeContext>,
+    style: &Style,
+) -> Size<f32> {
+    if let Size {
+        width: Some(width),
+        height: Some(height),
+    } = known_dimensions
+    {
+        return Size { width, height };
     }
 
-    Ok(())
+    match node_context {
+        Some(NodeContext::Text(text)) | Some(NodeContext::Button(text)) => {
+            let text_width = text.chars().count() as f32;
+
+            Size {
+                width: text_width,
+                height: 1.0,
+            }
+        }
+        _ => Size::ZERO,
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -273,7 +315,7 @@ pub extern "C" fn calculate_layout(p: *const u8, l: u32) -> c_int {
     let json_bytes = unsafe { slice::from_raw_parts(p, l as usize) };
     let tree = serde_json::from_slice::<Tree>(json_bytes).unwrap();
 
-    let mut taffy: TaffyTree<()> = TaffyTree::new();
+    let mut taffy: TaffyTree<NodeContext> = TaffyTree::new();
 
     let node = &tree.node;
 
@@ -282,22 +324,41 @@ pub extern "C" fn calculate_layout(p: *const u8, l: u32) -> c_int {
         width: length(tree.width),
         height: length(tree.height),
     };
-    let root = taffy.new_leaf(root_styles).unwrap();
+    let root = taffy
+        // TODO: set context based on component type
+        .new_leaf_with_context(
+            root_styles,
+            match node.node_type.as_str() {
+                "text" => NodeContext::Text(node.text.clone()),
+                "button" => NodeContext::Button(node.text.clone()),
+                _ => NodeContext::Container,
+            },
+        )
+        .unwrap();
 
     build_taffy_tree(&mut taffy, &root, &tree.node);
 
-    let _ = taffy.compute_layout(
+    let _ = taffy.compute_layout_with_measure(
         root,
         Size {
             width: length(tree.width),
             height: length(tree.height),
+        },
+        |known_dimensions, available_space, node_id, node_context, style| {
+            measure_function(
+                known_dimensions,
+                available_space,
+                node_id,
+                node_context,
+                style,
+            )
         },
     );
     // taffy.print_tree(root);
 
     let mut frames: Vec<f32> = Vec::new();
 
-    build_frames_array(&mut taffy, root, &mut frames, 0.0, 0.0).unwrap();
+    build_frames_array(&mut taffy, root, &mut frames, 0.0, 0.0);
 
     *FRAMES.lock().unwrap() = Some(frames);
     1
@@ -346,3 +407,4 @@ pub extern "C" fn debug_buffer(idx: u64) -> u64 {
 //         }
 //     }
 // }
+
