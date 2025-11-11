@@ -10,6 +10,34 @@
       {
         "type": "row",
         "gap": 1,
+        "paddingX": 1,
+        "paddingY": 0,
+        "border": 1,
+        "text": "",
+        "children": [
+          {
+            "type": "input",
+            "gap": 0,
+            "paddingX": 1,
+            "paddingY": 0,
+            "border": 1,
+            "text": "",
+            "children": []
+          },
+          {
+            "type": "button",
+            "gap": 0,
+            "paddingX": 1,
+            "paddingY": 0,
+            "border": 1,
+            "text": "Search",
+            "children": []
+          }
+        ]
+      },
+      {
+        "type": "row",
+        "gap": 1,
         "paddingX": 3,
         "paddingY": 1,
         "border": 1,
@@ -21,13 +49,14 @@
             "paddingX": 3,
             "paddingY": 1,
             "border": 1,
-            "text": "Search",
+            "text": "HELLO WORLD",
             "children": []
           }
         ]
       }
     ]
   },
-  "width": 129,
-  "height": 27
+  "width": 175,
+  "height": 49
 }
+

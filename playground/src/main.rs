@@ -50,9 +50,10 @@ fn get_styles(node: &Node) -> Style {
             style.flex_direction = FlexDirection::Column;
             style.align_items = Some(AlignItems::Stretch);
         }
-        "row" => {
+        "row" | "input" => {
             style.flex_direction = FlexDirection::Row;
-            style.align_items = Some(AlignItems::Stretch);
+            // style.align_items = Some(AlignItems::Stretch);
+            style.flex_grow = 1.0;
         }
         _ => {}
     }
@@ -74,7 +75,7 @@ fn build_taffy_tree(taffy: &mut TaffyTree<NodeContext>, taffy_root: &NodeId, tre
             .new_leaf_with_context(
                 child_styles,
                 match child.node_type.as_str() {
-                    "column" | "row" => NodeContext::Container,
+                    "column" | "row" | "input" => NodeContext::Container,
                     "text" => NodeContext::Text(child.text.clone()),
                     "button" => NodeContext::Button(child.text.clone()),
                     _ => NodeContext::Container,

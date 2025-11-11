@@ -1,182 +1,146 @@
 import { COLORS } from "./colors";
-import { Column, Row, run, Text } from "./components";
+import {
+  Button,
+  Column,
+  InputBox,
+  Row,
+  run,
+  Text,
+  type ColumnProps,
+  type InputBoxProps,
+  type RowProps,
+} from "./components";
 import { $ } from "./signals";
 
-let text = $("Search");
-let text2 = $("How are you?");
-let text3 = $("prev");
-let text4 = $("next");
+let text = $("HELLO WORLD");
+let searchText = $("");
+let buttonText = $("Search");
+let nextButtonText = $("[N]ext");
+let prevButtonText = $("[P]prev");
+
+let rowcolStyles: ColumnProps | RowProps = {
+  border: {
+    color: COLORS.default.fg,
+    style: "square",
+  },
+  gap: 1,
+  padding: "1 0",
+};
+
+let inputStyles: Partial<InputBoxProps> = {
+  border: {
+    color: COLORS.default.fg,
+    style: "square",
+  },
+  padding: "1 0",
+};
 
 run(
-  Column(
-    {
-      border: {
-        color: COLORS.default.fg,
-        style: "square",
-      },
-      gap: 1,
-      padding: "3 1",
-    },
-    [
+  Column(rowcolStyles, [
+    Row(rowcolStyles, [
+      InputBox({
+        ...inputStyles,
+        text: searchText,
+        onType: (v) => {
+          searchText(v);
+        },
+        onBlur: () => {},
+        onFocus: () => {},
+      }),
+
+      Button({
+        ...inputStyles,
+        text: buttonText,
+        onClick: () => {},
+      }),
+    ]),
+
+    Column(rowcolStyles, [
       Row(
         {
-          border: {
-            color: COLORS.default.fg,
-            style: "square",
-          },
-          gap: 1,
-          padding: "3 1",
+          ...rowcolStyles,
+          padding: 0,
+          border: "none",
         },
         [
-          Text({
-            border: {
-              color: COLORS.default.fg,
-              style: "square",
+          Column(
+            {
+              ...rowcolStyles,
+              padding: 0,
+              border: "none",
             },
-            padding: "3 1",
-            text: text,
-          }),
+            [
+              Text({
+                ...inputStyles,
+                text: text,
+              }),
+            ],
+          ),
+          Column(
+            {
+              ...rowcolStyles,
+              padding: 0,
+              border: "none",
+            },
+            [
+              Text({
+                ...inputStyles,
+                text: text,
+              }),
+            ],
+          ),
         ],
       ),
-    ],
-  ),
+
+      Row(
+        {
+          ...rowcolStyles,
+          padding: 0,
+          border: "none",
+        },
+        [
+          Column(
+            {
+              ...rowcolStyles,
+              padding: 0,
+              border: "none",
+            },
+            [
+              Text({
+                ...inputStyles,
+                text: text,
+              }),
+            ],
+          ),
+          Column(
+            {
+              ...rowcolStyles,
+              padding: 0,
+              border: "none",
+            },
+            [
+              Text({
+                ...inputStyles,
+                text: text,
+              }),
+            ],
+          ),
+        ],
+      ),
+    ]),
+
+    Row(rowcolStyles, [
+      Button({
+        ...inputStyles,
+        text: prevButtonText,
+        onClick: () => {},
+      }),
+
+      Button({
+        ...inputStyles,
+        text: nextButtonText,
+        onClick: () => {},
+      }),
+    ]),
+  ]),
 );
-
-// run(
-//   Column(
-//     {
-//       border: {
-//         color: COLORS.default.fg,
-//         style: "square",
-//       },
-//       gap: 1,
-//       padding: "3 1",
-//     },
-//
-//     [
-//       Row(
-//         {
-//           border: {
-//             color: COLORS.default.fg,
-//             style: "square",
-//           },
-//           gap: 1,
-//           padding: "3 1",
-//         },
-//         [
-//           Row(
-//             {
-//               border: {
-//                 color: COLORS.default.fg,
-//                 style: "square",
-//               },
-//               gap: 1,
-//               padding: "3 1",
-//             },
-//             [],
-//           ),
-//         ],
-//       ),
-//     ],
-//   ),
-// );
-
-// run(
-//   Column(
-//     {
-//       border: {
-//         color: COLORS.default.fg,
-//         style: "square",
-//       },
-//       gap: 1,
-//       padding: "1 0",
-//     },
-//     [
-//       Row(
-//         {
-//           gap: 1,
-//           padding: "1 0",
-//         },
-//         [
-//           InputBox({
-//             border: {
-//               color: COLORS.default.fg,
-//               style: "square",
-//             },
-//             text: text4,
-//             onType: (value: string) => {
-//               text4(value);
-//             },
-//             onFocus: () => {
-//               // set border color
-//             },
-//             onBlur: () => {
-//               // reset border color
-//             },
-//           }),
-//
-//           Button({
-//             padding: "3 1",
-//             text: text,
-//             onClick: () => {},
-//           }),
-//         ],
-//       ),
-//
-//       Column(
-//         {
-//           border: {
-//             color: COLORS.default.fg,
-//             style: "square",
-//           },
-//           gap: 1,
-//           padding: "1 0",
-//         },
-//         [
-//           Row(
-//             {
-//               gap: 1,
-//               padding: "1 0",
-//             },
-//             [
-//               Text({
-//                 border: {
-//                   color: COLORS.default.fg,
-//                   style: "square",
-//                 },
-//                 text: text2,
-//               }),
-//               Text({
-//                 border: {
-//                   color: COLORS.default.fg,
-//                   style: "square",
-//                 },
-//                 text: text2,
-//               }),
-//             ],
-//           ),
-//         ],
-//       ),
-//
-//       Row(
-//         {
-//           gap: 12,
-//           padding: "1 0",
-//         },
-//         [
-//           Button({
-//             padding: "3 1",
-//             text: text3,
-//             onClick: () => {},
-//           }),
-//
-//           Button({
-//             padding: "3 1",
-//             text: text4,
-//             onClick: () => {},
-//           }),
-//         ],
-//       ),
-//     ],
-//   ),
-// );

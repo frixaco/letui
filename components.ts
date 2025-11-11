@@ -194,6 +194,7 @@ export function run(node: Node) {
       width: terminalWidth(),
       height: terminalHeight(),
     });
+    Bun.write("tree.json", jsonTree);
     let jsonBytes = Buffer.from(jsonTree, "utf-8");
     api.calculate_layout(ptr(jsonBytes), jsonBytes.byteLength);
 

@@ -219,10 +219,14 @@ fn get_styles(node: &Node) -> Style {
         "column" => {
             style.flex_direction = FlexDirection::Column;
             style.align_items = Some(AlignItems::Stretch);
+            style.flex_grow = 1.0;
         }
         "row" => {
             style.flex_direction = FlexDirection::Row;
-            style.align_items = Some(AlignItems::Stretch);
+        }
+        "input" => {
+            style.flex_direction = FlexDirection::Row;
+            style.flex_grow = 1.0;
         }
         _ => {}
     }
@@ -238,7 +242,7 @@ fn build_taffy_tree(taffy: &mut TaffyTree<NodeContext>, taffy_root: &NodeId, tre
             .new_leaf_with_context(
                 child_styles,
                 match child.node_type.as_str() {
-                    "column" | "row" => NodeContext::Container,
+                    "column" | "row" | "input" => NodeContext::Container,
                     "text" => NodeContext::Text(child.text.clone()),
                     "button" => NodeContext::Button(child.text.clone()),
                     _ => NodeContext::Container,
@@ -287,7 +291,7 @@ fn measure_function(
     _available_space: Size<AvailableSpace>,
     _node_id: NodeId,
     node_context: Option<&mut NodeContext>,
-    style: &Style,
+    _style: &Style,
 ) -> Size<f32> {
     if let Size {
         width: Some(width),
@@ -407,4 +411,3 @@ pub extern "C" fn debug_buffer(idx: u64) -> u64 {
 //         }
 //     }
 // }
-
