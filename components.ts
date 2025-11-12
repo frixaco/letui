@@ -39,64 +39,121 @@ export function run(node: Node) {
   api.init_letui();
   process.stdin.resume();
 
-  let canType = "";
   let pressedComponentId = $("");
   let focusedComponentId = $("");
 
-  function handleKeyboardEvent(d: string) {
-    if (canType === "") return;
+  let spatialLookup: (Node | undefined)[];
 
-    if (d === "\x7f") {
-      // text4(text4().slice(0, -1));
-    } else if (
-      d.length === 1 &&
-      d.charCodeAt(0) >= 32 &&
-      d.charCodeAt(0) <= 126
-    ) {
-      // text4(text4() + d);
-    } else if (d === "\r") {
-      // submit
-    } else {
+  function getComponentAt(x: number, y: number): Node | undefined {
+    return spatialLookup[y * terminalWidth() + x];
+  }
+
+  function registerHit(n: Node) {
+    const { x, y, width, height } = n.frame;
+    for (let row = y; row < y + height; row++) {
+      for (let col = x; col < x + width; col++) {
+        // TODO: don't like storing the node
+        spatialLookup[row * terminalWidth() + col] = n;
+      }
+    }
+  }
+
+  function setFocus(newId: string) {
+    const oldId = focusedComponentId();
+    if (oldId === newId) return;
+    const oldNode = getNodeById(oldId);
+    const newNode = getNodeById(newId);
+    if (oldNode?.type === "input") {
+      (oldNode.props as InputBoxProps).onBlur();
+    }
+    if (newNode?.type === "input") {
+      (newNode.props as InputBoxProps).onFocus();
+    }
+    focusedComponentId(newId);
+  }
+
+  function clearFocus() {
+    const oldId = focusedComponentId();
+    const oldNode = getNodeById(oldId);
+    if (oldNode?.type === "input") {
+      (oldNode.props as InputBoxProps).onBlur();
+    }
+    focusedComponentId("");
+  }
+
+  function getNodeById(id: string): Node | undefined {
+    return spatialLookup.find((n) => n?.id === id);
+  }
+
+  function handleKeyboardEvent(d: string) {
+    // TODO: there could be better way
+    const focused = getNodeById(focusedComponentId());
+    if (!focused) return;
+
+    if (focused.type === "button") {
+      if (d === "\r" || d === " ") {
+        (focused.props as ButtonProps).onClick();
+        api.flush();
+      }
+      return;
+    }
+
+    if (focused.type === "input") {
+      const props = focused.props as InputBoxProps;
+      const curr = props.text() ?? "";
+
+      if (d === "\x7f") {
+        props.onType(curr.slice(0, -1));
+      } else if (d === "\r") {
+        clearFocus();
+      } else if (d.length === 1) {
+        const code = d.charCodeAt(0);
+        if (code >= 32 && code <= 126) {
+          props.onType(curr + d);
+        }
+      }
+      api.flush();
+      return;
     }
   }
 
   function handleMouseEvent(d: string) {
     const i = d.indexOf("<") + 1;
     const j = d.length - 1;
-    const c = d.slice(i, j).split(";");
-    const isPress = d[d.length - 1] === "M";
-    const isRelease = d[d.length - 1] === "m";
-    const x = Number(c[1]!) - 1;
-    const y = Number(c[2]!) - 1;
+    const parts = d.slice(i, j).split(";");
+    const isPress = d.endsWith("M");
+    const isRelease = d.endsWith("m");
+    const cb = Number(parts[0]);
+    const x = Number(parts[1]) - 1;
+    const y = Number(parts[2]) - 1;
 
-    if (c[0] == "0") {
-      if (isPress) {
-        focusedComponentId("");
-        api.flush();
+    const btn = cb & 0b11;
+    const isLeftPress = isPress && btn === 0;
+
+    const target = getComponentAt(x, y);
+
+    if (isLeftPress) {
+      if (target) {
+        pressedComponentId(target.id);
+        setFocus(target.id);
+      } else {
+        pressedComponentId("");
+        clearFocus();
       }
+      api.flush();
+      return;
+    }
 
-      for (let item of hitMap) {
-        if (
-          x >= item.x &&
-          x < item.x + item.width &&
-          y >= item.y &&
-          y < item.y + item.height
-        ) {
-          if (isPress) {
-            pressedComponentId(item.id);
-            focusedComponentId(item.id);
-            if (item.type === "input") {
-              canType = item.id;
-            }
-            api.flush();
-          }
-          if (isRelease) {
-            pressedComponentId("");
-            item.onHit();
-            api.flush();
-          }
+    if (isRelease) {
+      const pressed = getNodeById(pressedComponentId());
+      if (pressed && target && target.id === pressed.id) {
+        if (pressed.type === "button") {
+          (pressed.props as ButtonProps).onClick();
         }
       }
+      pressedComponentId("");
+      api.flush();
+      return;
     }
   }
 
@@ -135,8 +192,6 @@ export function run(node: Node) {
 
   let terminalWidth = $(api.get_width());
   let terminalHeight = $(api.get_height());
-
-  let hitMap: Array<HitMapItem> = [];
 
   process.stdout.on("resize", () => {
     api.update_terminal_size();
@@ -276,13 +331,11 @@ export function run(node: Node) {
 
       let isPressed = pressedComponentId() === node.id;
 
-      if (isPressed) {
-        drawBackground(buffer, node, fg, terminalWidth);
-      } else {
-        drawBackground(buffer, node, bg, terminalWidth);
-      }
+      drawBackground(buffer, node, isPressed ? fg : bg, terminalWidth);
 
-      drawBorder(buffer, node, terminalWidth);
+      if (border !== "none") {
+        drawBorder(buffer, node, terminalWidth, undefined, isPressed ? fg : bg);
+      }
 
       let paddingX = padding as number;
       let paddingY = padding as number;
@@ -310,6 +363,8 @@ export function run(node: Node) {
           (border !== "none" ? 1 : 0)) *
           3,
       );
+
+      registerHit(node);
     }
 
     if (node.type === "input") {
@@ -317,33 +372,20 @@ export function run(node: Node) {
         fg = COLORS.default.fg,
         bg = overrideBg,
         border = "none",
-        text: buttonText,
+        text: inputText,
         padding = 0,
       } = node.props as InputBoxProps;
 
-      let isPressed = pressedComponentId() === node.id;
       let isFocused = focusedComponentId() === node.id;
 
-      if (isPressed) {
-        drawBackground(buffer, node, fg, terminalWidth);
-      } else {
-        drawBackground(buffer, node, bg, terminalWidth);
-      }
+      drawBackground(buffer, node, bg, terminalWidth);
 
-      if (isFocused) {
+      if (border !== "none") {
         drawBorder(
           buffer,
           node,
           terminalWidth,
-          bg,
-          border !== "none" ? border.color : COLORS.default.fg,
-        );
-      } else {
-        drawBorder(
-          buffer,
-          node,
-          terminalWidth,
-          border !== "none" ? border.color : COLORS.default.fg,
+          isFocused ? COLORS.default.grey : COLORS.default.fg,
           bg,
         );
       }
@@ -357,12 +399,8 @@ export function run(node: Node) {
         ];
       }
       let cells: bigint[] = [];
-      for (const c of buttonText()) {
-        cells.push(
-          BigInt(c.codePointAt(0)!),
-          BigInt(isPressed ? bg : fg),
-          BigInt(isPressed ? fg : bg),
-        );
+      for (const c of inputText()) {
+        cells.push(BigInt(c.codePointAt(0)!), BigInt(fg), BigInt(bg));
       }
       let textBuffer = new BigUint64Array(cells);
       buffer.set(
@@ -374,6 +412,8 @@ export function run(node: Node) {
           (border !== "none" ? 1 : 0)) *
           3,
       );
+
+      registerHit(node);
     }
 
     for (let child of node.children) {
@@ -387,7 +427,7 @@ export function run(node: Node) {
     terminalWidth();
     terminalHeight();
 
-    hitMap = [];
+    spatialLookup = new Array(terminalWidth() * terminalHeight());
 
     layout(node);
     paint(node, node.props.bg);
@@ -533,11 +573,9 @@ function getInitialFrame(): Frame {
   };
 }
 
-type HitMapItem = Frame & {
-  id: string;
-  type: ComponentType;
-  onHit: () => void;
-};
+// I need to handle two types of mouse/keyboard events
+// 1. On action, something USER WANTS runs - make API call
+// 2. On cation, something TUI WANTS happens - change background color
 
 export type Frame = {
   x: number;
@@ -601,3 +639,4 @@ export type InputBoxProps = CommonProps & {
   onFocus: () => void;
   onType: (value: string) => void;
 };
+
