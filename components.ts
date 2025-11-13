@@ -12,28 +12,6 @@ function randomString(length = 6) {
   ).join("");
 }
 
-function getNodeFrame(node: Node) {
-  const { padding = 0, border = "none" } = node.props;
-  let borderSize = border !== "none" ? 1 : 0;
-  let paddingX = padding as number;
-  let paddingY = padding as number;
-  if (typeof padding === "string") {
-    [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
-  }
-
-  let gap = 0;
-  if ("gap" in node.props) {
-    gap = node.props.gap || 0;
-  }
-
-  return {
-    borderSize,
-    paddingX,
-    paddingY,
-    gap,
-  };
-}
-
 export function run(node: Node) {
   api.init_buffer();
   api.init_letui();
@@ -42,18 +20,19 @@ export function run(node: Node) {
   let pressedComponentId = $("");
   let focusedComponentId = $("");
 
-  let spatialLookup: (Node | undefined)[];
+  let spatialLookup: (string | undefined)[];
+  let nodeRegistry = new Map<string, Node>();
 
   function getComponentAt(x: number, y: number): Node | undefined {
-    return spatialLookup[y * terminalWidth() + x];
+    const id = spatialLookup[y * terminalWidth() + x];
+    return id ? nodeRegistry.get(id) : undefined;
   }
 
   function registerHit(n: Node) {
     const { x, y, width, height } = n.frame;
     for (let row = y; row < y + height; row++) {
       for (let col = x; col < x + width; col++) {
-        // TODO: don't like storing the node
-        spatialLookup[row * terminalWidth() + col] = n;
+        spatialLookup[row * terminalWidth() + col] = n.id;
       }
     }
   }
@@ -82,7 +61,7 @@ export function run(node: Node) {
   }
 
   function getNodeById(id: string): Node | undefined {
-    return spatialLookup.find((n) => n?.id === id);
+    return nodeRegistry.get(id);
   }
 
   function handleKeyboardEvent(d: string) {
@@ -272,6 +251,8 @@ export function run(node: Node) {
   }
 
   function paint(node: Node, overrideBg: number = COLORS.default.bg) {
+    nodeRegistry.set(node.id, node);
+
     if (node.type === "column") {
       let { bg = overrideBg } = node.props as ColumnProps;
 
@@ -428,6 +409,7 @@ export function run(node: Node) {
     terminalHeight();
 
     spatialLookup = new Array(terminalWidth() * terminalHeight());
+    nodeRegistry.clear();
 
     layout(node);
     paint(node, node.props.bg);
