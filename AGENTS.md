@@ -1,40 +1,14 @@
 # Project information
 
-This is a fast, simple and minimal TUI library written using Rust and TypeScript.
+This is a fast, simple and minimal TUI library written in Rust and TypeScript.
 
-The backend for the library is written in Rust for following reasons:
+The core backend for the library is written in Rust for maximum performance.
 
-**Performance Benefits**
-• Memory Operations
-• SIMD Vectorization: Native code can use SIMD instructions for parallel operations
-• Direct Memory Access
-• Zero-Copy Operations
-
-**Memory Management**
-• Arena Allocation: Batch allocations reduce overhead
-• Manual Memory Control: Precise control over allocation/deallocation patterns
-• Memory Pooling: Efficient reuse of memory blocks for frequently allocated objects like grapheme clusters
-
-**Threading and Concurrency**
-• True Parallelism: Native threads can run concurrently
-• Non-blocking I/O: Background threads can handle I/O operations without blocking the main application
-• Synchronization Primitives: Access to mutexes, condition variables, and other low-level synchronization tools
-
-**System Integration**
-• Platform-Specific Optimizations: Can leverage platform-specific APIs and optimizations
-• Direct System Calls
-• Hardware Features: Access to CPU-specific instructions and hardware acceleration
-
-**Data Processing**
-• Efficient String/Text Processing
-• Binary Data Manipulation: Direct byte-level operations
-• Mathematical Operations: Native floating-point operations
-
-The API/wrapper for the library is written in TypeScript and communication with Rust backend is achieved thanks to Bun's FFI support
-
+The API/wrapper for the library is written in TypeScript for wide ecosystem and developer friendliness.
+Communication with Rust backend is achieved thanks to Bun's FFI support.
 TypeScript wrapper exposes component API to build UI elements.
 
-**Performance goal**: Achieve <8ms or 120hz response time
+**Performance goal**: Achieve <8ms or 120hz response time in any practical use.
 
 # Runtime and environment
 
@@ -44,14 +18,22 @@ For more information, read the Bun API docs in `node_modules/bun-types/docs/**.m
 
 # Status
 
-Current huge refactoring is going on.
+Everything is mostly implemented and working (component API, buffer update, separate layout and painting process, mouse and keyboard events, input and button.
 
-- TypeScript wrapper will signals/reactivity for updates and state management. Primitives are mostly done and finished in ./signals.ts
-- API for components is NOT ready yet and needs to be worked on. It's in ./components.ts
-- Old TypeScript code that was done for learning and PoC purposes is very messy and is in ./index.ts
-- Old Rust code that was done for learning and PoC purposes is working but might change during refactoring. It is in ./letui-ffi/src/lib.rs
-- Both TypeScript wrapper and Rust core basically need a clean, proper rewrite.
+Next tasks:
+
+- Be able to update children nodes while TUI is running - dynamic layout updates
+- Implement following TUI app:
+  - header with Input and Button
+  - footer with two Buttons
+  - main section spanning max available space and renders items
+  - user can type into Input and press Enter or click Button next to it which runs async request and fetches list of items
+  - main section is then updated with those items, only part of the results will be visible
+  - two Buttons in the footer will be used for navigating "page" of results in main section
 
 # General
 
+- Prefer explaining concepts and helping build mental model for solutions to problems, instead of providing ready-to-copy-paste code
+- Providing pseudo code is OK
+- When explaining, do it from first principles
 - Include some sarcasm here and there. Don't go overboard, keep sarcasm minimal.

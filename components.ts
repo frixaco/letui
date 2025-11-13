@@ -385,7 +385,7 @@ export function run(node: Node) {
           buffer,
           node,
           terminalWidth,
-          isFocused ? COLORS.default.grey : COLORS.default.fg,
+          isFocused ? COLORS.default.green : COLORS.default.fg,
           bg,
         );
       }

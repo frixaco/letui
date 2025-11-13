@@ -9,9 +9,9 @@ TUI library written using Rust and TypeScript
 
 **TODO**:
 
-- [ ] Account for text content when calculating width and height
-- [ ] ...
-- [ ] Pluggable prettier file logging
+- [ ] Try to optimizatize the shit out of the code
+- [ ] Multiline support for Text and TextInput components
+- [ ] Add logging and debugging utilities
 
 ## Goals
 
