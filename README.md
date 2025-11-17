@@ -9,6 +9,7 @@ TUI library written using Rust and TypeScript
 
 **TODO**:
 
+- [ ] Hover events with debounce (e.g. hover over a button)
 - [ ] Try to optimizatize the shit out of the code
 - [ ] Multiline support for Text and TextInput components
 - [ ] Add logging and debugging utilities

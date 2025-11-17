@@ -97,6 +97,7 @@ export function ff(fn: Sub): void {
   }
 }
 
+// TODO: improve types
 export function af<T>(srcOrFn: () => Promise<T | null>): {
   data: Signal<T | null>;
   loading: Signal<boolean>;

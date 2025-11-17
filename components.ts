@@ -12,7 +12,10 @@ function randomString(length = 6) {
   ).join("");
 }
 
-export function run(node: Node) {
+export function run(
+  nodeFactory: (tw: number, th: number) => Node,
+  deps: Signal<any>[],
+) {
   api.init_buffer();
   api.init_letui();
   process.stdin.resume();
@@ -84,6 +87,7 @@ export function run(node: Node) {
       if (d === "\x7f") {
         props.onType(curr.slice(0, -1));
       } else if (d === "\r") {
+        props.onSubmit?.(curr);
         clearFocus();
       } else if (d.length === 1) {
         const code = d.charCodeAt(0);
@@ -405,12 +409,17 @@ export function run(node: Node) {
   ff(() => {
     pressedComponentId();
     focusedComponentId();
-    terminalWidth();
-    terminalHeight();
+    let tw = terminalWidth();
+    let th = terminalHeight();
+
+    for (let dep of deps) {
+      dep();
+    }
 
     spatialLookup = new Array(terminalWidth() * terminalHeight());
     nodeRegistry.clear();
 
+    const node = nodeFactory(tw, th);
     layout(node);
     paint(node, node.props.bg);
 
@@ -526,9 +535,9 @@ export function Text(props: TextProps): Node {
   };
 }
 
-export function Button(props: ButtonProps): Node {
+export function Button(props: ButtonProps & { id: string }): Node {
   return {
-    id: randomString(),
+    id: props.id,
     type: "button",
     props,
     frame: getInitialFrame(),
@@ -536,9 +545,9 @@ export function Button(props: ButtonProps): Node {
   };
 }
 
-export function InputBox(props: InputBoxProps): Node {
+export function InputBox(props: InputBoxProps & { id: string }): Node {
   return {
-    id: randomString(),
+    id: props.id,
     type: "input",
     props,
     frame: getInitialFrame(),
@@ -620,5 +629,6 @@ export type InputBoxProps = CommonProps & {
   onBlur: () => void;
   onFocus: () => void;
   onType: (value: string) => void;
+  onSubmit?: (value: string) => void;
 };
 
