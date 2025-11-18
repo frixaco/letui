@@ -290,8 +290,6 @@ enum NodeContext {
     Container,
 }
 
-fn wrap_text(text: &str, max_width: f32) {}
-
 fn measure_function(
     known_dimensions: Size<Option<f32>>,
     available_space: Size<AvailableSpace>,
@@ -311,9 +309,43 @@ fn measure_function(
         Some(NodeContext::Text(text)) | Some(NodeContext::Button(text)) => {
             let text_width = text.chars().count() as f32;
 
+            let max_width = match available_space.width {
+                AvailableSpace::Definite(w) => w,
+                _ => text_width,
+            };
+
+            if text_width <= max_width {
+                return Size {
+                    width: text_width,
+                    height: 1.0,
+                };
+            }
+
+            let words: Vec<&str> = text.split_whitespace().collect();
+            let mut lines = 1;
+            let mut current_width: f32 = 0.0;
+            let mut max_line_width: f32 = 0.0;
+
+            for word in words {
+                let word_width = word.chars().count() as f32;
+                let needed_width = if current_width == 0.0 {
+                    word_width
+                } else {
+                    current_width + 1.0 + word_width
+                };
+
+                if needed_width > max_width {
+                    lines += 1;
+                    max_line_width = max_line_width.max(current_width);
+                    current_width = word_width;
+                } else {
+                    current_width = needed_width;
+                }
+            }
+
             Size {
-                width: text_width,
-                height: 1.0,
+                width: max_line_width.max(max_width),
+                height: lines as f32,
             }
         }
         _ => Size::ZERO,

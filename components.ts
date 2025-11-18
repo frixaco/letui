@@ -140,13 +140,9 @@ export function run(
     }
   }
 
-  const MOUSE_EVENT_PREFIX = "\u001b[<";
-  const isMouseEvent = (d: string) => {
-    if (d.startsWith(MOUSE_EVENT_PREFIX)) {
-      return true;
-    }
-    return false;
-  };
+  const isMouseEvent = (d: string) => d.startsWith("\u001b[<");
+
+  const page = $(0);
 
   process.stdin.on("data", (data) => {
     const d = data.toString();
@@ -254,8 +250,21 @@ export function run(
     updateFrames(node);
   }
 
-  function paint(node: Node, overrideBg: number = COLORS.default.bg) {
+  function paint(
+    node: Node,
+    overrideBg: number = COLORS.default.bg,
+    clipBounds?: { x: number; y: number; width: number; height: number },
+  ) {
     nodeRegistry.set(node.id, node);
+
+    if (clipBounds) {
+      const nodeBottom = node.frame.y + node.frame.height;
+      const clipBottom = clipBounds.y + clipBounds.height;
+
+      if (node.frame.y >= clipBottom || nodeBottom <= clipBounds.y) {
+        return;
+      }
+    }
 
     if (node.type === "column") {
       let { bg = overrideBg } = node.props as ColumnProps;
@@ -343,24 +352,56 @@ export function run(
           number,
         ];
       }
-      let cells: bigint[] = [];
-      for (const c of buttonText()) {
-        cells.push(
-          BigInt(c.codePointAt(0)!),
-          BigInt(isPressed ? bg : fg),
-          BigInt(isPressed ? fg : bg),
+
+      const drawLine = (text: string, x: number, y: number) => {
+        let cells: bigint[] = [];
+        for (const c of text) {
+          cells.push(
+            BigInt(c.codePointAt(0)!),
+            BigInt(isPressed ? bg : fg),
+            BigInt(isPressed ? fg : bg),
+          );
+        }
+        let textBuffer = new BigUint64Array(cells);
+        buffer.set(
+          textBuffer,
+          ((y + paddingY + (border !== "none" ? 1 : 0)) * terminalWidth() +
+            x +
+            paddingX +
+            (border !== "none" ? 1 : 0)) *
+            3,
         );
+      };
+
+      const maxWidth =
+        node.frame.width - paddingX * 2 - (border !== "none" ? 2 : 0);
+      const words = buttonText().split(/\s+/);
+      const lines: string[] = [];
+      let currentLine: string[] = [];
+      let currentWidth = 0;
+
+      for (const word of words) {
+        const wordWidth = word.length;
+        const neededWidth =
+          currentLine.length === 0 ? wordWidth : currentWidth + 1 + wordWidth;
+
+        if (neededWidth > maxWidth && currentLine.length > 0) {
+          lines.push(currentLine.join(" "));
+          currentLine = [word];
+          currentWidth = wordWidth;
+        } else {
+          currentLine.push(word);
+          currentWidth = neededWidth;
+        }
       }
-      let textBuffer = new BigUint64Array(cells);
-      buffer.set(
-        textBuffer,
-        ((node.frame.y + paddingY + (border !== "none" ? 1 : 0)) *
-          terminalWidth() +
-          node.frame.x +
-          paddingX +
-          (border !== "none" ? 1 : 0)) *
-          3,
-      );
+
+      if (currentLine.length > 0) {
+        lines.push(currentLine.join(" "));
+      }
+
+      lines.forEach((line, lineIndex) => {
+        drawLine(line, node.frame.x, node.frame.y + lineIndex);
+      });
 
       registerHit(node);
     }
@@ -420,8 +461,15 @@ export function run(
       registerHit(node);
     }
 
+    const childClipBounds = {
+      x: node.frame.x,
+      y: node.frame.y,
+      width: node.frame.width,
+      height: node.frame.height,
+    };
+
     for (let child of node.children) {
-      paint(child, node.props.bg);
+      paint(child, node.props.bg, childClipBounds);
     }
   }
 
@@ -524,9 +572,12 @@ function drawBorder(
   }
 }
 
-export function Column(props: ColumnProps, children: Array<Node>): Node {
+export function Column(
+  props: ColumnProps & { id?: string },
+  children: Array<Node>,
+): Node {
   return {
-    id: randomString(),
+    id: props.id || randomString(),
     type: "column",
     props,
     frame: getInitialFrame(),
@@ -534,9 +585,12 @@ export function Column(props: ColumnProps, children: Array<Node>): Node {
   };
 }
 
-export function Row(props: RowProps, children: Array<Node>): Node {
+export function Row(
+  props: RowProps & { id?: string },
+  children: Array<Node>,
+): Node {
   return {
-    id: randomString(),
+    id: props.id || randomString(),
     type: "row",
     props,
     frame: getInitialFrame(),
