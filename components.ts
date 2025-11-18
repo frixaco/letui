@@ -2,6 +2,7 @@ import { ptr, toArrayBuffer, type Pointer } from "bun:ffi";
 import { COLORS } from "./colors.ts";
 import api from "./ffi.ts";
 import { $, ff, type Signal } from "./signals";
+import { log } from "./index.ts";
 
 function randomString(length = 6) {
   const chars =
@@ -68,7 +69,6 @@ export function run(
   }
 
   function handleKeyboardEvent(d: string) {
-    // TODO: there could be better way
     const focused = getNodeById(focusedComponentId());
     if (!focused) return;
 
@@ -312,14 +312,27 @@ export function run(
         border = "none",
         padding,
         text: buttonText,
+        focus = false,
       } = node.props as ButtonProps;
 
+      if (focus && initialRender) {
+        initialRender = false;
+        focusedComponentId(node.id);
+      }
+
+      let isFocused = focusedComponentId() === node.id;
       let isPressed = pressedComponentId() === node.id;
 
       drawBackground(buffer, node, isPressed ? fg : bg, terminalWidth);
 
       if (border !== "none") {
-        drawBorder(buffer, node, terminalWidth, undefined, isPressed ? fg : bg);
+        drawBorder(
+          buffer,
+          node,
+          terminalWidth,
+          isFocused ? COLORS.default.green : COLORS.default.fg,
+          isPressed ? fg : bg,
+        );
       }
 
       let paddingX = padding as number;
@@ -359,7 +372,13 @@ export function run(
         border = "none",
         text: inputText,
         padding = 0,
+        focus = false,
       } = node.props as InputBoxProps;
+
+      if (focus && initialRender) {
+        initialRender = false;
+        focusedComponentId(node.id);
+      }
 
       let isFocused = focusedComponentId() === node.id;
 
@@ -406,15 +425,15 @@ export function run(
     }
   }
 
+  let initialRender = true;
+
   ff(() => {
     pressedComponentId();
     focusedComponentId();
     let tw = terminalWidth();
     let th = terminalHeight();
 
-    for (let dep of deps) {
-      dep();
-    }
+    const _ = deps.map((dep) => dep());
 
     spatialLookup = new Array(terminalWidth() * terminalHeight());
     nodeRegistry.clear();
@@ -616,6 +635,7 @@ export type BorderProps =
   | "none";
 
 export type ButtonProps = CommonProps & {
+  focus?: boolean;
   fg?: number;
   bg?: number;
   text: Signal<string>;
@@ -623,6 +643,7 @@ export type ButtonProps = CommonProps & {
 };
 
 export type InputBoxProps = CommonProps & {
+  focus?: boolean;
   fg?: number;
   bg?: number;
   text: Signal<string>;
@@ -631,4 +652,3 @@ export type InputBoxProps = CommonProps & {
   onType: (value: string) => void;
   onSubmit?: (value: string) => void;
 };
-

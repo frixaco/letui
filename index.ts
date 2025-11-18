@@ -5,18 +5,12 @@ import {
   InputBox,
   Row,
   run,
-  Text,
-  type ColumnProps,
   type InputBoxProps,
-  type RowProps,
 } from "./components";
-import { $, af } from "./signals";
+import { $ } from "./signals";
 
-let text = $("HELLO WORLD");
 let searchText = $("");
 let buttonText = $("Search");
-let nextButtonText = $("[N]ext");
-let prevButtonText = $("[P]prev");
 let results = $<ScrapeResultItem[]>([]);
 
 let inputStyles: Partial<InputBoxProps> = {
@@ -31,26 +25,57 @@ type ScrapeResultItem = {
   title: string;
   size: string;
   date: string;
+  magnet: string;
 };
 
 type ScrapeResult = {
   results: ScrapeResultItem[];
 };
 
+type TorrentFile = {};
+
+type TorrentDetails = {
+  id: number;
+  info_hash: string;
+  name: string;
+  files: TorrentFile[];
+};
+
+type TorrentResponse = {
+  id: number;
+  details: TorrentDetails;
+};
+
 let logFile = Bun.file("logs.txt");
 
-function log(txt: string) {
+export function log(txt: string) {
   logFile.write(txt);
 }
 
-async function fetchResults(st: string) {
+async function fetchResults(query: string) {
   const response = await fetch(
-    `https://scrape.anitrack.frixaco.com/scrape?q=${st}`,
+    `https://scrape.anitrack.frixaco.com/scrape?q=${query}`,
   );
   const data = (await response.json()) as ScrapeResult;
 
   log(JSON.stringify(data.results, null, 2));
   results(data.results);
+}
+
+async function streamResult(magnet: string) {
+  const response = await fetch("https://rqbit.anitrack.frixaco.com/torrents", {
+    method: "post",
+    body: magnet,
+  });
+  const data = (await response.json()) as TorrentResponse;
+  let streamUrl = `https://rqbit.anitrack.frixaco.com/torrents/${data.details.info_hash}/stream/${
+    data.details.files.length - 1
+  }`;
+  Bun.spawn({
+    cmd: ["mpv", streamUrl],
+    stdout: "ignore",
+    stderr: "ignore",
+  });
 }
 
 run(
@@ -75,6 +100,7 @@ run(
             InputBox({
               ...inputStyles,
               id: "search-input",
+              focus: true,
               text: searchText,
               onType: (v) => {
                 searchText(v);
@@ -105,31 +131,20 @@ run(
             gap: 1,
             padding: "1 0",
           },
-          results().map((s) => {
+          results().map((s, i) => {
             let text = $(s.title);
 
-            return Text({
+            return Button({
               ...inputStyles,
+              id: `result-button-${i}`,
               text: text,
+              onClick: () => {
+                streamResult(s.magnet);
+                log(`Clicked: ${s.title}`);
+              },
             });
           }),
         ),
-
-        Row({}, [
-          Button({
-            ...inputStyles,
-            id: "prev-button",
-            text: prevButtonText,
-            onClick: () => {},
-          }),
-
-          Button({
-            ...inputStyles,
-            id: "next-button",
-            text: nextButtonText,
-            onClick: () => {},
-          }),
-        ]),
       ],
     ),
   [results],

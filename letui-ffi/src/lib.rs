@@ -19,7 +19,7 @@ use std::{
     slice,
     sync::Mutex,
 };
-use taffy::prelude::*;
+use taffy::{Overflow, Point, prelude::*};
 
 static MAX_BUFFER_SIZE: usize = 2_000_000;
 static LAST_BUFFER: Mutex<Option<Box<[u64; MAX_BUFFER_SIZE]>>> = Mutex::new(None);
@@ -220,6 +220,10 @@ fn get_styles(node: &Node) -> Style {
             style.flex_direction = FlexDirection::Column;
             style.align_items = Some(AlignItems::Stretch);
             style.flex_grow = 1.0;
+            style.overflow = Point {
+                x: Overflow::Hidden,
+                y: Overflow::Hidden,
+            };
         }
         "row" => {
             style.flex_direction = FlexDirection::Row;
@@ -286,9 +290,11 @@ enum NodeContext {
     Container,
 }
 
+fn wrap_text(text: &str, max_width: f32) {}
+
 fn measure_function(
     known_dimensions: Size<Option<f32>>,
-    _available_space: Size<AvailableSpace>,
+    available_space: Size<AvailableSpace>,
     _node_id: NodeId,
     node_context: Option<&mut NodeContext>,
     _style: &Style,
@@ -329,7 +335,6 @@ pub extern "C" fn calculate_layout(p: *const u8, l: u32) -> c_int {
         height: length(tree.height),
     };
     let root = taffy
-        // TODO: set context based on component type
         .new_leaf_with_context(
             root_styles,
             match node.node_type.as_str() {
@@ -358,7 +363,6 @@ pub extern "C" fn calculate_layout(p: *const u8, l: u32) -> c_int {
             )
         },
     );
-    // taffy.print_tree(root);
 
     let mut frames: Vec<f32> = Vec::new();
 
@@ -399,15 +403,3 @@ pub extern "C" fn debug_buffer(idx: u64) -> u64 {
         0
     }
 }
-
-// fn print_events() -> io::Result<bool> {
-//     loop {
-//         if poll(Duration::from_millis(100))? {
-//             // It's guaranteed that `read` won't block, because `poll` returned
-//             // `Ok(true)`.
-//             println!("{:?}", read()?);
-//         } else {
-//             // Timeout expired, no `Event` is available
-//         }
-//     }
-// }
