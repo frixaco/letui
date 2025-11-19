@@ -246,10 +246,12 @@ fn build_taffy_tree(taffy: &mut TaffyTree<NodeContext>, taffy_root: &NodeId, tre
             .new_leaf_with_context(
                 child_styles,
                 match child.node_type.as_str() {
-                    "column" | "row" | "input" => NodeContext::Container,
+                    "column" => NodeContext::Column,
+                    "row" => NodeContext::Row,
                     "text" => NodeContext::Text(child.text.clone()),
                     "button" => NodeContext::Button(child.text.clone()),
-                    _ => NodeContext::Container,
+                    "input" => NodeContext::InputBox(child.text.clone()),
+                    _ => NodeContext::Column,
                 },
             )
             .unwrap();
@@ -287,7 +289,9 @@ fn build_frames_array(
 enum NodeContext {
     Text(String),
     Button(String),
-    Container,
+    Row,
+    Column,
+    InputBox(String),
 }
 
 fn measure_function(
@@ -306,7 +310,9 @@ fn measure_function(
     }
 
     match node_context {
-        Some(NodeContext::Text(text)) | Some(NodeContext::Button(text)) => {
+        Some(NodeContext::Text(text))
+        | Some(NodeContext::Button(text))
+        | Some(NodeContext::InputBox(text)) => {
             let text_width = text.chars().count() as f32;
 
             let max_width = match available_space.width {
@@ -348,6 +354,7 @@ fn measure_function(
                 height: lines as f32,
             }
         }
+        Some(NodeContext::Column) | Some(NodeContext::Row) => Size::ZERO,
         _ => Size::ZERO,
     }
 }
@@ -372,7 +379,10 @@ pub extern "C" fn calculate_layout(p: *const u8, l: u32) -> c_int {
             match node.node_type.as_str() {
                 "text" => NodeContext::Text(node.text.clone()),
                 "button" => NodeContext::Button(node.text.clone()),
-                _ => NodeContext::Container,
+                "input" => NodeContext::InputBox(node.text.clone()),
+                "column" => NodeContext::Column,
+                "row" => NodeContext::Row,
+                _ => NodeContext::Column,
             },
         )
         .unwrap();

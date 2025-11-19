@@ -10,7 +10,8 @@ import {
 import { $ } from "./signals";
 
 let searchText = $("");
-let buttonText = $("Search");
+let focusId = $("search-input");
+// let buttonText = $("Search");
 let results = $<ScrapeResultItem[]>([]);
 
 let inputStyles: Partial<InputBoxProps> = {
@@ -60,6 +61,9 @@ async function fetchResults(query: string) {
 
   log(JSON.stringify(data.results, null, 2));
   results(data.results);
+  if (data.results.length > 0) {
+    focusId("result-button-0");
+  }
 }
 
 async function streamResult(magnet: string) {
@@ -102,6 +106,13 @@ run(
               id: "search-input",
               focus: true,
               text: searchText,
+              border: {
+                color:
+                  focusId() === "search-input"
+                    ? COLORS.default.green
+                    : COLORS.default.fg,
+                style: "square",
+              },
               onType: (v) => {
                 searchText(v);
               },
@@ -113,15 +124,15 @@ run(
               },
             }),
 
-            Button({
-              ...inputStyles,
-              id: "search-button",
-              text: buttonText,
-              onClick: () => {
-                log("onSubmit +" + searchText());
-                fetchResults(searchText());
-              },
-            }),
+            // Button({
+            //   ...inputStyles,
+            //   id: "search-button",
+            //   text: buttonText,
+            //   onClick: () => {
+            //     log("onSubmit +" + searchText());
+            //     fetchResults(searchText());
+            //   },
+            // }),
           ],
         ),
 
@@ -133,11 +144,16 @@ run(
           },
           results().map((s, i) => {
             let text = $(s.title);
+            let id = `result-button-${i}`;
 
             return Button({
               ...inputStyles,
-              id: `result-button-${i}`,
+              id,
               text: text,
+              border: {
+                color: focusId() === id ? COLORS.default.green : COLORS.default.fg,
+                style: "square",
+              },
               onClick: () => {
                 streamResult(s.magnet);
                 log(`Clicked: ${s.title}`);
@@ -147,5 +163,6 @@ run(
         ),
       ],
     ),
-  [results],
+  [results, focusId],
+  focusId,
 );

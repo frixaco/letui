@@ -16,13 +16,14 @@ function randomString(length = 6) {
 export function run(
   nodeFactory: (tw: number, th: number) => Node,
   deps: Signal<any>[],
+  focusedIdSignal?: Signal<string>,
 ) {
   api.init_buffer();
   api.init_letui();
   process.stdin.resume();
 
   let pressedComponentId = $("");
-  let focusedComponentId = $("");
+  let focusedComponentId = focusedIdSignal || $("");
 
   let spatialLookup: (string | undefined)[];
   let nodeRegistry = new Map<string, Node>();
@@ -42,25 +43,10 @@ export function run(
   }
 
   function setFocus(newId: string) {
-    const oldId = focusedComponentId();
-    if (oldId === newId) return;
-    const oldNode = getNodeById(oldId);
-    const newNode = getNodeById(newId);
-    if (oldNode?.type === "input") {
-      (oldNode.props as InputBoxProps).onBlur();
-    }
-    if (newNode?.type === "input") {
-      (newNode.props as InputBoxProps).onFocus();
-    }
     focusedComponentId(newId);
   }
 
   function clearFocus() {
-    const oldId = focusedComponentId();
-    const oldNode = getNodeById(oldId);
-    if (oldNode?.type === "input") {
-      (oldNode.props as InputBoxProps).onBlur();
-    }
     focusedComponentId("");
   }
 
@@ -142,7 +128,7 @@ export function run(
 
   const isMouseEvent = (d: string) => d.startsWith("\u001b[<");
 
-  const page = $(0);
+  let page = $(0);
 
   process.stdin.on("data", (data) => {
     const d = data.toString();
@@ -473,11 +459,14 @@ export function run(
     }
   }
 
+  ff(() => {});
+
   let initialRender = true;
+  let previousFocusId = focusedComponentId();
 
   ff(() => {
     pressedComponentId();
-    focusedComponentId();
+    const currentFocusId = focusedComponentId();
     let tw = terminalWidth();
     let th = terminalHeight();
 
@@ -489,6 +478,19 @@ export function run(
     const node = nodeFactory(tw, th);
     layout(node);
     paint(node, node.props.bg);
+
+    if (currentFocusId !== previousFocusId) {
+      const oldNode = nodeRegistry.get(previousFocusId);
+      const newNode = nodeRegistry.get(currentFocusId);
+
+      if (oldNode?.type === "input") {
+        (oldNode.props as InputBoxProps).onBlur();
+      }
+      if (newNode?.type === "input") {
+        (newNode.props as InputBoxProps).onFocus();
+      }
+      previousFocusId = currentFocusId;
+    }
 
     api.flush();
   });
