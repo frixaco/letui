@@ -261,7 +261,7 @@ export function run(
       const nodeBottom = node.frame.y + node.frame.height;
       const clipBottom = clipBounds.y + clipBounds.height;
 
-      if (node.frame.y >= clipBottom || nodeBottom <= clipBounds.y) {
+      if (node.frame.y < clipBounds.y || nodeBottom > clipBottom) {
         return;
       }
     }
