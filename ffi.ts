@@ -1,7 +1,31 @@
 import { dlopen, FFIType, suffix } from "bun:ffi";
 
 const prefix = process.platform === "win32" ? "" : "lib";
-const path = `./letui-ffi/target/release/${prefix}letui_ffi.${suffix}`;
+const filename = `${prefix}letui_ffi.${suffix}`;
+
+// Logic to find the binary:
+// 1. Check if we are running in dev mode (local target/release)
+// 2. Check node_modules for the platform-specific package
+
+function getLibraryPath(): string {
+  const { platform, arch } = process;
+  
+  // Map nodejs platform/arch to our package naming convention
+  // We use the same names as node (darwin, linux, win32) and (x64, arm64)
+  const pkgName = `@frixaco/letui-${platform}-${arch}`;
+  
+  try {
+    // Try to resolve the binary from the installed package
+    // @ts-ignore - expecting this to be available at runtime
+    const pkgPath = import.meta.resolveSync(`${pkgName}/${filename}`);
+    return pkgPath;
+  } catch (e) {
+    // Fallback to local development path
+    return new URL(`./letui-ffi/target/release/${filename}`, import.meta.url).pathname;
+  }
+}
+
+const path = getLibraryPath();
 
 const { symbols: api } = dlopen(path, {
   init_letui: {

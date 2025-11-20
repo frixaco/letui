@@ -1,8 +1,8 @@
 {
-  "name": "letui",
+  "name": "@frixaco/letui",
+  "version": "0.0.1",
   "module": "index.ts",
   "type": "module",
-  "private": true,
   "scripts": {
     "build-ffi": "cd letui-ffi && cargo build --release",
     "dev": "bun run build-ffi && bun run examples.ts"
@@ -12,5 +12,15 @@
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "files": [
+    "*.ts",
+    "scripts/build-npm.ts"
+  ],
+  "optionalDependencies": {
+    "@frixaco/letui-darwin-arm64": "0.1.0",
+    "@frixaco/letui-darwin-x64": "0.1.0",
+    "@frixaco/letui-linux-x64": "0.1.0",
+    "@frixaco/letui-win32-x64": "0.1.0"
   }
 }
