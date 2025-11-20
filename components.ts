@@ -62,6 +62,12 @@ export function run(
       if (d === "\r" || d === " ") {
         (focused.props as ButtonProps).onClick();
         api.flush();
+      } else {
+        const onKeyDown = (focused.props as ButtonProps).onKeyDown;
+        if (onKeyDown) {
+          onKeyDown(d);
+          api.flush();
+        }
       }
       return;
     }
@@ -234,6 +240,13 @@ export function run(
       n.children.forEach(updateFrames);
     }
     updateFrames(node);
+  }
+
+  function triggerLayoutEvents(node: Node) {
+    if (node.props.onLayout) {
+      node.props.onLayout(node);
+    }
+    node.children.forEach(triggerLayoutEvents);
   }
 
   function paint(
@@ -477,6 +490,7 @@ export function run(
 
     const node = nodeFactory(tw, th);
     layout(node);
+    triggerLayoutEvents(node);
     paint(node, node.props.bg);
 
     if (currentFocusId !== previousFocusId) {
@@ -663,6 +677,7 @@ export type Node = {
 export type CommonProps = {
   padding?: number | `${number} ${number}`;
   border?: BorderProps;
+  onLayout?: (node: Node) => void;
 };
 
 export type ColumnProps = CommonProps & {
@@ -696,6 +711,7 @@ export type ButtonProps = CommonProps & {
   bg?: number;
   text: Signal<string>;
   onClick: () => void | Promise<void>;
+  onKeyDown?: (key: string) => void;
 };
 
 export type InputBoxProps = CommonProps & {
