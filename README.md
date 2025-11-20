@@ -1,5 +1,7 @@
 # letui
 
+https://github.com/user-attachments/assets/a84f8b6c-86fd-4f42-9ec8-84edd24c7abd
+
 TUI library written using Rust and TypeScript
 
 **Core dependencies**:
