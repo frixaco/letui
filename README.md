@@ -2,7 +2,7 @@
 
 https://github.com/user-attachments/assets/a84f8b6c-86fd-4f42-9ec8-84edd24c7abd
 
-TUI library written using Rust and TypeScript
+Simple TUI library written using Rust and TypeScript
 
 **Core dependencies**:
 
@@ -11,13 +11,15 @@ TUI library written using Rust and TypeScript
 
 **TODO**:
 
-- [ ] Hover events with debounce (e.g. hover over a button)
-- [ ] Try to optimizatize the shit out of the code
-- [ ] Multiline support for Text and TextInput components
+- [ ] Hover support
+- [ ] Try to optimizatize the shit out of everything
 - [ ] Add logging and debugging utilities
+- [ ] Improve overall architecture ("make it work" is done, now "make it right, make it fast" is left)
+- [ ] Add scrollable containers
 
-## Goals
+### NPM publish notes:
 
-- Truecolor output (24-bit RGB) and Unicode text
-- Sub-8ms input-to-render latency
-- Widgets: text, list, button, borders, containers (row, column), input box and more
+1. push your changes
+2. `git tag v0.0.1` - tag a commit
+3. `git push origin v0.0.1` - push the tag
+4. release action will build and deploy it as package
