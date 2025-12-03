@@ -3,6 +3,7 @@ import { COLORS } from "./colors.ts";
 import api from "./ffi.ts";
 import { $, ff, type Signal } from "./signals";
 import { log } from "./index.ts";
+import { startFrame, endFrame, formatMetrics } from "./metrics.ts";
 
 function randomString(length = 6) {
   const chars =
@@ -142,6 +143,9 @@ export function run(
     if (d === "\u0011") {
       api.free_buffer();
       api.deinit_letui();
+      const stats = formatMetrics();
+      Bun.write("metrics.txt", stats + "\n");
+      console.log(stats);
       process.exit(0);
     }
 
@@ -220,7 +224,6 @@ export function run(
       width: terminalWidth(),
       height: terminalHeight(),
     });
-    Bun.write("tree.json", jsonTree);
     let jsonBytes = Buffer.from(jsonTree, "utf-8");
     api.calculate_layout(ptr(jsonBytes), jsonBytes.byteLength);
 
@@ -478,6 +481,8 @@ export function run(
   let previousFocusId = focusedComponentId();
 
   ff(() => {
+    const frameStart = startFrame();
+
     pressedComponentId();
     const currentFocusId = focusedComponentId();
     let tw = terminalWidth();
@@ -507,6 +512,8 @@ export function run(
     }
 
     api.flush();
+
+    endFrame(frameStart);
   });
 }
 
