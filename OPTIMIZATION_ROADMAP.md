@@ -18,6 +18,7 @@
 ## Project Overview
 
 **Goal**: A minimal, fast TUI library with:
+
 - Signals for state management (TypeScript)
 - Rust backend for core operations (buffer, diffing, layout via Taffy)
 - TypeScript component API (layout, paint, events)
@@ -30,21 +31,21 @@
 
 ### Strengths
 
-| Area | Why It Works |
-|------|--------------|
-| Rust/TS separation | FFI only for coarse operations (layout, flush), not per-cell |
-| Signals | Simple, effective reactive primitives (`$`, `dd`, `ff`) |
-| Diff-based flush | Rust only writes changed cells to terminal |
-| Single render effect | One `ff` drives the whole render loop |
+| Area                 | Why It Works                                                 |
+| -------------------- | ------------------------------------------------------------ |
+| Rust/TS separation   | FFI only for coarse operations (layout, flush), not per-cell |
+| Signals              | Simple, effective reactive primitives (`$`, `dd`, `ff`)      |
+| Diff-based flush     | Rust only writes changed cells to terminal                   |
+| Single render effect | One `ff` drives the whole render loop                        |
 
 ### Weaknesses
 
-| Area | Problem |
-|------|---------|
+| Area                     | Problem                                                                 |
+| ------------------------ | ----------------------------------------------------------------------- |
 | Full rebuild every frame | Any signal change rebuilds entire tree, re-layouts, repaints everything |
-| Buffer cloning | ~~Was copying 16MB every flush~~ ✅ Fixed |
-| Debug I/O | ~~`Bun.write("tree.json")` every frame~~ ✅ Fixed |
-| Allocations in hot path | Per-cell `BigUint64Array`, new arrays every frame |
+| Buffer cloning           | ~~Was copying 16MB every flush~~ ✅ Fixed                               |
+| Debug I/O                | ~~`Bun.write("tree.json")` every frame~~ ✅ Fixed                       |
+| Allocations in hot path  | Per-cell `BigUint64Array`, new arrays every frame                       |
 
 ### Render Pipeline
 
@@ -71,22 +72,27 @@ api.flush()                → Rust: diff buffers, write to terminal
 ## Performance Baseline
 
 ### Before Optimizations
+
 ```
 113 fps | 8.85ms avg (3.47-32.43) | 31.7MB heap | 27 frames
 ```
 
 ### After Removing `Bun.write`
+
 ```
 139 fps | 7.2ms avg (3-33) | 22.2MB heap | 40 frames
 ```
 
 ### After Fixing Buffer Clone
+
 ```
 ~150+ fps | ~5ms avg (1-13) | ~20MB heap
 ```
 
 ### Remaining Spikes (1-13ms range)
+
 Likely causes:
+
 1. GC pauses from per-cell allocations
 2. JSON serialization overhead
 3. Taffy tree rebuild
@@ -96,13 +102,16 @@ Likely causes:
 ## Completed Optimizations
 
 ### 1. Remove Debug File Write ✅
+
 **File**: `components.ts`
 **Change**: Removed `Bun.write("tree.json", jsonTree)` from `layout()`
 **Impact**: Eliminated ~10-20ms spikes
 
 ### 2. Fix Buffer Clone ✅
+
 **File**: `letui-ffi/src/lib.rs`
 **Change**: Replace full 16MB `buf.clone()` with `copy_from_slice` of only used cells
+
 ```rust
 // Before
 *lb = Some(buf.clone());
@@ -110,11 +119,14 @@ Likely causes:
 // After
 last_buf[0..used_cells * 3].copy_from_slice(&buf[0..used_cells * 3]);
 ```
+
 **Impact**: Eliminated major memory copy, reduced spikes
 
 ### 3. Add Metrics Tracking ✅
+
 **File**: `metrics.ts`
 **Features**:
+
 - Frame timing via `Bun.nanoseconds()`
 - Memory tracking via `process.memoryUsage().heapUsed`
 - FPS, avg/min/max frame time
@@ -127,9 +139,11 @@ last_buf[0..used_cells * 3].copy_from_slice(&buf[0..used_cells * 3]);
 ### Priority 1: Quick Wins (S effort, high impact)
 
 #### 1A. Eliminate Per-Cell `BigUint64Array` Allocation
+
 **File**: `components.ts` → `drawBackground()`
 
 **Current** (allocates per cell):
+
 ```typescript
 buffer.set(
   new BigUint64Array([
@@ -142,6 +156,7 @@ buffer.set(
 ```
 
 **Fixed** (direct index writes):
+
 ```typescript
 const blankChar = BigInt(" ".codePointAt(0)!);
 const defaultBg = BigInt(COLORS.default.bg);
@@ -161,14 +176,17 @@ function drawBackground(buffer, node, bg, terminalWidth) {
 ```
 
 #### 1B. Reuse `spatialLookup` Array
+
 **File**: `components.ts` → inside `run()`
 
 **Current**:
+
 ```typescript
 spatialLookup = new Array(terminalWidth() * terminalHeight());
 ```
 
 **Fixed**:
+
 ```typescript
 // At init
 let spatialLookup = new Array(terminalWidth() * terminalHeight());
@@ -178,9 +196,11 @@ spatialLookup.fill(undefined);
 ```
 
 #### 1C. Reuse Frames Vector in Rust
+
 **File**: `letui-ffi/src/lib.rs` → `calculate_layout()`
 
 **Current**:
+
 ```rust
 let mut frames: Vec<f32> = Vec::new();
 build_frames_array(&mut taffy, root, &mut frames, 0.0, 0.0);
@@ -188,6 +208,7 @@ build_frames_array(&mut taffy, root, &mut frames, 0.0, 0.0);
 ```
 
 **Fixed**:
+
 ```rust
 let mut frames_lock = FRAMES.lock().unwrap();
 let frames_vec = frames_lock.get_or_insert_with(Vec::new);
@@ -198,14 +219,17 @@ build_frames_array(&mut taffy, root, frames_vec, 0.0, 0.0);
 ### Priority 2: Medium Effort (M effort)
 
 #### 2A. Remove Redundant `api.flush()` Calls
+
 **File**: `components.ts`
 
 Event handlers (`handleKeyboardEvent`, `handleMouseEvent`) call `api.flush()`, then the reactive `ff` effect also flushes. Remove flushes from event handlers — let the render loop handle it.
 
 #### 2B. Right-Size Buffers
+
 **File**: `letui-ffi/src/lib.rs`
 
 Allocate buffers based on terminal size, not fixed `MAX_BUFFER_SIZE = 2_000_000`:
+
 ```rust
 fn buffer_len_for_terminal(w: u16, h: u16) -> usize {
     w as usize * h as usize * 3
@@ -215,9 +239,11 @@ fn buffer_len_for_terminal(w: u16, h: u16) -> usize {
 ### Priority 3: Larger Effort (L effort)
 
 #### 3A. Binary Layout Protocol
+
 Replace JSON serialization with a flat binary buffer (e.g., `Float32Array` with node records).
 
 #### 3B. Persistent Taffy Tree
+
 Keep Taffy tree alive in Rust, update incrementally instead of rebuilding.
 
 ---
@@ -225,15 +251,19 @@ Keep Taffy tree alive in Rust, update incrementally instead of rebuilding.
 ## Fine-Grained Reactivity
 
 ### Current Problem
+
 Any signal change triggers: full tree rebuild → full layout → full repaint
 
 ### Goal
+
 Signal change → mark node dirty → batch updates → layout if needed → repaint only dirty nodes
 
 ### Implementation Steps
 
 #### Step 1: Persist Node Tree
+
 Call `nodeFactory` once at startup, not every frame.
+
 ```typescript
 let root: NodeInstance;
 
@@ -247,6 +277,7 @@ function init() {
 ```
 
 #### Step 2: Add Dirty Tracking
+
 ```typescript
 const layoutDirtyNodes = new Set<NodeInstance>();
 const paintDirtyNodes = new Set<NodeInstance>();
@@ -263,6 +294,7 @@ function markPaintDirty(node: NodeInstance) {
 ```
 
 #### Step 3: Central Scheduler
+
 ```typescript
 let updateScheduled = false;
 
@@ -277,7 +309,7 @@ function processUpdates() {
 
   if (layoutDirtyNodes.size) {
     layoutDirtyNodes.clear();
-    layout(root);  // Still full layout, but less often
+    layout(root); // Still full layout, but less often
     paintDirtyNodes.add(root);
   }
 
@@ -292,20 +324,21 @@ function processUpdates() {
 ```
 
 #### Step 4: Per-Node Reactive Bindings
+
 ```typescript
 function setupNodeReactivity(node: NodeInstance) {
   if (node.type === "text" || node.type === "button" || node.type === "input") {
     const textSignal = (node.props as TextProps).text;
-    
+
     ff(() => {
-      textSignal();              // Subscribe
-      markLayoutDirty(node);     // Text affects size
+      textSignal(); // Subscribe
+      markLayoutDirty(node); // Text affects size
     });
   }
 
   ff(() => {
     const focused = focusedComponentId() === node.id;
-    markPaintDirty(node);        // Focus is visual only
+    markPaintDirty(node); // Focus is visual only
   });
 
   for (const child of node.children) {
@@ -316,10 +349,10 @@ function setupNodeReactivity(node: NodeInstance) {
 
 ### Layout vs Paint Distinction
 
-| Change Type | Examples | Action |
-|-------------|----------|--------|
+| Change Type  | Examples                                 | Action                |
+| ------------ | ---------------------------------------- | --------------------- |
 | Layout dirty | text content, padding, gap, border width | Full layout + repaint |
-| Paint dirty | focus, colors, pressed state | Repaint only |
+| Paint dirty  | focus, colors, pressed state             | Repaint only          |
 
 ---
 
@@ -339,6 +372,7 @@ Only pursue if you hit performance limits with the above optimizations.
 ### Binary Layout Protocol
 
 Replace JSON with packed structs:
+
 ```typescript
 // TypeScript side
 const nodeBuffer = new Float32Array([
@@ -350,6 +384,7 @@ api.calculate_layout_binary(ptr(nodeBuffer), nodeBuffer.length);
 ### Packed Cell Representation
 
 One `u64` per cell instead of three:
+
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │  bits 0-20: codepoint  │  bits 21-44: fg RGB  │  bits 45-63: bg RGB  │
@@ -361,6 +396,7 @@ One `u64` per cell instead of three:
 ## Quick Reference
 
 ### Commands
+
 ```bash
 # Build Rust FFI
 cd letui-ffi && cargo build --release
@@ -373,6 +409,7 @@ Ctrl+Q
 ```
 
 ### Metrics API
+
 ```typescript
 import { getMetrics, formatMetrics, shouldReport } from "./metrics.ts";
 
@@ -405,12 +442,12 @@ formatMetrics(); // "120fps | 2.5ms avg (1.8-4.2) | 12.3MB heap | 847 frames"
 
 ## Files Reference
 
-| File | Purpose |
-|------|---------|
-| `signals.ts` | Reactive primitives (`$`, `dd`, `ff`, `af`) |
-| `components.ts` | Runtime, components, layout, paint |
-| `ffi.ts` | Bun FFI bindings to Rust |
-| `letui-ffi/src/lib.rs` | Rust core: buffer, flush, taffy layout |
-| `metrics.ts` | Performance tracking |
-| `examples.ts` | Demo app |
-| `colors.ts` | Color constants |
+| File                   | Purpose                                     |
+| ---------------------- | ------------------------------------------- |
+| `signals.ts`           | Reactive primitives (`$`, `dd`, `ff`, `af`) |
+| `components.ts`        | Runtime, components, layout, paint          |
+| `ffi.ts`               | Bun FFI bindings to Rust                    |
+| `letui-ffi/src/lib.rs` | Rust core: buffer, flush, taffy layout      |
+| `metrics.ts`           | Performance tracking                        |
+| `examples.ts`          | Demo app                                    |
+| `colors.ts`            | Color constants                             |

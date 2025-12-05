@@ -21,26 +21,24 @@ use std::{
 };
 use taffy::{Overflow, Point, prelude::*};
 
-static MAX_BUFFER_SIZE: usize = 2_000_000;
-static LAST_BUFFER: Mutex<Option<Box<[u64; MAX_BUFFER_SIZE]>>> = Mutex::new(None);
-static CURRENT_BUFFER: Mutex<Option<Box<[u64; MAX_BUFFER_SIZE]>>> = Mutex::new(None);
+static LAST_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
+static CURRENT_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
 static TERMINAL_SIZE: Mutex<(u16, u16)> = Mutex::new((0, 0));
 static FRAMES: Mutex<Option<Vec<f32>>> = Mutex::new(None);
 
 #[unsafe(no_mangle)]
 pub extern "C" fn init_buffer() -> c_int {
     let (w, h) = size().unwrap();
+    let buffer_size = (w as usize) * (h as usize) * 3;
 
     let mut term_size = TERMINAL_SIZE.lock().unwrap();
     *term_size = (w, h);
 
     let mut cb = CURRENT_BUFFER.lock().unwrap();
-    *cb = Some(Box::new([0u64; MAX_BUFFER_SIZE]));
+    *cb = Some(vec![0u64; buffer_size]);
     let mut lb = LAST_BUFFER.lock().unwrap();
+    *lb = Some(vec![0u64; buffer_size]);
 
-    if let Some(ref buf) = *cb {
-        *lb = Some(buf.clone());
-    }
     1
 }
 
@@ -82,15 +80,14 @@ pub extern "C" fn flush() -> c_int {
     let mut lb = LAST_BUFFER.lock().unwrap();
     match *cb {
         Some(ref buf) => match *lb {
-            Some(ref last_buf) => {
+            Some(ref mut last_buf) => {
                 let mut stdout = stdout();
                 let term_size = TERMINAL_SIZE.lock().unwrap();
-                let (w, h) = *term_size;
-                let used_cells = (w as usize) * (h as usize);
+                let (w, _h) = *term_size;
 
-                for (cell_idx, (new, old)) in buf[0..used_cells * 3]
+                for (cell_idx, (new, old)) in buf
                     .chunks_exact(3)
-                    .zip(last_buf[0..used_cells * 3].chunks_exact(3))
+                    .zip(last_buf.chunks_exact(3))
                     .enumerate()
                 {
                     if new != old {
@@ -122,9 +119,8 @@ pub extern "C" fn flush() -> c_int {
                     }
                 }
                 stdout.flush().unwrap();
-                if let Some(ref buf) = *cb {
-                    *lb = Some(buf.clone());
-                }
+
+                last_buf.copy_from_slice(buf);
             }
             None => (),
         },
@@ -406,11 +402,12 @@ pub extern "C" fn calculate_layout(p: *const u8, l: u32) -> c_int {
         },
     );
 
-    let mut frames: Vec<f32> = Vec::new();
+    let mut frame_lock = FRAMES.lock().unwrap();
+    let frames_vec = frame_lock.get_or_insert_with(Vec::new);
+    frames_vec.clear();
 
-    build_frames_array(&mut taffy, root, &mut frames, 0.0, 0.0);
+    build_frames_array(&mut taffy, root, frames_vec, 0.0, 0.0);
 
-    *FRAMES.lock().unwrap() = Some(frames);
     1
 }
 

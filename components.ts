@@ -2,7 +2,7 @@ import { ptr, toArrayBuffer, type Pointer } from "bun:ffi";
 import { COLORS } from "./colors.ts";
 import api from "./ffi.ts";
 import { $, ff, type Signal } from "./signals";
-import { log } from "./index.ts";
+// import { log } from "./index.ts";
 import { startFrame, endFrame, formatMetrics } from "./metrics.ts";
 
 function randomString(length = 6) {
@@ -26,7 +26,10 @@ export function run(
   let pressedComponentId = $("");
   let focusedComponentId = focusedIdSignal || $("");
 
-  let spatialLookup: (string | undefined)[];
+  let terminalWidth = $(api.get_width());
+  let terminalHeight = $(api.get_height());
+
+  let spatialLookup = new Array(terminalWidth() * terminalHeight());
   let nodeRegistry = new Map<string, Node>();
 
   function getComponentAt(x: number, y: number): Node | undefined {
@@ -62,12 +65,12 @@ export function run(
     if (focused.type === "button") {
       if (d === "\r" || d === " ") {
         (focused.props as ButtonProps).onClick();
-        api.flush();
+        // api.flush();
       } else {
         const onKeyDown = (focused.props as ButtonProps).onKeyDown;
         if (onKeyDown) {
           onKeyDown(d);
-          api.flush();
+          // api.flush();
         }
       }
       return;
@@ -88,7 +91,7 @@ export function run(
           props.onType(curr + d);
         }
       }
-      api.flush();
+      // api.flush();
       return;
     }
   }
@@ -135,8 +138,6 @@ export function run(
 
   const isMouseEvent = (d: string) => d.startsWith("\u001b[<");
 
-  let page = $(0);
-
   process.stdin.on("data", (data) => {
     const d = data.toString();
 
@@ -165,9 +166,6 @@ export function run(
   };
   let buffer = getBuffer();
 
-  let terminalWidth = $(api.get_width());
-  let terminalHeight = $(api.get_height());
-
   process.stdout.on("resize", () => {
     api.update_terminal_size();
 
@@ -178,6 +176,7 @@ export function run(
     api.init_buffer();
 
     buffer = getBuffer();
+    spatialLookup = new Array(terminalWidth() * terminalHeight());
   });
 
   function serializeNodes(node: Node) {
@@ -488,9 +487,14 @@ export function run(
     let tw = terminalWidth();
     let th = terminalHeight();
 
-    const _ = deps.map((dep) => dep());
+    if (deps) {
+      for (let i = 0; i < deps.length; i++) {
+        deps[i]!();
+      }
+    }
 
-    spatialLookup = new Array(terminalWidth() * terminalHeight());
+    spatialLookup.fill(undefined);
+
     nodeRegistry.clear();
 
     const node = nodeFactory(tw, th);
@@ -523,16 +527,10 @@ function drawBackground(
   bg: number,
   terminalWidth: Signal<number>,
 ) {
+  let tw = terminalWidth();
   for (let j = node.frame.y; j < node.frame.y + node.frame.height; j++) {
     for (let i = node.frame.x; i < node.frame.x + node.frame.width; i++) {
-      buffer.set(
-        new BigUint64Array([
-          BigInt(" ".codePointAt(0)!),
-          BigInt(COLORS.default.bg),
-          BigInt(bg),
-        ]),
-        (j * terminalWidth() + i) * 3,
-      );
+      setCell(buffer, (j * tw + i) * 3, " ", COLORS.default.bg, bg);
     }
   }
 }
