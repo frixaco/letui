@@ -16,6 +16,7 @@ Simple TUI library written using Rust and TypeScript
 - [ ] Add logging and debugging utilities
 - [ ] Improve overall architecture ("make it work" is done, now "make it right, make it fast" is left)
 - [ ] Add scrollable containers
+- [ ] Add performance stats overlay that update independently from rest of the app (can i use a separate thread?)
 
 ### NPM publish notes:
 

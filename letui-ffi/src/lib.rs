@@ -12,7 +12,6 @@ use crossterm::{
         Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, enable_raw_mode, size,
     },
 };
-use serde::Deserialize;
 use std::{
     io::{Write, stdout},
     os::raw::c_int,
@@ -169,25 +168,82 @@ pub extern "C" fn update_terminal_size() -> c_int {
     1
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum NodeType {
+    Row = 1,
+    Column = 2,
+    Button = 3,
+    Input = 4,
+    Text = 5,
+}
+
+impl NodeType {
+    fn from_f32(v: f32) -> Self {
+        match v as u32 {
+            1 => NodeType::Row,
+            2 => NodeType::Column,
+            3 => NodeType::Button,
+            4 => NodeType::Input,
+            5 => NodeType::Text,
+            _ => NodeType::Column,
+        }
+    }
+}
+
+#[derive(Debug)]
 struct Node {
-    #[serde(rename = "type")]
-    node_type: String,
+    node_type: NodeType,
     gap: f32,
-    #[serde(rename = "paddingX")]
     padding_x: f32,
-    #[serde(rename = "paddingY")]
     padding_y: f32,
     border: f32,
     text: String,
     children: Vec<Node>,
 }
 
-#[derive(Deserialize, Debug)]
-struct Tree {
-    node: Node,
-    width: f32,
-    height: f32,
+const FIELDS_PER_NODE: usize = 7;
+
+fn parse_node(
+    node_data: &[f32],
+    node_offset: &mut usize,
+    text_data: &[u8],
+    text_offset: &mut usize,
+) -> Node {
+    let base = *node_offset;
+    let node_type = NodeType::from_f32(node_data[base]);
+    let gap = node_data[base + 1];
+    let padding_x = node_data[base + 2];
+    let padding_y = node_data[base + 3];
+    let border = node_data[base + 4];
+    let child_count = node_data[base + 5] as usize;
+    let text_len = node_data[base + 6] as usize;
+
+    *node_offset += FIELDS_PER_NODE;
+
+    let text = if text_len > 0 {
+        let s = std::str::from_utf8(&text_data[*text_offset..*text_offset + text_len])
+            .unwrap_or("")
+            .to_string();
+        *text_offset += text_len;
+        s
+    } else {
+        String::new()
+    };
+
+    let mut children = Vec::with_capacity(child_count);
+    for _ in 0..child_count {
+        children.push(parse_node(node_data, node_offset, text_data, text_offset));
+    }
+
+    Node {
+        node_type,
+        gap,
+        padding_x,
+        padding_y,
+        border,
+        text,
+        children,
+    }
 }
 
 fn get_styles(node: &Node) -> Style {
@@ -211,8 +267,8 @@ fn get_styles(node: &Node) -> Style {
         ..Default::default()
     };
 
-    match node.node_type.as_str() {
-        "column" => {
+    match node.node_type {
+        NodeType::Column => {
             style.flex_direction = FlexDirection::Column;
             style.align_items = Some(AlignItems::Stretch);
             style.flex_grow = 1.0;
@@ -221,10 +277,10 @@ fn get_styles(node: &Node) -> Style {
                 y: Overflow::Hidden,
             };
         }
-        "row" => {
+        NodeType::Row => {
             style.flex_direction = FlexDirection::Row;
         }
-        "input" => {
+        NodeType::Input => {
             style.flex_direction = FlexDirection::Row;
             style.flex_grow = 1.0;
         }
@@ -234,22 +290,23 @@ fn get_styles(node: &Node) -> Style {
     style
 }
 
+fn node_type_to_context(node: &Node) -> NodeContext {
+    match node.node_type {
+        NodeType::Column => NodeContext::Column,
+        NodeType::Row => NodeContext::Row,
+        NodeType::Text => NodeContext::Text(node.text.clone()),
+        NodeType::Button => NodeContext::Button(node.text.clone()),
+        NodeType::Input => NodeContext::InputBox(node.text.clone()),
+    }
+}
+
 fn build_taffy_tree(taffy: &mut TaffyTree<NodeContext>, taffy_root: &NodeId, tree_node: &Node) {
     for child in &tree_node.children {
         let child_styles = get_styles(child);
+        let context = node_type_to_context(child);
 
         let taffy_child = taffy
-            .new_leaf_with_context(
-                child_styles,
-                match child.node_type.as_str() {
-                    "column" => NodeContext::Column,
-                    "row" => NodeContext::Row,
-                    "text" => NodeContext::Text(child.text.clone()),
-                    "button" => NodeContext::Button(child.text.clone()),
-                    "input" => NodeContext::InputBox(child.text.clone()),
-                    _ => NodeContext::Column,
-                },
-            )
+            .new_leaf_with_context(child_styles, context)
             .unwrap();
         taffy.add_child(*taffy_root, taffy_child).unwrap();
 
@@ -356,40 +413,41 @@ fn measure_function(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn calculate_layout(p: *const u8, l: u32) -> c_int {
-    let json_bytes = unsafe { slice::from_raw_parts(p, l as usize) };
-    let tree = serde_json::from_slice::<Tree>(json_bytes).unwrap();
+pub extern "C" fn calculate_layout(
+    pn: *const f32,
+    ln: u32,
+    pt: *const u8,
+    lt: u32,
+    width: f32,
+    height: f32,
+) -> c_int {
+    let node_data = unsafe { slice::from_raw_parts(pn, ln as usize) };
+    let text_data = unsafe { slice::from_raw_parts(pt, lt as usize) };
+
+    let mut node_offset = 0usize;
+    let mut text_offset = 0usize;
+    let root_node = parse_node(node_data, &mut node_offset, text_data, &mut text_offset);
 
     let mut taffy: TaffyTree<NodeContext> = TaffyTree::new();
 
-    let node = &tree.node;
-
-    let mut root_styles = get_styles(node);
+    let mut root_styles = get_styles(&root_node);
     root_styles.size = Size {
-        width: length(tree.width),
-        height: length(tree.height),
+        width: length(width),
+        height: length(height),
     };
+
+    let context = node_type_to_context(&root_node);
     let root = taffy
-        .new_leaf_with_context(
-            root_styles,
-            match node.node_type.as_str() {
-                "text" => NodeContext::Text(node.text.clone()),
-                "button" => NodeContext::Button(node.text.clone()),
-                "input" => NodeContext::InputBox(node.text.clone()),
-                "column" => NodeContext::Column,
-                "row" => NodeContext::Row,
-                _ => NodeContext::Column,
-            },
-        )
+        .new_leaf_with_context(root_styles, context)
         .unwrap();
 
-    build_taffy_tree(&mut taffy, &root, &tree.node);
+    build_taffy_tree(&mut taffy, &root, &root_node);
 
     let _ = taffy.compute_layout_with_measure(
         root,
         Size {
-            width: length(tree.width),
-            height: length(tree.height),
+            width: length(width),
+            height: length(height),
         },
         |known_dimensions, available_space, node_id, node_context, style| {
             measure_function(

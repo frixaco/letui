@@ -49,7 +49,7 @@ const { symbols: api } = dlopen(path, {
     returns: "u64",
   },
   calculate_layout: {
-    args: ["pointer", "u64"],
+    args: ["pointer", "u32", "pointer", "u32", "f32", "f32"],
     returns: "i32",
   },
   get_frames_ptr: {

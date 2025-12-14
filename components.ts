@@ -179,52 +179,88 @@ export function run(
     spatialLookup = new Array(terminalWidth() * terminalHeight());
   });
 
-  function serializeNodes(node: Node) {
-    let nodeCount = 0;
-    function toTree(n: Node): Record<string, any> {
-      nodeCount++;
+  function serializeNodes(
+    node: Node,
+    result: Float32Array,
+    offset: number,
+    texts: string[],
+  ) {
+    // 1 - row
+    // 2 - column
+    // 3 - button
+    // 4 - input
+    // 5 - text
+    let nodeType =
+      node.type === "row"
+        ? 1
+        : node.type === "column"
+          ? 2
+          : node.type === "button"
+            ? 3
+            : node.type === "input"
+              ? 4
+              : node.type === "text"
+                ? 5
+                : 0;
 
-      let paddingX = 0;
-      let paddingY = 0;
+    result[offset++] = nodeType;
+    result[offset++] = (node.props as ColumnProps)?.gap || 0;
 
-      const { padding = 0 } = n.props;
-      if (typeof padding === "number") {
-        paddingX = padding;
-        paddingY = padding;
-      } else {
-        [paddingX, paddingY] = padding.split(" ").map(Number) as [
-          number,
-          number,
-        ];
-      }
-
-      return {
-        type: n.type,
-        gap: (n.props as any).gap || 0,
-        paddingX,
-        paddingY,
-        border: (n.props as any).border !== "none" ? 1 : 0,
-        text: (n.props as any).text ? (n.props as any).text() : "",
-        children: n.children.map(toTree),
-      };
+    let padding = node.props.padding;
+    let paddingX = padding as number;
+    let paddingY = padding as number;
+    if (typeof padding === "string") {
+      [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
     }
 
-    return {
-      tree: toTree(node),
-      nodeCount,
-    };
+    result[offset++] = paddingX;
+    result[offset++] = paddingY;
+    result[offset++] = node.props?.border ? 1 : 0;
+    result[offset++] = node.children.length;
+
+    let hasText =
+      node.type === "input" || node.type === "text" || node.type === "button";
+    const textValue = hasText
+      ? (node.props as TextProps | InputBoxProps | ButtonProps).text() || ""
+      : "";
+    result[offset++] = [...textValue].length;
+
+    if (hasText && textValue) {
+      texts.push(textValue);
+    }
+
+    for (let child of node.children) {
+      offset = serializeNodes(child, result, offset, texts);
+    }
+
+    return offset;
+  }
+
+  function countNodes(node: Node): number {
+    return 1 + node.children.reduce((a, c) => a + countNodes(c), 0);
   }
 
   function layout(node: Node) {
-    let { tree } = serializeNodes(node);
+    let nodeCount = countNodes(node);
+    let FIELDS_PER_NODE = 7;
+    let nodeData: Float32Array = new Float32Array(nodeCount * FIELDS_PER_NODE);
+    let offset = 0;
+    let texts: string[] = [];
 
-    let jsonTree = JSON.stringify({
-      node: tree,
-      width: terminalWidth(),
-      height: terminalHeight(),
-    });
-    let jsonBytes = Buffer.from(jsonTree, "utf-8");
-    api.calculate_layout(ptr(jsonBytes), jsonBytes.byteLength);
+    serializeNodes(node, nodeData, offset, texts);
+
+    const textBuffer = new TextEncoder().encode(texts.join(""));
+    const safeTextBuffer =
+      textBuffer.length > 0 ? textBuffer : new Uint8Array(1);
+
+    api.calculate_layout(
+      ptr(nodeData),
+      nodeData.length,
+      ptr(safeTextBuffer),
+      textBuffer.length,
+      terminalWidth(),
+      terminalHeight(),
+    );
 
     const framesPtr = api.get_frames_ptr()!;
     const framesLen = Number(api.get_frames_len()!);
