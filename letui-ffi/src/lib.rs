@@ -305,9 +305,7 @@ fn build_taffy_tree(taffy: &mut TaffyTree<NodeContext>, taffy_root: &NodeId, tre
         let child_styles = get_styles(child);
         let context = node_type_to_context(child);
 
-        let taffy_child = taffy
-            .new_leaf_with_context(child_styles, context)
-            .unwrap();
+        let taffy_child = taffy.new_leaf_with_context(child_styles, context).unwrap();
         taffy.add_child(*taffy_root, taffy_child).unwrap();
 
         build_taffy_tree(taffy, &taffy_child, child);
@@ -437,9 +435,7 @@ pub extern "C" fn calculate_layout(
     };
 
     let context = node_type_to_context(&root_node);
-    let root = taffy
-        .new_leaf_with_context(root_styles, context)
-        .unwrap();
+    let root = taffy.new_leaf_with_context(root_styles, context).unwrap();
 
     build_taffy_tree(&mut taffy, &root, &root_node);
 
