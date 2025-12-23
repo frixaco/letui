@@ -1,5 +1,17 @@
 # Optimization Roadmap
 
+## Priority 0: Quick Wins (First Frame Latency)
+
+- [x] Skip diff on first flush in Rust, write all cells directly
+  - What does the first `flush()` compare against? Why does every cell "differ"?
+  - How would you detect it's the first flush? A static flag? Reset when?
+  - Does skipping the diff actually reduce work, or just avoid the comparison?
+
+- [x] Minimize escape sequences on first flush (row-based cursor, color caching)
+  - How many `MoveTo` calls happen today per frame? How many are truly needed?
+  - When do fg/bg colors actually change vs repeat? Can you track "last emitted" color?
+  - What's the cost of a `queue!` macro invocation vs building a string buffer?
+
 ## Priority 1: Medium Effort
 
 - [ ] Remove redundant `api.flush()` calls from event handlers in `components.ts`
@@ -9,7 +21,7 @@
 
 ## Priority 2: Larger Effort
 
-- [ ] Replace JSON serialization with binary layout protocol (`Float32Array`)
+- [x] Replace JSON serialization with binary layout protocol (`Float32Array`)
   - What data are you currently serializing? What are the fixed fields vs variable-length fields?
   - How would you handle variable-length data (like text) in a binary layout?
   - What endianness does Bun FFI expect? How do `TypedArray` views share an `ArrayBuffer`?

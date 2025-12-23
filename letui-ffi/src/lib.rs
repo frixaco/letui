@@ -24,6 +24,7 @@ static LAST_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
 static CURRENT_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
 static TERMINAL_SIZE: Mutex<(u16, u16)> = Mutex::new((0, 0));
 static FRAMES: Mutex<Option<Vec<f32>>> = Mutex::new(None);
+static FIRST_DIFF: Mutex<bool> = Mutex::new(true);
 
 #[unsafe(no_mangle)]
 pub extern "C" fn init_buffer() -> c_int {
@@ -77,47 +78,112 @@ pub extern "C" fn get_height() -> u16 {
 pub extern "C" fn flush() -> c_int {
     let cb = CURRENT_BUFFER.lock().unwrap();
     let mut lb = LAST_BUFFER.lock().unwrap();
+    let term_size = TERMINAL_SIZE.lock().unwrap();
+    let (w, h) = *term_size;
+    let mut stdout = stdout();
+
     match *cb {
         Some(ref buf) => match *lb {
             Some(ref mut last_buf) => {
-                let mut stdout = stdout();
-                let term_size = TERMINAL_SIZE.lock().unwrap();
-                let (w, _h) = *term_size;
+                let mut first_diff = FIRST_DIFF.lock().unwrap();
 
-                for (cell_idx, (new, old)) in buf
-                    .chunks_exact(3)
-                    .zip(last_buf.chunks_exact(3))
-                    .enumerate()
-                {
-                    if new != old {
-                        let codepoint_code = char::from_u32(new[0] as u32).unwrap();
-                        let fg = new[1];
-                        let fg_code = Color::Rgb {
-                            r: ((fg >> 16) & 0xFF) as u8,
-                            g: ((fg >> 8) & 0xFF) as u8,
-                            b: (fg & 0xFf) as u8,
-                        };
-                        let bg = new[2];
-                        let bg_code = Color::Rgb {
-                            r: ((bg >> 16) & 0xFF) as u8,
-                            g: ((bg >> 8) & 0xFF) as u8,
-                            b: (bg & 0xFf) as u8,
-                        };
+                if *first_diff {
+                    let mut char_seq = String::with_capacity(w as usize);
 
-                        let x = cell_idx % w as usize;
-                        let y = cell_idx / w as usize;
+                    for y in 0..h {
+                        queue!(stdout, MoveTo(0, y)).unwrap();
 
+                        let first_idx = (w * y) as usize * 3;
+                        let mut prev_fg = buf[first_idx + 1];
+                        let mut prev_bg = buf[first_idx + 2];
+                        char_seq.clear();
                         queue!(
                             stdout,
-                            MoveTo(x as u16, y as u16),
-                            SetForegroundColor(fg_code),
-                            SetBackgroundColor(bg_code),
-                            Print(codepoint_code)
+                            SetForegroundColor(Color::Rgb {
+                                r: ((prev_fg >> 16) & 0xFF) as u8,
+                                g: ((prev_fg >> 8) & 0xFF) as u8,
+                                b: (prev_fg & 0xFf) as u8,
+                            }),
+                            SetBackgroundColor(Color::Rgb {
+                                r: ((prev_bg >> 16) & 0xFF) as u8,
+                                g: ((prev_bg >> 8) & 0xFF) as u8,
+                                b: (prev_bg & 0xFf) as u8,
+                            })
                         )
                         .unwrap();
+
+                        for x in 0..w {
+                            let idx = (w * y + x) as usize * 3;
+                            let curr_char = char::from_u32(buf[idx] as u32).unwrap();
+                            let curr_fg = buf[idx + 1];
+                            let curr_bg = buf[idx + 2];
+
+                            if curr_fg == prev_fg && curr_bg == prev_bg {
+                                char_seq.push(curr_char);
+                                continue;
+                            }
+                            queue!(stdout, Print(&char_seq)).unwrap();
+                            if curr_fg != prev_fg {
+                                let fg_code = Color::Rgb {
+                                    r: ((curr_fg >> 16) & 0xFF) as u8,
+                                    g: ((curr_fg >> 8) & 0xFF) as u8,
+                                    b: (curr_fg & 0xFf) as u8,
+                                };
+                                queue!(stdout, SetForegroundColor(fg_code)).unwrap();
+                                prev_fg = curr_fg;
+                            }
+                            if curr_bg != prev_bg {
+                                let bg_code = Color::Rgb {
+                                    r: ((curr_bg >> 16) & 0xFF) as u8,
+                                    g: ((curr_bg >> 8) & 0xFF) as u8,
+                                    b: (curr_bg & 0xFf) as u8,
+                                };
+                                queue!(stdout, SetBackgroundColor(bg_code)).unwrap();
+                                prev_bg = curr_bg;
+                            }
+                            char_seq.clear();
+                            char_seq.push(curr_char);
+                        }
+                        queue!(stdout, Print(&char_seq)).unwrap();
                     }
+                    stdout.flush().unwrap();
+                    *first_diff = false;
+                } else {
+                    for (cell_idx, (new, old)) in buf
+                        .chunks_exact(3)
+                        .zip(last_buf.chunks_exact(3))
+                        .enumerate()
+                    {
+                        if new != old {
+                            let codepoint_code = char::from_u32(new[0] as u32).unwrap();
+                            let fg = new[1];
+                            let fg_code = Color::Rgb {
+                                r: ((fg >> 16) & 0xFF) as u8,
+                                g: ((fg >> 8) & 0xFF) as u8,
+                                b: (fg & 0xFf) as u8,
+                            };
+                            let bg = new[2];
+                            let bg_code = Color::Rgb {
+                                r: ((bg >> 16) & 0xFF) as u8,
+                                g: ((bg >> 8) & 0xFF) as u8,
+                                b: (bg & 0xFf) as u8,
+                            };
+
+                            let x = cell_idx % w as usize;
+                            let y = cell_idx / w as usize;
+
+                            queue!(
+                                stdout,
+                                MoveTo(x as u16, y as u16),
+                                SetForegroundColor(fg_code),
+                                SetBackgroundColor(bg_code),
+                                Print(codepoint_code)
+                            )
+                            .unwrap();
+                        }
+                    }
+                    stdout.flush().unwrap();
                 }
-                stdout.flush().unwrap();
 
                 last_buf.copy_from_slice(buf);
             }
