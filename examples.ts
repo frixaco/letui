@@ -50,9 +50,11 @@ type TorrentResponse = {
 };
 
 let logFile = Bun.file("logs.txt");
+let logWriter = logFile.writer();
 
 export function log(txt: string, ...args: string[]) {
-  logFile.write(txt + " " + args.join(" "));
+  // logFile.write(txt + " " + args.join(" "));
+  logWriter.write(txt + " " + args.join(" ") + "\n");
 }
 
 async function fetchResults(query: string) {
@@ -242,3 +244,5 @@ run(
   [results, focusId, maxItems, page],
   focusId,
 );
+
+logWriter.flush();

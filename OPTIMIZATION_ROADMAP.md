@@ -1,76 +1,63 @@
 # Optimization Roadmap
 
-## Priority 0: Quick Wins (First Frame Latency)
+## Completed ✅
 
-- [x] Skip diff on first flush in Rust, write all cells directly
-  - What does the first `flush()` compare against? Why does every cell "differ"?
-  - How would you detect it's the first flush? A static flag? Reset when?
-  - Does skipping the diff actually reduce work, or just avoid the comparison?
+- [x] **Skip diff on first flush** — `FIRST_DIFF` flag writes rows directly without cell comparison
+- [x] **Minimize escape sequences on first flush** — row-based `MoveTo`, color caching with `prev_fg`/`prev_bg`, batched character sequences
+- [x] **Remove redundant `api.flush()` calls** — single `flush()` per frame in `ff()` callback
+- [x] **Binary layout protocol** — `Float32Array` for nodes, `Uint8Array` for text, no JSON parsing
 
-- [x] Minimize escape sequences on first flush (row-based cursor, color caching)
-  - How many `MoveTo` calls happen today per frame? How many are truly needed?
-  - When do fg/bg colors actually change vs repeat? Can you track "last emitted" color?
-  - What's the cost of a `queue!` macro invocation vs building a string buffer?
+## Priority 1: Persistent Layout Tree
 
-## Priority 1: Medium Effort
+Essential for both static and dynamic UIs. Currently `calculate_layout` rebuilds the entire Taffy tree every frame.
 
-- [ ] Remove redundant `api.flush()` calls from event handlers in `components.ts`
-  - Where are `api.flush()` calls currently happening? Which ones trigger a full render?
-  - What is the call stack when an event fires? Does it already end with a flush somewhere?
-  - Could you batch multiple events into a single flush? When is the "right" moment to flush?
+- [ ] **Add stable node IDs and ID→NodeId map in Rust**
+  - Generate IDs in TS (already have `node.id`), pass to Rust
+  - Use `HashMap<String, NodeId>` for O(1) lookup
+  - Required foundation for all incremental updates
 
-## Priority 2: Larger Effort
+- [ ] **Keep Taffy tree persistent in Rust**
+  - Store `TaffyTree` in a static `Mutex` like the buffers
+  - First call builds tree, subsequent calls update existing nodes
+  - Use `taffy.set_style()` for style changes, `mark_dirty()` for recompute
 
-- [x] Replace JSON serialization with binary layout protocol (`Float32Array`)
-  - What data are you currently serializing? What are the fixed fields vs variable-length fields?
-  - How would you handle variable-length data (like text) in a binary layout?
-  - What endianness does Bun FFI expect? How do `TypedArray` views share an `ArrayBuffer`?
-  - How do you currently read the data on the Rust side? What would change?
+- [ ] **Implement incremental FFI functions**
+  - `update_node_text(id, text)` — update text without full serialize
+  - `update_node_style(id, style_fields)` — partial style updates
+  - `add_node(parent_id, node_data)` / `remove_node(id)` for dynamic children
 
-- [ ] Keep Taffy tree persistent in Rust, update incrementally
-  - What triggers a full tree rebuild today? What information do you need to avoid it?
-  - How does Taffy identify nodes internally? How would you correlate TS nodes to Taffy nodes?
-  - What operations does Taffy expose for modifying an existing tree (add/remove/reparent)?
-  - When a node's style changes, what's the minimal Taffy API call needed?
+## Priority 2: High-Churn Optimization (htop-level)
 
-## Priority 3: Fine-Grained Reactivity
+Only relevant for UIs with many elements updating at 60+ FPS.
 
-- [ ] Persist node tree across frames (call `nodeFactory` once at startup)
-  - Where is `nodeFactory` called today? What causes it to be called again?
-  - What state lives inside a node that must survive across frames?
-  - How would you "mount" vs "update" a component?
+- [ ] **Pack cell representation: one `u64` per cell**
+  - Layout: `[codepoint: 21 bits][fg_r: 8][fg_g: 8][fg_b: 8][bg_r: 8][bg_g: 8][bg_b: 8][unused: 3]`
+  - Reduces buffer from 240KB to 80KB for 200x50 terminal
+  - Encode/decode with bit shifts in both TS and Rust
 
-- [ ] Add dirty tracking sets for layout and paint nodes
-  - What changes require re-layout? What changes only require repaint?
-  - How would a node mark itself dirty? Who clears the dirty flag and when?
-  - Should dirty sets be global or per-subtree?
+- [ ] **Smart diff-path batching**
+  - Current diff path: per-cell `MoveTo` + colors + print (expensive for scattered updates)
+  - Detect "high churn" frames (>N cells changed)
+  - Switch to row-scan strategy: batch same-color runs like first-frame path
+  - Threshold TBD via profiling (~100-500 cells)
 
-- [ ] Implement central scheduler with `queueMicrotask`
-  - When do you want the scheduler to run—before or after the current event finishes?
-  - What's the difference between `queueMicrotask`, `setTimeout(0)`, and `requestAnimationFrame`?
-  - How do you prevent multiple flushes if several signals change in the same tick?
+- [ ] **Persist node tree in TS (`nodeFactory` once at startup)**
+  - Currently `nodeFactory(tw, th)` runs every frame
+  - For static layouts, call once and update text signals in-place
+  - Requires distinguishing "mount" vs "update" lifecycle
 
-- [ ] Set up per-node reactive bindings for text/focus changes
-  - How do signals currently propagate changes? What callback runs when a signal updates?
-  - Could you subscribe a node to only the signals it reads during render?
-  - How would you unsubscribe when a node is removed?
+## Not Worth Pursuing ❌
 
-- [ ] Add stable node IDs and ID→NodeId map in Rust
-  - Where should the ID be generated—TS or Rust? What guarantees uniqueness?
-  - What data structure gives O(1) lookup by ID on the Rust side?
-  - How do you handle ID reuse if nodes are destroyed and recreated?
+- **Per-node reactive bindings** — current `ff()` effect already batches signal updates efficiently
+- **Dirty tracking sets for layout/paint** — Rust cell-diff handles repaint; layout changes are infrequent
+- **`recompute_layout` partial rebuild** — only valuable after persistent Taffy tree is working; Taffy's internal caching may handle this automatically
 
-- [ ] Implement incremental FFI functions (`update_node_text`, `update_node_style`)
-  - What's the minimal payload for each update type?
-  - How does Rust locate the node to update? By index, pointer, or ID?
-  - Can you batch multiple updates into one FFI call, or is per-node cheaper?
+## Profiling Checkpoints
 
-- [ ] Implement `recompute_layout` without full tree rebuild
-  - What does Taffy's `compute_layout` do internally? Does it cache subtree results?
-  - If only one node changed, which ancestors need re-layout?
-  - Does Taffy expose a "mark dirty" API, or do you need to track it yourself?
+Before implementing Priority 2, measure:
 
-- [ ] Pack cell representation: one `u64` per cell with codepoint + RGB colors
-  - How many bits do you need for a Unicode codepoint? For RGB fg and bg?
-  - How would you encode/decode with bit shifts and masks?
-  - Does Bun's `BigUint64Array` have alignment requirements? What about endianness?
+1. Time spent in `calculate_layout` vs `flush` vs TS paint logic
+2. Number of cells changing per frame in target demo
+3. Terminal I/O saturation (bytes written per frame)
+
+Use `metrics.ts` to capture per-phase timing.

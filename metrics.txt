@@ -1,1 +1,1 @@
-314fps | 3.19ms avg (3.19-3.19) | 2.1MB heap | 1 frames
+274fps | 3.65ms avg (1.3-6.82) | 15.2MB heap | 37 frames

@@ -4,6 +4,7 @@ import api from "./ffi.ts";
 import { $, ff, type Signal } from "./signals";
 // import { log } from "./index.ts";
 import { startFrame, endFrame, formatMetrics } from "./metrics.ts";
+import { log } from "./examples.ts";
 
 function randomString(length = 6) {
   const chars =
@@ -65,12 +66,10 @@ export function run(
     if (focused.type === "button") {
       if (d === "\r" || d === " ") {
         (focused.props as ButtonProps).onClick();
-        // api.flush();
       } else {
         const onKeyDown = (focused.props as ButtonProps).onKeyDown;
         if (onKeyDown) {
           onKeyDown(d);
-          // api.flush();
         }
       }
       return;
@@ -91,7 +90,6 @@ export function run(
           props.onType(curr + d);
         }
       }
-      // api.flush();
       return;
     }
   }
@@ -119,7 +117,6 @@ export function run(
         pressedComponentId("");
         clearFocus();
       }
-      api.flush();
       return;
     }
 
@@ -131,7 +128,6 @@ export function run(
         }
       }
       pressedComponentId("");
-      api.flush();
       return;
     }
   }
@@ -510,12 +506,11 @@ export function run(
     }
   }
 
-  ff(() => {});
-
   let initialRender = true;
   let previousFocusId = focusedComponentId();
 
   ff(() => {
+    log(`ff triggered ${Date.now()}`);
     const frameStart = startFrame();
 
     pressedComponentId();
