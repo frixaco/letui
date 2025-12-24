@@ -9,7 +9,8 @@ use crossterm::{
     execute, queue,
     style::{Color, Print, SetBackgroundColor, SetForegroundColor},
     terminal::{
-        Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, enable_raw_mode, size,
+        BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate, EnterAlternateScreen,
+        LeaveAlternateScreen, enable_raw_mode, size,
     },
 };
 use std::{
@@ -85,6 +86,8 @@ pub extern "C" fn flush() -> c_int {
     match *cb {
         Some(ref buf) => match *lb {
             Some(ref mut last_buf) => {
+                queue!(stdout, BeginSynchronizedUpdate).unwrap();
+
                 let mut first_diff = FIRST_DIFF.lock().unwrap();
 
                 if *first_diff {
@@ -146,7 +149,6 @@ pub extern "C" fn flush() -> c_int {
                         }
                         queue!(stdout, Print(&char_seq)).unwrap();
                     }
-                    stdout.flush().unwrap();
                     *first_diff = false;
                 } else {
                     for (cell_idx, (new, old)) in buf
@@ -182,8 +184,9 @@ pub extern "C" fn flush() -> c_int {
                             .unwrap();
                         }
                     }
-                    stdout.flush().unwrap();
                 }
+                queue!(stdout, EndSynchronizedUpdate).unwrap();
+                stdout.flush().unwrap();
 
                 last_buf.copy_from_slice(buf);
             }
