@@ -7,6 +7,38 @@
 - [x] **Remove redundant `api.flush()` calls** — single `flush()` per frame in `ff()` callback
 - [x] **Binary layout protocol** — `Float32Array` for nodes, `Uint8Array` for text, no JSON parsing
 
+## To Re-implement (reverted from sessions)
+
+### Session 1: Move paint from TS to Rust
+
+- [ ] **Combined `layout_and_paint` FFI call** — single FFI call instead of separate layout + TS paint
+  - Parse node tree from Float32Array in Rust
+  - Build Taffy tree and compute layout
+  - Collect frames with `collect_frames_and_nodes()`
+  - Paint directly to buffer in Rust with `paint_nodes()`
+  - Returns frame data for hit-testing
+
+- [ ] **Rust-side painting functions**
+  - `fill_rect()` — fill rectangular area with fg/bg colors
+  - `draw_border_rust()` — draw box-drawing characters for borders
+  - `draw_text_rust()` — write text characters to buffer
+  - Handle focused/pressed state for buttons/inputs
+
+- [ ] **Node serialization protocol** — 11 fields per node:
+  - nodeType, gap, paddingX, paddingY, border, childCount, textLength
+  - fgColor, bgColor, borderColor, borderStyle
+
+### Session 2: Optimize flush diff path
+
+- [ ] **Batch consecutive changed cells** — instead of 4 commands per cell (`MoveTo` + `SetFG` + `SetBG` + `Print`), batch runs:
+  - Track `run_start_x`, `run_y`, `run_chars` for current batch
+  - If next changed cell has same colors AND same row → append to run
+  - Otherwise flush current run with single `MoveTo` + `Print`
+
+- [ ] **Track colors across entire frame** — init `prev_fg`/`prev_bg` to `u64::MAX`, only emit `SetForegroundColor`/`SetBackgroundColor` when color actually changes
+
+- [ ] **Result**: reduced from ~6ms spikes to ~1.5ms max frame time
+
 ## Priority 1: Persistent Layout Tree
 
 Essential for both static and dynamic UIs. Currently `calculate_layout` rebuilds the entire Taffy tree every frame.
@@ -46,18 +78,57 @@ Only relevant for UIs with many elements updating at 60+ FPS.
   - For static layouts, call once and update text signals in-place
   - Requires distinguishing "mount" vs "update" lifecycle
 
-## Not Worth Pursuing ❌
+## Priority 3: Layout Features
 
-- **Per-node reactive bindings** — current `ff()` effect already batches signal updates efficiently
-- **Dirty tracking sets for layout/paint** — Rust cell-diff handles repaint; layout changes are infrequent
-- **`recompute_layout` partial rebuild** — only valuable after persistent Taffy tree is working; Taffy's internal caching may handle this automatically
+Required for complex layouts like split-pane UIs.
 
-## Profiling Checkpoints
+- [ ] **Fixed width/height props on containers**
+  - Expose `width`, `height`, `minHeight`, `maxHeight` in TS component props
+  - Map to Taffy `size`, `min_size`, `max_size` in `get_styles()`
+  - Enables fixed-height bottom input area, fixed-width sidebars
 
-Before implementing Priority 2, measure:
+- [ ] **Scroll container with offset**
+  - Add `scrollOffset` prop to Column/Row
+  - Track scroll position in TS signal
+  - In Rust paint: subtract `scrollOffset` from child Y coords
+  - Clip children outside container bounds (already have `Overflow::Hidden`)
+  - Keyboard-driven scroll (j/k already wired, just need offset mutation)
 
-1. Time spent in `calculate_layout` vs `flush` vs TS paint logic
-2. Number of cells changing per frame in target demo
-3. Terminal I/O saturation (bytes written per frame)
+## Priority 4: Input & Cursor
 
-Use `metrics.ts` to capture per-phase timing.
+Polish for text input components.
+
+- [ ] **Cursor rendering**
+  - Track cursor position in InputBox (default: end of text)
+  - Paint cursor cell with inverted colors or blinking
+  - Support cursor movement (left/right arrow keys, Home/End)
+
+- [ ] **Text selection** (optional, lower priority)
+  - Track selection start/end positions
+  - Paint selected range with highlight background
+  - Copy to clipboard on Ctrl+C
+
+## Priority 5: PTY Embedding (Neovim integration)
+
+High complexity — essentially a terminal emulator inside the TUI.
+
+- [ ] **Spawn PTY subprocess**
+  - Use `pty` crate in Rust or Bun's `spawn` with PTY mode
+  - Allocate pseudo-terminal with desired size
+  - Spawn Neovim (or any shell) attached to PTY
+
+- [ ] **PTY output parsing**
+  - Read PTY stdout as stream of bytes
+  - Parse ANSI escape sequences (CSI codes for colors, cursor movement)
+  - Maintain virtual screen buffer: 2D array of cells (char + fg + bg)
+  - Libraries: `vte` crate for Rust, or port minimal parser
+
+- [ ] **PTY region painting**
+  - New component type: `Terminal` or `Embed`
+  - On each frame, copy PTY screen buffer into main buffer at component's frame coords
+  - Handle resize: send `SIGWINCH` to PTY when container resizes
+
+- [ ] **Input routing to PTY**
+  - When `Terminal` component is focused, route all keyboard input to PTY stdin
+  - Pass through raw bytes (including escape sequences for special keys)
+  - Mouse input passthrough (optional, for mouse-enabled TUI apps)

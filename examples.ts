@@ -1,3 +1,7 @@
+// AI CODING AGENT (similar to Claude Code, Codex, etc.):
+// - TWO COLUMNS: LEFT - USER PROMPTS (NAVIGATABLE). RIGHT - LLM (CHANGES BASED ON PROMPT)
+// - LONG BOTTOM AREA: EMBEDDED NEOVIM FOR RICH TEXT INPUT
+
 import { COLORS } from "./colors";
 import {
   Button,
@@ -63,7 +67,6 @@ async function fetchResults(query: string) {
   );
   const data = (await response.json()) as ScrapeResult;
 
-  log(JSON.stringify(data.results, null, 2));
   results(data.results);
   page(0);
   if (data.results.length > 0) {

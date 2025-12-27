@@ -3,7 +3,14 @@ import { COLORS } from "./colors.ts";
 import api from "./ffi.ts";
 import { $, ff, type Signal } from "./signals";
 // import { log } from "./index.ts";
-import { startFrame, endFrame, formatMetrics } from "./metrics.ts";
+import {
+  startFrame,
+  endFrame,
+  startPhase,
+  endLayout,
+  endPaint,
+  formatMetrics,
+} from "./metrics.ts";
 import { log } from "./examples.ts";
 
 function randomString(length = 6) {
@@ -529,9 +536,16 @@ export function run(
     nodeRegistry.clear();
 
     const node = nodeFactory(tw, th);
+
+    const layoutStart = startPhase();
     layout(node);
+    endLayout(layoutStart);
+
     triggerLayoutEvents(node);
+
+    const paintStart = startPhase();
     paint(node, node.props.bg);
+    endPaint(paintStart);
 
     if (currentFocusId !== previousFocusId) {
       const oldNode = nodeRegistry.get(previousFocusId);
