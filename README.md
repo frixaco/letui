@@ -15,6 +15,12 @@ Simple TUI library written using Rust and TypeScript
 - [ ] Try to optimizatize the shit out of everything
 - [ ] Add logging and debugging utilities
 - [ ] Improve overall architecture ("make it work" is done, now "make it right, make it fast" is left)
+- [ ] Refactor flush function with BatchWriter pattern to reduce nesting
+  - BatchWriter struct holds stdout ref, char_seq, batch_start_x/y, prev_fg/bg
+  - `new()` initializes with sentinel colors (u64::MAX) to force first color emit
+  - `push(x, y, ch, fg, bg)` handles gap detection, color changes, and accumulates chars
+  - `flush_pending()` emits MoveTo + Print for accumulated batch
+  - Encapsulates all batching logic, main loop just calls push() for changed cells
 - [ ] Add scrollable containers
 - [ ] Add performance stats overlay that update independently from rest of the app (can i use a separate thread?)
 

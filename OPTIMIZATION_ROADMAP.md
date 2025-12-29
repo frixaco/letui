@@ -6,47 +6,24 @@
 - [x] **Minimize escape sequences on first flush** — row-based `MoveTo`, color caching with `prev_fg`/`prev_bg`, batched character sequences
 - [x] **Remove redundant `api.flush()` calls** — single `flush()` per frame in `ff()` callback
 - [x] **Binary layout protocol** — `Float32Array` for nodes, `Uint8Array` for text, no JSON parsing
-
-## To Re-implement (reverted from sessions)
-
-### Session 1: Move paint from TS to Rust
-
-- [ ] **Combined `layout_and_paint` FFI call** — single FFI call instead of separate layout + TS paint
-  - Parse node tree from Float32Array in Rust
-  - Build Taffy tree and compute layout
-  - Collect frames with `collect_frames_and_nodes()`
-  - Paint directly to buffer in Rust with `paint_nodes()`
-  - Returns frame data for hit-testing
-
-- [ ] **Rust-side painting functions**
-  - `fill_rect()` — fill rectangular area with fg/bg colors
-  - `draw_border_rust()` — draw box-drawing characters for borders
-  - `draw_text_rust()` — write text characters to buffer
-  - Handle focused/pressed state for buttons/inputs
-
-- [ ] **Node serialization protocol** — 11 fields per node:
-  - nodeType, gap, paddingX, paddingY, border, childCount, textLength
-  - fgColor, bgColor, borderColor, borderStyle
-
-### Session 2: Optimize flush diff path
-
-- [ ] **Batch consecutive changed cells** — instead of 4 commands per cell (`MoveTo` + `SetFG` + `SetBG` + `Print`), batch runs:
+- [x] **Batch consecutive changed cells** — instead of 4 commands per cell (`MoveTo` + `SetFG` + `SetBG` + `Print`), batch runs:
   - Track `run_start_x`, `run_y`, `run_chars` for current batch
   - If next changed cell has same colors AND same row → append to run
   - Otherwise flush current run with single `MoveTo` + `Print`
+- [x] **Track colors across entire frame** — init `prev_fg`/`prev_bg` to `u64::MAX`, only emit `SetForegroundColor`/`SetBackgroundColor` when color actually changes
 
-- [ ] **Track colors across entire frame** — init `prev_fg`/`prev_bg` to `u64::MAX`, only emit `SetForegroundColor`/`SetBackgroundColor` when color actually changes
+## Priority 2: Persistent Layout Tree + Node Protocol
 
-- [ ] **Result**: reduced from ~6ms spikes to ~1.5ms max frame time
+Foundation for incremental updates. Combines serialization protocol with persistent tree.
 
-## Priority 1: Persistent Layout Tree
-
-Essential for both static and dynamic UIs. Currently `calculate_layout` rebuilds the entire Taffy tree every frame.
+- [ ] **Node serialization protocol** — 11 fields per node (canonical wire format):
+  - nodeType, gap, paddingX, paddingY, border, childCount, textLength
+  - fgColor, bgColor, borderColor, borderStyle
+  - Include stable node ID in the format
 
 - [ ] **Add stable node IDs and ID→NodeId map in Rust**
   - Generate IDs in TS (already have `node.id`), pass to Rust
   - Use `HashMap<String, NodeId>` for O(1) lookup
-  - Required foundation for all incremental updates
 
 - [ ] **Keep Taffy tree persistent in Rust**
   - Store `TaffyTree` in a static `Mutex` like the buffers
@@ -58,27 +35,43 @@ Essential for both static and dynamic UIs. Currently `calculate_layout` rebuilds
   - `update_node_style(id, style_fields)` — partial style updates
   - `add_node(parent_id, node_data)` / `remove_node(id)` for dynamic children
 
-## Priority 2: High-Churn Optimization (htop-level)
+## Priority 3: Rust Painting
+
+Build primitives first, then combine into single FFI call.
+
+- [ ] **Rust-side painting functions**
+  - `fill_rect()` — fill rectangular area with fg/bg colors
+  - `draw_border_rust()` — draw box-drawing characters for borders
+  - `draw_text_rust()` — write text characters to buffer
+  - Handle focused/pressed state for buttons/inputs
+
+- [ ] **Combined `layout_and_paint` FFI call** — single FFI call instead of separate layout + TS paint
+  - Applies pending incremental updates
+  - Runs layout on persistent Taffy tree
+  - Uses Rust painting primitives to paint into frame buffer
+  - Returns frame data for hit-testing
+
+## Priority 4: High-Churn Optimization (htop-level)
 
 Only relevant for UIs with many elements updating at 60+ FPS.
-
-- [ ] **Pack cell representation: one `u64` per cell**
-  - Layout: `[codepoint: 21 bits][fg_r: 8][fg_g: 8][fg_b: 8][bg_r: 8][bg_g: 8][bg_b: 8][unused: 3]`
-  - Reduces buffer from 240KB to 80KB for 200x50 terminal
-  - Encode/decode with bit shifts in both TS and Rust
-
-- [ ] **Smart diff-path batching**
-  - Current diff path: per-cell `MoveTo` + colors + print (expensive for scattered updates)
-  - Detect "high churn" frames (>N cells changed)
-  - Switch to row-scan strategy: batch same-color runs like first-frame path
-  - Threshold TBD via profiling (~100-500 cells)
 
 - [ ] **Persist node tree in TS (`nodeFactory` once at startup)**
   - Currently `nodeFactory(tw, th)` runs every frame
   - For static layouts, call once and update text signals in-place
   - Requires distinguishing "mount" vs "update" lifecycle
 
-## Priority 3: Layout Features
+- [ ] **Smart diff-path batching**
+  - Reuse Priority 1 batching as the "normal" diff path
+  - Detect "high churn" frames (>N cells changed)
+  - Switch to row-scan strategy: batch same-color runs like first-frame path
+  - Threshold TBD via profiling (~100-500 cells)
+
+- [ ] **Pack cell representation: one `u64` per cell** (only if profiling justifies)
+  - Layout: `[codepoint: 21 bits][fg_r: 8][fg_g: 8][fg_b: 8][bg_r: 8][bg_g: 8][bg_b: 8][unused: 3]`
+  - Reduces buffer from 240KB to 80KB for 200x50 terminal
+  - Encode/decode with bit shifts in both TS and Rust
+
+## Priority 5: Layout Features
 
 Required for complex layouts like split-pane UIs.
 
@@ -94,7 +87,7 @@ Required for complex layouts like split-pane UIs.
   - Clip children outside container bounds (already have `Overflow::Hidden`)
   - Keyboard-driven scroll (j/k already wired, just need offset mutation)
 
-## Priority 4: Input & Cursor
+## Priority 6: Input & Cursor
 
 Polish for text input components.
 
@@ -108,7 +101,7 @@ Polish for text input components.
   - Paint selected range with highlight background
   - Copy to clipboard on Ctrl+C
 
-## Priority 5: PTY Embedding (Neovim integration)
+## Priority 7: PTY Embedding (Neovim integration)
 
 High complexity — essentially a terminal emulator inside the TUI.
 

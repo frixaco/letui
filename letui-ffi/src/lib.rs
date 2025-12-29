@@ -14,7 +14,7 @@ use crossterm::{
     },
 };
 use std::{
-    io::{Write, stdout},
+    io::{Stdout, Write, stdout},
     os::raw::c_int,
     slice,
     sync::Mutex,
@@ -75,6 +75,114 @@ pub extern "C" fn get_height() -> u16 {
     term_size.1
 }
 
+fn hex_to_color(hex: u64) -> Color {
+    Color::Rgb {
+        r: ((hex >> 16) & 0xFF) as u8,
+        g: ((hex >> 8) & 0xFF) as u8,
+        b: (hex & 0xFf) as u8,
+    }
+}
+
+fn first_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64]) {
+    let mut char_seq = String::with_capacity(w as usize);
+
+    for y in 0..h {
+        queue!(stdout, MoveTo(0, y)).unwrap();
+
+        let first_idx = (w * y) as usize * 3;
+        let mut prev_fg = buf[first_idx + 1];
+        let mut prev_bg = buf[first_idx + 2];
+        char_seq.clear();
+        queue!(
+            stdout,
+            SetForegroundColor(hex_to_color(prev_fg)),
+            SetBackgroundColor(hex_to_color(prev_bg))
+        )
+        .unwrap();
+
+        for x in 0..w {
+            let idx = (w * y + x) as usize * 3;
+            let curr_char = char::from_u32(buf[idx] as u32).unwrap();
+            let curr_fg = buf[idx + 1];
+            let curr_bg = buf[idx + 2];
+
+            if curr_fg == prev_fg && curr_bg == prev_bg {
+                char_seq.push(curr_char);
+                continue;
+            }
+            queue!(stdout, Print(&char_seq)).unwrap();
+            if curr_fg != prev_fg {
+                let fg_code = hex_to_color(curr_fg);
+                queue!(stdout, SetForegroundColor(fg_code)).unwrap();
+                prev_fg = curr_fg;
+            }
+            if curr_bg != prev_bg {
+                let bg_code = hex_to_color(curr_bg);
+                queue!(stdout, SetBackgroundColor(bg_code)).unwrap();
+                prev_bg = curr_bg;
+            }
+            char_seq.clear();
+            char_seq.push(curr_char);
+        }
+        queue!(stdout, Print(&char_seq)).unwrap();
+    }
+}
+
+fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]) {
+    let mut prev_fg = u64::MAX;
+    let mut prev_bg = u64::MAX;
+
+    for y in 0..h {
+        let mut char_seq = String::with_capacity(w as usize);
+        let mut batch_start_x = 0;
+
+        for x in 0..w {
+            let idx = (w * y + x) as usize * 3;
+            let curr_char = char::from_u32(buf[idx] as u32).unwrap();
+            let curr_fg = buf[idx + 1];
+            let curr_bg = buf[idx + 2];
+
+            if buf[idx] == last_buf[idx]
+                && buf[idx + 1] == last_buf[idx + 1]
+                && buf[idx + 2] == last_buf[idx + 2]
+            {
+                continue;
+            }
+
+            if !char_seq.is_empty() && x != batch_start_x + char_seq.len() as u16 {
+                queue!(stdout, MoveTo(batch_start_x, y), Print(&char_seq)).unwrap();
+                char_seq.clear();
+                batch_start_x = x;
+            }
+
+            if curr_fg == prev_fg && curr_bg == prev_bg {
+                if char_seq.is_empty() {
+                    batch_start_x = x;
+                }
+                char_seq.push(curr_char);
+                continue;
+            }
+            if curr_fg != prev_fg || curr_bg != prev_bg {
+                queue!(stdout, MoveTo(batch_start_x, y), Print(&char_seq)).unwrap();
+                char_seq.clear();
+                char_seq.push(curr_char);
+                batch_start_x = x;
+
+                if curr_fg != prev_fg {
+                    queue!(stdout, SetForegroundColor(hex_to_color(curr_fg))).unwrap();
+                    prev_fg = curr_fg;
+                }
+
+                if curr_bg != prev_bg {
+                    queue!(stdout, SetBackgroundColor(hex_to_color(curr_bg))).unwrap();
+                    prev_bg = curr_bg;
+                }
+            }
+        }
+        queue!(stdout, MoveTo(batch_start_x, y), Print(&char_seq)).unwrap();
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn flush() -> c_int {
     let cb = CURRENT_BUFFER.lock().unwrap();
@@ -83,117 +191,28 @@ pub extern "C" fn flush() -> c_int {
     let (w, h) = *term_size;
     let mut stdout = stdout();
 
-    match *cb {
-        Some(ref buf) => match *lb {
-            Some(ref mut last_buf) => {
-                queue!(stdout, BeginSynchronizedUpdate).unwrap();
+    let Some(ref buf) = *cb else {
+        return 1;
+    };
+    let Some(ref mut last_buf) = *lb else {
+        return 1;
+    };
 
-                let mut first_diff = FIRST_DIFF.lock().unwrap();
+    queue!(stdout, BeginSynchronizedUpdate).unwrap();
 
-                if *first_diff {
-                    let mut char_seq = String::with_capacity(w as usize);
+    let mut first_diff = FIRST_DIFF.lock().unwrap();
 
-                    for y in 0..h {
-                        queue!(stdout, MoveTo(0, y)).unwrap();
-
-                        let first_idx = (w * y) as usize * 3;
-                        let mut prev_fg = buf[first_idx + 1];
-                        let mut prev_bg = buf[first_idx + 2];
-                        char_seq.clear();
-                        queue!(
-                            stdout,
-                            SetForegroundColor(Color::Rgb {
-                                r: ((prev_fg >> 16) & 0xFF) as u8,
-                                g: ((prev_fg >> 8) & 0xFF) as u8,
-                                b: (prev_fg & 0xFf) as u8,
-                            }),
-                            SetBackgroundColor(Color::Rgb {
-                                r: ((prev_bg >> 16) & 0xFF) as u8,
-                                g: ((prev_bg >> 8) & 0xFF) as u8,
-                                b: (prev_bg & 0xFf) as u8,
-                            })
-                        )
-                        .unwrap();
-
-                        for x in 0..w {
-                            let idx = (w * y + x) as usize * 3;
-                            let curr_char = char::from_u32(buf[idx] as u32).unwrap();
-                            let curr_fg = buf[idx + 1];
-                            let curr_bg = buf[idx + 2];
-
-                            if curr_fg == prev_fg && curr_bg == prev_bg {
-                                char_seq.push(curr_char);
-                                continue;
-                            }
-                            queue!(stdout, Print(&char_seq)).unwrap();
-                            if curr_fg != prev_fg {
-                                let fg_code = Color::Rgb {
-                                    r: ((curr_fg >> 16) & 0xFF) as u8,
-                                    g: ((curr_fg >> 8) & 0xFF) as u8,
-                                    b: (curr_fg & 0xFf) as u8,
-                                };
-                                queue!(stdout, SetForegroundColor(fg_code)).unwrap();
-                                prev_fg = curr_fg;
-                            }
-                            if curr_bg != prev_bg {
-                                let bg_code = Color::Rgb {
-                                    r: ((curr_bg >> 16) & 0xFF) as u8,
-                                    g: ((curr_bg >> 8) & 0xFF) as u8,
-                                    b: (curr_bg & 0xFf) as u8,
-                                };
-                                queue!(stdout, SetBackgroundColor(bg_code)).unwrap();
-                                prev_bg = curr_bg;
-                            }
-                            char_seq.clear();
-                            char_seq.push(curr_char);
-                        }
-                        queue!(stdout, Print(&char_seq)).unwrap();
-                    }
-                    *first_diff = false;
-                } else {
-                    for (cell_idx, (new, old)) in buf
-                        .chunks_exact(3)
-                        .zip(last_buf.chunks_exact(3))
-                        .enumerate()
-                    {
-                        if new != old {
-                            let codepoint_code = char::from_u32(new[0] as u32).unwrap();
-                            let fg = new[1];
-                            let fg_code = Color::Rgb {
-                                r: ((fg >> 16) & 0xFF) as u8,
-                                g: ((fg >> 8) & 0xFF) as u8,
-                                b: (fg & 0xFf) as u8,
-                            };
-                            let bg = new[2];
-                            let bg_code = Color::Rgb {
-                                r: ((bg >> 16) & 0xFF) as u8,
-                                g: ((bg >> 8) & 0xFF) as u8,
-                                b: (bg & 0xFf) as u8,
-                            };
-
-                            let x = cell_idx % w as usize;
-                            let y = cell_idx / w as usize;
-
-                            queue!(
-                                stdout,
-                                MoveTo(x as u16, y as u16),
-                                SetForegroundColor(fg_code),
-                                SetBackgroundColor(bg_code),
-                                Print(codepoint_code)
-                            )
-                            .unwrap();
-                        }
-                    }
-                }
-                queue!(stdout, EndSynchronizedUpdate).unwrap();
-                stdout.flush().unwrap();
-
-                last_buf.copy_from_slice(buf);
-            }
-            None => (),
-        },
-        None => (),
+    if *first_diff {
+        first_flush(w, h, &mut stdout, buf);
+        *first_diff = false;
+    } else {
+        next_flush(w, h, &mut stdout, buf, last_buf);
     }
+    queue!(stdout, EndSynchronizedUpdate).unwrap();
+    stdout.flush().unwrap();
+
+    last_buf.copy_from_slice(buf);
+
     1
 }
 

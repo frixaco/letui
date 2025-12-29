@@ -22,5 +22,8 @@
     "@frixaco/letui-darwin-x64": "0.0.4",
     "@frixaco/letui-linux-x64": "0.0.4",
     "@frixaco/letui-win32-x64": "0.0.4"
+  },
+  "dependencies": {
+    "bun-types": "^1.3.5"
   }
 }
