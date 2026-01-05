@@ -12,28 +12,72 @@
   - Otherwise flush current run with single `MoveTo` + `Print`
 - [x] **Track colors across entire frame** — init `prev_fg`/`prev_bg` to `u64::MAX`, only emit `SetForegroundColor`/`SetBackgroundColor` when color actually changes
 
-## Priority 2: Persistent Layout Tree + Node Protocol
+## Priority 2: New Component API (Option B — Retained Nodes, Full Rebuild)
 
-Foundation for incremental updates. Combines serialization protocol with persistent tree.
+Simplified architecture: persistent node objects in TS, full Taffy rebuild each frame in Rust.
 
-- [x] **Node serialization protocol** — 11 fields per node (canonical wire format):
-  - nodeType, gap, paddingX, paddingY, border, childCount, textLength
-  - fgColor, bgColor, borderColor, borderStyle
-  - Include stable node ID in the format
+### Design Decisions
 
-- [ ] **Add stable node IDs and ID→NodeId map in Rust**
-  - Generate IDs in TS (already have `node.id`), pass to Rust
-  - Use `HashMap<String, NodeId>` for O(1) lookup
+- **No VDOM diffing** — Taffy rebuild is fast enough (~0.3ms for 1000 nodes)
+- **Terminal cell diffing preserved** — only changed cells repaint
+- **Retained nodes** — nodes are persistent objects with methods (`.focus()`, `.setStyle()`, etc.)
+- **Signals + effects** — reactive state management
 
-- [ ] **Keep Taffy tree persistent in Rust**
-  - Store `TaffyTree` in a static `Mutex` like the buffers
-  - First call builds tree, subsequent calls update existing nodes
-  - Use `taffy.set_style()` for style changes, `mark_dirty()` for recompute
+### API Surface
 
-- [ ] **Implement incremental FFI functions**
-  - `update_node_text(id, text)` — update text without full serialize
-  - `update_node_style(id, style_fields)` — partial style updates
-  - `add_node(parent_id, node_data)` / `remove_node(id)` for dynamic children
+**Node constructors:**
+- `Col({ gap, padding, border, ... }, children)`
+- `Row({ gap, padding, border, ... }, children)`
+- `Box({ width, height, bg, ... })`
+- `Text(string)` or `Text({ text: signal })`
+- `Input({ placeholder, onChange, onSubmit, onFocus, onBlur })`
+- `Button({ text, onPress, onFocus, onBlur })`
+
+**Node methods:**
+- `.setStyle({ ... })` — update layout/style props
+- `.setChildren([...])` — replace children (containers)
+- `.setText(string)` — update text content
+- `.focus()` / `.blur()` / `.isFocused()` — focus management
+
+**Reactivity (already implemented in `signals.ts`):**
+- `$()` — create signal, call to read, call with arg to write
+- `dd()` — derived/computed signal
+- `ff()` — effect (runs when dependencies change)
+- `af()` — async effect
+
+**Global:**
+- `onKey(key, callback)` — global key handler
+- `run(rootNode)` — start app, returns `{ quit() }`
+
+### Tasks
+
+- [x] **Signal API** — already implemented (`$`, `dd`, `ff`, `af` in `signals.ts`)
+
+- [ ] **Implement new node constructors**
+  - `Col`, `Row`, `Box`, `Text`, `Input`, `Button`
+  - Each returns object with methods (`.setStyle()`, `.focus()`, etc.)
+  - Internal: nodes track dirty state, serialize on frame boundary
+
+- [x] **Effect system** — already implemented (`ff()` in `signals.ts`)
+
+- [ ] **Implement global `onKey()`**
+  - Register key handlers at app level
+  - Route keys to handlers before focused component
+
+- [ ] **Implement focus management**
+  - Track single focused node
+  - `.focus()` sets focus, `.blur()` removes
+  - `.isFocused()` returns boolean
+  - `onFocus`/`onBlur` callbacks on nodes
+
+- [ ] **Refactor `run()`**
+  - Accept root node (not function)
+  - Return `{ quit() }` for app control
+  - Frame loop: collect dirty nodes → serialize → FFI → Rust rebuilds Taffy → render
+
+- [ ] **Update serialization**
+  - Walk node tree, serialize to existing binary format
+  - No changes needed on Rust side (full rebuild each frame)
 
 ## Priority 3: Rust Painting
 

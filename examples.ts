@@ -1,38 +1,29 @@
-// AI CODING AGENT (similar to Claude Code, Codex, etc.):
-// - TWO COLUMNS: LEFT - USER PROMPTS (NAVIGATABLE). RIGHT - LLM (CHANGES BASED ON PROMPT)
-// - LONG BOTTOM AREA: EMBEDDED NEOVIM FOR RICH TEXT INPUT
+// TORRENT SEARCH APP
+// - Search input with loading bar
+// - Paginated results list
+// - Keyboard navigation (j/k/h/l)
 
 import { COLORS } from "./colors";
 import {
-  type ButtonProps,
-  type Node,
-  type Ref,
+  Box,
   Button,
-  Column,
-  createRef,
-  InputBox,
+  Col,
+  Input,
   Row,
+  Text,
   run,
-  type InputBoxProps,
+  onKey,
 } from "./components";
-import { $ } from "./signals";
+import { $, ff } from "./signals";
 
-let searchText = $("");
-// TODO: broken
-let focusId = $(0);
-// let buttonText = $("Search");
-let results = $<ScrapeResultItem[]>([]);
-let maxItems = $(1);
-let page = $(0);
+// --- State ---
+const searchText = $("");
+const results = $<ScrapeResultItem[]>([]);
+const loading = $(false);
+const maxItems = $(1);
+const page = $(0);
 
-let inputStyles: Partial<InputBoxProps> = {
-  border: {
-    color: COLORS.default.fg,
-    style: "square",
-  },
-  padding: "1 0",
-};
-
+// --- Types ---
 type ScrapeResultItem = {
   title: string;
   size: string;
@@ -58,18 +49,18 @@ type TorrentResponse = {
   details: TorrentDetails;
 };
 
-let logFile = Bun.file("logs.txt");
-let logWriter = logFile.writer();
+// --- Logging ---
+const logFile = Bun.file("logs.txt");
+const logWriter = logFile.writer();
 
-export function log(txt: string, ...args: string[]) {
-  // logFile.write(txt + " " + args.join(" "));
+function log(txt: string, ...args: string[]) {
   logWriter.write(txt + " " + args.join(" ") + "\n");
 }
 
-let inputRef = createRef<Node>();
-let buttonRefs = new Map<number, Ref<Node>>();
-
+// --- API ---
 async function fetchResults(query: string) {
+  loading(true);
+  
   const response = await fetch(
     `https://scrape.anitrack.frixaco.com/scrape?q=${query}`,
   );
@@ -77,8 +68,11 @@ async function fetchResults(query: string) {
 
   results(data.results);
   page(0);
-  if (data.results.length > 0) {
-    focusId(buttonRefs.get(0)?.current?.id || 0);
+  loading(false);
+  
+  // Focus first result when results arrive
+  if (data.results.length > 0 && resultButtons.length > 0) {
+    resultButtons[0].focus();
   }
 }
 
@@ -88,7 +82,7 @@ async function streamResult(magnet: string) {
     body: magnet,
   });
   const data = (await response.json()) as TorrentResponse;
-  let streamUrl = `https://rqbit.anitrack.frixaco.com/torrents/${data.details.info_hash}/stream/${
+  const streamUrl = `https://rqbit.anitrack.frixaco.com/torrents/${data.details.info_hash}/stream/${
     data.details.files.length - 1
   }`;
   Bun.spawn({
@@ -98,167 +92,194 @@ async function streamResult(magnet: string) {
   });
 }
 
-run(
-  () =>
-    Column(
-      {
-        border: {
-          color: COLORS.default.fg,
-          style: "square",
-        },
-        gap: 1,
-        padding: "1 0",
-      },
-      [
-        Row(
-          {
-            gap: 1,
-            padding: "1 0",
-          },
-          [
-            InputBox({
-              ...inputStyles,
-              ref: inputRef,
-              focus: true,
-              text: searchText,
-              border: {
-                color:
-                  focusId() === inputRef.current?.id
-                    ? COLORS.default.green
-                    : COLORS.default.fg,
-                style: "square",
-              },
-              onType: (v) => {
-                searchText(v);
-              },
-              onBlur: () => {},
-              onFocus: () => {},
-              onSubmit: (v) => {
-                log("onSubmit +" + v);
-                fetchResults(v);
-              },
-            }),
+// --- Styles ---
+const borderStyle = {
+  color: COLORS.default.fg,
+  style: "square" as const,
+};
 
-            // Button({
-            //   ...inputStyles,
-            //   id: "search-button",
-            //   text: buttonText,
-            //   onClick: () => {
-            //     log("onSubmit +" + searchText());
-            //     fetchResults(searchText());
-            //   },
-            // }),
-          ],
-        ),
+const focusedBorderStyle = {
+  color: COLORS.default.green,
+  style: "square" as const,
+};
 
-        Column(
-          {
-            gap: 1,
-            padding: "1 0",
-            onLayout: (node) => {
-              const h = node.frame.height;
-              const child = node.children[0];
-              if (!child) return;
+// --- Nodes ---
+const searchInput = Input({
+  placeholder: "Search torrents...",
+  border: borderStyle,
+  padding: "1 0",
+  onChange: (val: string) => searchText(val),
+  onSubmit: (val) => {
+    log("onSubmit: " + val);
+    fetchResults(val);
+  },
+  onFocus: (self) => {
+    self.setStyle({ border: focusedBorderStyle });
+  },
+  onBlur: (self) => {
+    self.setStyle({ border: borderStyle });
+  },
+});
 
-              const childH = child.frame.height;
-              if (h && childH) {
-                // Calculate available height by subtracting vertical padding and border
-                let paddingY = 0;
-                const { padding } = node.props;
-                if (typeof padding === "number") {
-                  paddingY = padding;
-                } else if (typeof padding === "string") {
-                  const parts = padding.split(" ").map(Number);
-                  paddingY = parts.length === 2 ? parts[0]! : parts[0]!;
-                }
+const loadingBar = Box({
+  height: 1,
+  bg: COLORS.default.green,
+  width: 0,  // starts hidden
+});
 
-                let borderY = 0;
-                const { border } = node.props;
-                if (border) {
-                  borderY = 1;
-                }
+const resultsList = Col({
+  gap: 1,
+  padding: "1 0",
+  onLayout: (self) => {
+    const h = self.frame.height;
+    const child = self.children[0];
+    if (!h || !child) return;
 
-                const availableH = h - paddingY * 2 - borderY * 2;
+    const childH = child.frame.height;
+    if (!childH) return;
 
-                const gap = (node.props as any).gap || 0;
-                log(
-                  JSON.stringify({
-                    childH,
-                    availableH,
-                    gap,
-                  }),
-                );
-                const capacity = Math.ceil(availableH / childH);
+    // Calculate available height
+    let paddingY = 0;
+    const { padding } = self.props;
+    if (typeof padding === "number") {
+      paddingY = padding;
+    } else if (typeof padding === "string") {
+      const parts = padding.split(" ").map(Number);
+      paddingY = parts[0] ?? 0;
+    }
 
-                if (maxItems() !== capacity && capacity > 0) {
-                  maxItems(capacity);
-                }
-              }
-            },
-          },
-          results()
-            .slice(page() * maxItems(), (page() + 1) * maxItems())
-            .map((s, i) => {
-              let text = $(s.title);
-              let ref = buttonRefs.get(i) ?? createRef();
-              buttonRefs.set(i, ref);
+    const availableH = h - paddingY * 2;
+    const capacity = Math.ceil(availableH / childH);
 
-              return Button({
-                ...inputStyles,
-                ref,
-                text: text,
-                border: {
-                  color:
-                    focusId() === ref.current?.id
-                      ? COLORS.default.green
-                      : COLORS.default.fg,
-                  style: "square",
-                },
-                onClick: () => {
-                  streamResult(s.magnet);
-                  log(`Clicked: ${s.title}`);
-                },
-                onKeyDown: (key) => {
-                  const totalPages = Math.ceil(results().length / maxItems());
-                  const currentPageSize = results().slice(
-                    page() * maxItems(),
-                    (page() + 1) * maxItems(),
-                  ).length;
-                  const currentIndex = i;
+    if (maxItems() !== capacity && capacity > 0) {
+      maxItems(capacity);
+    }
+  },
+});
 
-                  if (key === "l" || key === "\u001b[C") {
-                    if (page() < totalPages - 1) {
-                      page(page() + 1);
-                      focusId(buttonRefs.get(0)?.current?.id || 0);
-                    }
-                  } else if (key === "h" || key === "\u001b[D") {
-                    if (page() > 0) {
-                      page(page() - 1);
-                      focusId(buttonRefs.get(0)?.current?.id || 0);
-                    }
-                  } else if (key === "j" || key === "\u001b[B") {
-                    if (currentIndex < currentPageSize - 1) {
-                      focusId(
-                        buttonRefs.get(currentIndex + 1)?.current?.id || 0,
-                      );
-                    }
-                  } else if (key === "k" || key === "\u001b[A") {
-                    if (currentIndex > 0) {
-                      focusId(
-                        buttonRefs.get(currentIndex - 1)?.current?.id || 0,
-                      );
-                    } else {
-                      focusId(inputRef.current?.id || 0);
-                    }
-                  }
-                },
-              });
-            }),
-        ),
-      ],
-    ),
-  [results, focusId, maxItems, page],
-  focusId,
+const statusText = Text("");
+
+const root = Col(
+  {
+    border: borderStyle,
+    gap: 1,
+    padding: "1 0",
+  },
+  [
+    Row({ gap: 1, padding: "1 0" }, [searchInput]),
+    loadingBar,
+    resultsList,
+    statusText,
+  ]
 );
+
+// --- Keep track of result buttons for focus management ---
+let resultButtons: ReturnType<typeof Button>[] = [];
+
+// --- Reactive effects ---
+
+// Loading bar animation
+ff(() => {
+  if (loading()) {
+    // Expand to full width (match input)
+    loadingBar.setStyle({ width: "100%", bg: COLORS.default.yellow });
+  } else if (results().length > 0) {
+    // Shrink to thin line after results loaded
+    loadingBar.setStyle({ width: "100%", height: 1, bg: COLORS.default.green });
+  } else {
+    // Hidden when no results and not loading
+    loadingBar.setStyle({ width: 0 });
+  }
+});
+
+// Update status text
+ff(() => {
+  if (loading()) {
+    statusText.setText("Loading...");
+  } else if (results().length > 0) {
+    const totalPages = Math.ceil(results().length / maxItems());
+    statusText.setText(`Page ${page() + 1}/${totalPages} | ${results().length} results`);
+  } else {
+    statusText.setText("Type to search");
+  }
+});
+
+// Update results list when results/page/maxItems change
+ff(() => {
+  const currentResults = results()
+    .slice(page() * maxItems(), (page() + 1) * maxItems());
+
+  resultButtons = currentResults.map((item, i) =>
+    Button({
+      text: item.title,
+      border: borderStyle,
+      padding: "1 0",
+      onPress: () => {
+        streamResult(item.magnet);
+        log(`Clicked: ${item.title}`);
+      },
+      onFocus: (self) => {
+        self.setStyle({ border: focusedBorderStyle });
+      },
+      onBlur: (self) => {
+        self.setStyle({ border: borderStyle });
+      },
+    })
+  );
+
+  resultsList.setChildren(resultButtons);
+});
+
+// --- Keyboard navigation ---
+onKey("/", () => searchInput.focus());
+
+onKey("j", () => focusNext());
+onKey("ArrowDown", () => focusNext());
+
+onKey("k", () => focusPrev());
+onKey("ArrowUp", () => focusPrev());
+
+onKey("l", () => pageNext());
+onKey("ArrowRight", () => pageNext());
+
+onKey("h", () => pagePrev());
+onKey("ArrowLeft", () => pagePrev());
+
+onKey("q", () => app.quit());
+
+function focusNext() {
+  const currentIndex = resultButtons.findIndex((b) => b.isFocused());
+  if (currentIndex < resultButtons.length - 1) {
+    resultButtons[currentIndex + 1].focus();
+  }
+}
+
+function focusPrev() {
+  const currentIndex = resultButtons.findIndex((b) => b.isFocused());
+  if (currentIndex > 0) {
+    resultButtons[currentIndex - 1].focus();
+  } else if (currentIndex === 0) {
+    searchInput.focus();
+  }
+}
+
+function pageNext() {
+  const totalPages = Math.ceil(results().length / maxItems());
+  if (page() < totalPages - 1) {
+    page(page() + 1);
+    // Focus first item on new page after effect runs
+    setTimeout(() => resultButtons[0]?.focus(), 0);
+  }
+}
+
+function pagePrev() {
+  if (page() > 0) {
+    page(page() - 1);
+    setTimeout(() => resultButtons[0]?.focus(), 0);
+  }
+}
+
+// --- Start app ---
+const app = run(root);
 
 logWriter.flush();
