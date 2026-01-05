@@ -278,6 +278,23 @@ impl NodeType {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BorderStyle {
+    None = 0,
+    Rounded = 1,
+    Squared = 2,
+}
+
+impl BorderStyle {
+    fn from_f32(v: f32) -> Self {
+        match v as u32 {
+            1 => BorderStyle::Rounded,
+            2 => BorderStyle::Squared,
+            _ => BorderStyle::None,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Node {
     node_type: NodeType,
@@ -289,7 +306,7 @@ struct Node {
     children: Vec<Node>,
 }
 
-const FIELDS_PER_NODE: usize = 7;
+const FIELDS_PER_NODE: usize = 12;
 
 fn parse_node(
     node_data: &[f32],
@@ -304,7 +321,12 @@ fn parse_node(
     let padding_y = node_data[base + 3];
     let border = node_data[base + 4];
     let child_count = node_data[base + 5] as usize;
-    let text_len = node_data[base + 6] as usize;
+    let bg = node_data[base + 6] as usize;
+    let fg = node_data[base + 7] as usize;
+    let border_color = node_data[base + 8] as usize;
+    let border_style = BorderStyle::from_f32(node_data[base + 9]);
+    let node_id = node_data[base + 10] as usize;
+    let text_len = node_data[base + 11] as usize;
 
     *node_offset += FIELDS_PER_NODE;
 

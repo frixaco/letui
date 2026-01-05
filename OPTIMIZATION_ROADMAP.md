@@ -16,7 +16,7 @@
 
 Foundation for incremental updates. Combines serialization protocol with persistent tree.
 
-- [ ] **Node serialization protocol** — 11 fields per node (canonical wire format):
+- [x] **Node serialization protocol** — 11 fields per node (canonical wire format):
   - nodeType, gap, paddingX, paddingY, border, childCount, textLength
   - fgColor, bgColor, borderColor, borderStyle
   - Include stable node ID in the format
@@ -103,25 +103,57 @@ Polish for text input components.
 
 ## Priority 7: PTY Embedding (Neovim integration)
 
-High complexity — essentially a terminal emulator inside the TUI.
+Terminal emulator inside the TUI, using libghostty-vt for parsing/state.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                        Rust                             │
+│  ┌──────────┐    ┌──────────────┐    ┌──────────────┐  │
+│  │ PTY I/O  │───▶│ libghostty-vt│───▶│ Paint to     │  │
+│  │ (spawn)  │    │ (C API)      │    │ frame buffer │  │
+│  └──────────┘    └──────────────┘    └──────────────┘  │
+└─────────────────────────────────────────────────────────┘
+                           │
+                     single FFI call
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│              TypeScript (Terminal component)            │
+└─────────────────────────────────────────────────────────┘
+```
+
+All PTY/VT logic lives in Rust — zero FFI crossings in the hot path.
+
+### Tasks
+
+- [ ] **Integrate libghostty-vt in Rust**
+  - Add libghostty-vt C API dependency (via `cc` crate or system lib)
+  - Create `Terminal` struct wrapping `ghostty_vt_t` pointer
+  - Expose `feed(bytes)` → updates internal screen state
+  - Expose `get_cell(x, y)` → returns char + fg + bg
+  - Fallback: `vte` crate if libghostty-vt C API not ready
 
 - [ ] **Spawn PTY subprocess**
-  - Use `pty` crate in Rust or Bun's `spawn` with PTY mode
+  - Use `portable-pty` or `pty` crate in Rust
   - Allocate pseudo-terminal with desired size
   - Spawn Neovim (or any shell) attached to PTY
-
-- [ ] **PTY output parsing**
-  - Read PTY stdout as stream of bytes
-  - Parse ANSI escape sequences (CSI codes for colors, cursor movement)
-  - Maintain virtual screen buffer: 2D array of cells (char + fg + bg)
-  - Libraries: `vte` crate for Rust, or port minimal parser
+  - Non-blocking read loop for PTY stdout
 
 - [ ] **PTY region painting**
-  - New component type: `Terminal` or `Embed`
-  - On each frame, copy PTY screen buffer into main buffer at component's frame coords
+  - New `Terminal` component in TS (width, height, command props)
+  - Rust-side `paint_terminal(id, frame_x, frame_y, w, h)`
+  - Copies libghostty-vt screen buffer → main frame buffer
   - Handle resize: send `SIGWINCH` to PTY when container resizes
 
 - [ ] **Input routing to PTY**
-  - When `Terminal` component is focused, route all keyboard input to PTY stdin
-  - Pass through raw bytes (including escape sequences for special keys)
+  - When `Terminal` component is focused, route keyboard to Rust
+  - Rust writes raw bytes to PTY stdin (including escape sequences)
   - Mouse input passthrough (optional, for mouse-enabled TUI apps)
+
+### References
+
+- libghostty-vt blog: https://mitchellh.com/writing/libghostty-is-coming
+- C API header (internal, will change): https://github.com/ghostty-org/ghostty/blob/main/include/ghostty.h
+- PR #8840 (Zig module): https://github.com/ghostty-org/ghostty/pull/8840
+- Status: C API "coming very shortly", stable tag expected ~March 2026

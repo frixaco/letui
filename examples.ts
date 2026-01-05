@@ -4,8 +4,12 @@
 
 import { COLORS } from "./colors";
 import {
+  type ButtonProps,
+  type Node,
+  type Ref,
   Button,
   Column,
+  createRef,
   InputBox,
   Row,
   run,
@@ -14,7 +18,8 @@ import {
 import { $ } from "./signals";
 
 let searchText = $("");
-let focusId = $("search-input");
+// TODO: broken
+let focusId = $(0);
 // let buttonText = $("Search");
 let results = $<ScrapeResultItem[]>([]);
 let maxItems = $(1);
@@ -61,6 +66,9 @@ export function log(txt: string, ...args: string[]) {
   logWriter.write(txt + " " + args.join(" ") + "\n");
 }
 
+let inputRef = createRef<Node>();
+let buttonRefs = new Map<number, Ref<Node>>();
+
 async function fetchResults(query: string) {
   const response = await fetch(
     `https://scrape.anitrack.frixaco.com/scrape?q=${query}`,
@@ -70,7 +78,7 @@ async function fetchResults(query: string) {
   results(data.results);
   page(0);
   if (data.results.length > 0) {
-    focusId("result-button-0");
+    focusId(buttonRefs.get(0)?.current?.id || 0);
   }
 }
 
@@ -91,7 +99,7 @@ async function streamResult(magnet: string) {
 }
 
 run(
-  (terminalWidth: number, termianlHeight: number) =>
+  () =>
     Column(
       {
         border: {
@@ -104,19 +112,18 @@ run(
       [
         Row(
           {
-            border: "none",
             gap: 1,
             padding: "1 0",
           },
           [
             InputBox({
               ...inputStyles,
-              id: "search-input",
+              ref: inputRef,
               focus: true,
               text: searchText,
               border: {
                 color:
-                  focusId() === "search-input"
+                  focusId() === inputRef.current?.id
                     ? COLORS.default.green
                     : COLORS.default.fg,
                 style: "square",
@@ -146,7 +153,6 @@ run(
 
         Column(
           {
-            border: "none",
             gap: 1,
             padding: "1 0",
             onLayout: (node) => {
@@ -168,7 +174,7 @@ run(
 
                 let borderY = 0;
                 const { border } = node.props;
-                if (border && border !== "none") {
+                if (border) {
                   borderY = 1;
                 }
 
@@ -194,15 +200,18 @@ run(
             .slice(page() * maxItems(), (page() + 1) * maxItems())
             .map((s, i) => {
               let text = $(s.title);
-              let id = `result-button-${i}`;
+              let ref = buttonRefs.get(i) ?? createRef();
+              buttonRefs.set(i, ref);
 
               return Button({
                 ...inputStyles,
-                id,
+                ref,
                 text: text,
                 border: {
                   color:
-                    focusId() === id ? COLORS.default.green : COLORS.default.fg,
+                    focusId() === ref.current?.id
+                      ? COLORS.default.green
+                      : COLORS.default.fg,
                   style: "square",
                 },
                 onClick: () => {
@@ -220,22 +229,26 @@ run(
                   if (key === "l" || key === "\u001b[C") {
                     if (page() < totalPages - 1) {
                       page(page() + 1);
-                      focusId("result-button-0");
+                      focusId(buttonRefs.get(0)?.current?.id || 0);
                     }
                   } else if (key === "h" || key === "\u001b[D") {
                     if (page() > 0) {
                       page(page() - 1);
-                      focusId("result-button-0");
+                      focusId(buttonRefs.get(0)?.current?.id || 0);
                     }
                   } else if (key === "j" || key === "\u001b[B") {
                     if (currentIndex < currentPageSize - 1) {
-                      focusId(`result-button-${currentIndex + 1}`);
+                      focusId(
+                        buttonRefs.get(currentIndex + 1)?.current?.id || 0,
+                      );
                     }
                   } else if (key === "k" || key === "\u001b[A") {
                     if (currentIndex > 0) {
-                      focusId(`result-button-${currentIndex - 1}`);
+                      focusId(
+                        buttonRefs.get(currentIndex - 1)?.current?.id || 0,
+                      );
                     } else {
-                      focusId("search-input");
+                      focusId(inputRef.current?.id || 0);
                     }
                   }
                 },

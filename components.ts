@@ -13,32 +13,30 @@ import {
 } from "./metrics.ts";
 import { log } from "./examples.ts";
 
-function randomString(length = 6) {
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from(
-    { length },
-    () => chars[Math.floor(Math.random() * chars.length)],
-  ).join("");
-}
+const generateId = (() => {
+  let counter = 1;
+  return () => {
+    return counter++;
+  };
+})();
 
 export function run(
   nodeFactory: (tw: number, th: number) => Node,
   deps: Signal<any>[],
-  focusedIdSignal?: Signal<string>,
+  focusedIdSignal?: Signal<number>,
 ) {
   api.init_buffer();
   api.init_letui();
   process.stdin.resume();
 
-  let pressedComponentId = $("");
-  let focusedComponentId = focusedIdSignal || $("");
+  let pressedComponentId = $(0);
+  let focusedComponentId = focusedIdSignal || $(0);
 
   let terminalWidth = $(api.get_width());
   let terminalHeight = $(api.get_height());
 
   let spatialLookup = new Array(terminalWidth() * terminalHeight());
-  let nodeRegistry = new Map<string, Node>();
+  let nodeRegistry = new Map<number, Node>();
 
   function getComponentAt(x: number, y: number): Node | undefined {
     const id = spatialLookup[y * terminalWidth() + x];
@@ -54,15 +52,15 @@ export function run(
     }
   }
 
-  function setFocus(newId: string) {
+  function setFocus(newId: number) {
     focusedComponentId(newId);
   }
 
   function clearFocus() {
-    focusedComponentId("");
+    focusedComponentId(0);
   }
 
-  function getNodeById(id: string): Node | undefined {
+  function getNodeById(id: number): Node | undefined {
     return nodeRegistry.get(id);
   }
 
@@ -121,7 +119,7 @@ export function run(
         pressedComponentId(target.id);
         setFocus(target.id);
       } else {
-        pressedComponentId("");
+        pressedComponentId(0);
         clearFocus();
       }
       return;
@@ -134,7 +132,7 @@ export function run(
           (pressed.props as ButtonProps).onClick();
         }
       }
-      pressedComponentId("");
+      pressedComponentId(0);
       return;
     }
   }
@@ -220,6 +218,18 @@ export function run(
     result[offset++] = paddingY;
     result[offset++] = node.props?.border ? 1 : 0;
     result[offset++] = node.children.length;
+    result[offset++] = node.props.bg || COLORS.default.bg;
+    result[offset++] = node.props.fg || COLORS.default.bg;
+    result[offset++] =
+      node.props.border?.color || node.props.bg || COLORS.default.bg;
+    let borderStyle =
+      node.props.border?.style === "rounded"
+        ? 1
+        : node.props.border?.style === "square"
+          ? 2
+          : 0;
+    result[offset++] = borderStyle;
+    result[offset++] = node.id;
 
     let hasText =
       node.type === "input" || node.type === "text" || node.type === "button";
@@ -245,7 +255,7 @@ export function run(
 
   function layout(node: Node) {
     let nodeCount = countNodes(node);
-    let FIELDS_PER_NODE = 7;
+    let FIELDS_PER_NODE = 12;
     let nodeData: Float32Array = new Float32Array(nodeCount * FIELDS_PER_NODE);
     let offset = 0;
     let texts: string[] = [];
@@ -607,8 +617,8 @@ function drawBorder(
   overrideFg?: number,
   overrideBg?: number,
 ) {
-  let border = (node.props?.border as BorderProps) || "none";
-  if (border === "none") return;
+  let border = node.props?.border;
+  if (!border) return;
 
   let { width, height } = node.frame;
   let style = border.style;
@@ -638,60 +648,69 @@ function drawBorder(
   }
 }
 
-export function Column(
-  props: ColumnProps & { id?: string },
-  children: Array<Node>,
-): Node {
-  return {
-    id: props.id || randomString(),
+export function Column(props: ColumnProps, children: Array<Node>): Node {
+  const node: Node = {
+    id: generateId(),
     type: "column",
     props,
     frame: getInitialFrame(),
     children,
   };
+  if (props.ref) props.ref.current = node;
+  return node;
 }
 
 export function Row(
   props: RowProps & { id?: string },
   children: Array<Node>,
 ): Node {
-  return {
-    id: props.id || randomString(),
+  const node: Node = {
+    id: generateId(),
     type: "row",
     props,
     frame: getInitialFrame(),
     children,
   };
+  if (props.ref) props.ref.current = node;
+  return node;
 }
 
 export function Text(props: TextProps): Node {
-  return {
-    id: randomString(),
+  const node: Node = {
+    id: generateId(),
     type: "text",
     props,
     frame: getInitialFrame(),
     children: [],
   };
+  if (props.ref) props.ref.current = node;
+  return node;
 }
 
-export function Button(props: ButtonProps & { id: string }): Node {
-  return {
-    id: props.id,
+export function Button(props: ButtonProps): Node {
+  const node: Node = {
+    id: generateId(),
     type: "button",
     props,
     frame: getInitialFrame(),
     children: [],
   };
+
+  if (props.ref) props.ref.current = node;
+
+  return node;
 }
 
-export function InputBox(props: InputBoxProps & { id: string }): Node {
-  return {
-    id: props.id,
+export function InputBox(props: InputBoxProps): Node {
+  const node: Node = {
+    id: generateId(),
     type: "input",
     props,
     frame: getInitialFrame(),
     children: [],
   };
+  if (props.ref) props.ref.current = node;
+  return node;
 }
 
 function getInitialFrame(): Frame {
@@ -717,14 +736,23 @@ export type Frame = {
 export type ComponentType = "column" | "row" | "input" | "button" | "text";
 
 export type Node = {
-  id: string;
+  id: number;
   type: ComponentType;
   children: Array<Node>;
   props: ColumnProps | RowProps | InputBoxProps | ButtonProps | TextProps;
   frame: Frame;
 };
 
+export function createRef<T>(): Ref<T> {
+  return { current: null };
+}
+
+export type Ref<T> = { current: T | null };
+
 export type CommonProps = {
+  ref?: Ref<Node>;
+  fg?: number;
+  bg?: number;
   padding?: number | `${number} ${number}`;
   border?: BorderProps;
   onLayout?: (node: Node) => void;
@@ -732,33 +760,25 @@ export type CommonProps = {
 
 export type ColumnProps = CommonProps & {
   gap?: number;
-  bg?: number;
 };
 
 export type RowProps = CommonProps & {
   gap?: number;
-  bg?: number;
 };
 
 export type TextProps = CommonProps & {
-  fg?: number;
-  bg?: number;
   text: Signal<string>;
 };
 
 export type BorderStyle = "square" | "rounded";
 
-export type BorderProps =
-  | {
-      color: number;
-      style: BorderStyle;
-    }
-  | "none";
+export type BorderProps = {
+  color: number;
+  style: BorderStyle;
+};
 
 export type ButtonProps = CommonProps & {
   focus?: boolean;
-  fg?: number;
-  bg?: number;
   text: Signal<string>;
   onClick: () => void | Promise<void>;
   onKeyDown?: (key: string) => void;
@@ -766,8 +786,6 @@ export type ButtonProps = CommonProps & {
 
 export type InputBoxProps = CommonProps & {
   focus?: boolean;
-  fg?: number;
-  bg?: number;
   text: Signal<string>;
   onBlur: () => void;
   onFocus: () => void;
