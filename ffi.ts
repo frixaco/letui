@@ -3,23 +3,29 @@ import { dlopen, suffix } from "bun:ffi";
 const prefix = process.platform === "win32" ? "" : "lib";
 const filename = `${prefix}letui_ffi.${suffix}`;
 
+import { fileURLToPath } from "url";
+
 function getLibraryPath(): string {
   const { platform, arch } = process;
 
-  const localPath = new URL(
+  const localPath = fileURLToPath(new URL(
     `./letui-ffi/target/release/${filename}`,
     import.meta.url,
-  ).pathname;
+  ));
+
+  console.log("Attempting to load local build from:", localPath);
 
   try {
     if (Bun.file(localPath).size > 0) {
+      console.log("Found local build!");
       return localPath;
     }
-  } catch {
-    // Local build doesn't exist, continue to package lookup
+  } catch (e) {
+    console.log("Local build check failed:", e);
   }
 
   const pkgName = `@frixaco/letui-${platform}-${arch}`;
+  console.log("Falling back to package:", pkgName);
   return Bun.resolveSync(`${pkgName}/${filename}`, import.meta.dir);
 }
 

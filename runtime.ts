@@ -414,8 +414,8 @@ function dispatchToNode(node: Node, data: string): boolean {
       return true;
     }
 
-    // Enter
-    if (data === "\r") {
+    // Enter (Handle \r, \n, or \r\n)
+    if (data.includes("\r") || data.includes("\n")) {
       handlers.onSubmit?.(currentText);
       return true;
     }
@@ -437,7 +437,7 @@ function dispatchToNode(node: Node, data: string): boolean {
     const handlers = node.handlers;
 
     // Enter or Space triggers click
-    if (data === "\r" || data === " ") {
+    if (data.includes("\r") || data.includes("\n") || data === " ") {
       handlers.onClick();
       return true;
     }
