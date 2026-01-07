@@ -21,7 +21,16 @@ function schedule(fn: Sub) {
       while (scheduled.size) {
         const snapshot = Array.from(scheduled);
         scheduled.clear();
-        for (let s of snapshot) s();
+        for (let s of snapshot) {
+          // Set caller so signals read during re-run create new subscriptions
+          let prev = caller;
+          try {
+            caller = s;
+            s();
+          } finally {
+            caller = prev;
+          }
+        }
       }
     } finally {
       flushing = false;
@@ -186,6 +195,10 @@ export function af<T>(
 
 export function wait(ms: number = 1000): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function whenSettled(fn: Sub): void {
+  schedule(fn);
 }
 
 // const doubleCounter = dd(() => counter.get() * 2);

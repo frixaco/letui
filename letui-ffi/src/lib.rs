@@ -381,7 +381,7 @@ fn get_styles(node: &Node) -> Style {
         NodeType::Column => {
             style.flex_direction = FlexDirection::Column;
             style.align_items = Some(AlignItems::Stretch);
-            style.flex_grow = 1.0;
+            // flex_grow: 0 by default - only root gets flex_grow: 1.0
             style.overflow = Point {
                 x: Overflow::Hidden,
                 y: Overflow::Hidden,

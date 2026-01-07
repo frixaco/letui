@@ -1,794 +1,244 @@
-import { ptr, toArrayBuffer, type Pointer } from "bun:ffi";
-import { COLORS } from "./colors.ts";
-import api from "./ffi.ts";
-import { $, ff, type Signal } from "./signals";
-// import { log } from "./index.ts";
-import {
-  startFrame,
-  endFrame,
-  startPhase,
-  endLayout,
-  endPaint,
-  formatMetrics,
-} from "./metrics.ts";
-import { log } from "./examples.ts";
+import { $, type Signal } from "./signals";
+import type {
+  Frame,
+  Node,
+  BoxProps,
+  TextProps,
+  InputProps,
+  ButtonProps,
+  StyleProps,
+  _StyleProps,
+  _BoxProps,
+  _TextProps,
+  _InputProps,
+  _ButtonProps,
+} from "./types";
+
+// Re-export types for convenience
+export type {
+  Frame,
+  Node,
+  BoxProps,
+  TextProps,
+  InputProps,
+  ButtonProps,
+  StyleProps,
+  BorderStyle,
+  BorderProps,
+} from "./types";
+
+// =============================================================================
+// INTERNALS
+// =============================================================================
 
 const generateId = (() => {
   let counter = 1;
-  return () => {
-    return counter++;
-  };
+  return () => counter++;
 })();
 
-export function run(
-  nodeFactory: (tw: number, th: number) => Node,
-  deps: Signal<any>[],
-  focusedIdSignal?: Signal<number>,
-) {
-  api.init_buffer();
-  api.init_letui();
-  process.stdin.resume();
+function getInitialFrame(): Frame {
+  return { x: 0, y: 0, width: 0, height: 0 };
+}
 
-  let pressedComponentId = $(0);
-  let focusedComponentId = focusedIdSignal || $(0);
+// --- Props-to-Signals Converters ---
 
-  let terminalWidth = $(api.get_width());
-  let terminalHeight = $(api.get_height());
-
-  let spatialLookup = new Array(terminalWidth() * terminalHeight());
-  let nodeRegistry = new Map<number, Node>();
-
-  function getComponentAt(x: number, y: number): Node | undefined {
-    const id = spatialLookup[y * terminalWidth() + x];
-    return id ? nodeRegistry.get(id) : undefined;
-  }
-
-  function registerHit(n: Node) {
-    const { x, y, width, height } = n.frame;
-    for (let row = y; row < y + height; row++) {
-      for (let col = x; col < x + width; col++) {
-        spatialLookup[row * terminalWidth() + col] = n.id;
-      }
-    }
-  }
-
-  function setFocus(newId: number) {
-    focusedComponentId(newId);
-  }
-
-  function clearFocus() {
-    focusedComponentId(0);
-  }
-
-  function getNodeById(id: number): Node | undefined {
-    return nodeRegistry.get(id);
-  }
-
-  function handleKeyboardEvent(d: string) {
-    const focused = getNodeById(focusedComponentId());
-    if (!focused) return;
-
-    if (focused.type === "button") {
-      if (d === "\r" || d === " ") {
-        (focused.props as ButtonProps).onClick();
-      } else {
-        const onKeyDown = (focused.props as ButtonProps).onKeyDown;
-        if (onKeyDown) {
-          onKeyDown(d);
-        }
-      }
-      return;
-    }
-
-    if (focused.type === "input") {
-      const props = focused.props as InputBoxProps;
-      const curr = props.text() ?? "";
-
-      if (d === "\x7f") {
-        props.onType(curr.slice(0, -1));
-      } else if (d === "\r") {
-        props.onSubmit?.(curr);
-        clearFocus();
-      } else if (d.length === 1) {
-        const code = d.charCodeAt(0);
-        if (code >= 32 && code <= 126) {
-          props.onType(curr + d);
-        }
-      }
-      return;
-    }
-  }
-
-  function handleMouseEvent(d: string) {
-    const i = d.indexOf("<") + 1;
-    const j = d.length - 1;
-    const parts = d.slice(i, j).split(";");
-    const isPress = d.endsWith("M");
-    const isRelease = d.endsWith("m");
-    const cb = Number(parts[0]);
-    const x = Number(parts[1]) - 1;
-    const y = Number(parts[2]) - 1;
-
-    const btn = cb & 0b11;
-    const isLeftPress = isPress && btn === 0;
-
-    const target = getComponentAt(x, y);
-
-    if (isLeftPress) {
-      if (target) {
-        pressedComponentId(target.id);
-        setFocus(target.id);
-      } else {
-        pressedComponentId(0);
-        clearFocus();
-      }
-      return;
-    }
-
-    if (isRelease) {
-      const pressed = getNodeById(pressedComponentId());
-      if (pressed && target && target.id === pressed.id) {
-        if (pressed.type === "button") {
-          (pressed.props as ButtonProps).onClick();
-        }
-      }
-      pressedComponentId(0);
-      return;
-    }
-  }
-
-  const isMouseEvent = (d: string) => d.startsWith("\u001b[<");
-
-  process.stdin.on("data", (data) => {
-    const d = data.toString();
-
-    if (d === "\u0011") {
-      api.free_buffer();
-      api.deinit_letui();
-      const stats = formatMetrics();
-      Bun.write("metrics.txt", stats + "\n");
-      console.log(stats);
-      process.exit(0);
-    }
-
-    if (isMouseEvent(d)) {
-      handleMouseEvent(d);
-      return;
-    }
-
-    handleKeyboardEvent(d);
-  });
-
-  let getBuffer = () => {
-    const bufPtr = api.get_buffer_ptr()!;
-    const bufLen = Number(api.get_buffer_len()!);
-
-    return new BigUint64Array(toArrayBuffer(bufPtr as Pointer, 0, bufLen * 8));
+function createStyleSignals(input: StyleProps): _StyleProps {
+  return {
+    border: $(input.border),
+    padding: $(input.padding),
+    background: $(input.background),
+    foreground: $(input.foreground),
   };
-  let buffer = getBuffer();
-
-  process.stdout.on("resize", () => {
-    api.update_terminal_size();
-
-    terminalWidth(api.get_width());
-    terminalHeight(api.get_height());
-
-    api.free_buffer();
-    api.init_buffer();
-
-    buffer = getBuffer();
-    spatialLookup = new Array(terminalWidth() * terminalHeight());
-  });
-
-  function serializeNodes(
-    node: Node,
-    result: Float32Array,
-    offset: number,
-    texts: string[],
-  ) {
-    // 1 - row
-    // 2 - column
-    // 3 - button
-    // 4 - input
-    // 5 - text
-    let nodeType =
-      node.type === "row"
-        ? 1
-        : node.type === "column"
-          ? 2
-          : node.type === "button"
-            ? 3
-            : node.type === "input"
-              ? 4
-              : node.type === "text"
-                ? 5
-                : 0;
-
-    result[offset++] = nodeType;
-    result[offset++] = (node.props as ColumnProps)?.gap || 0;
-
-    let padding = node.props.padding;
-    let paddingX = padding as number;
-    let paddingY = padding as number;
-    if (typeof padding === "string") {
-      [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
-    }
-
-    result[offset++] = paddingX;
-    result[offset++] = paddingY;
-    result[offset++] = node.props?.border ? 1 : 0;
-    result[offset++] = node.children.length;
-    result[offset++] = node.props.bg || COLORS.default.bg;
-    result[offset++] = node.props.fg || COLORS.default.bg;
-    result[offset++] =
-      node.props.border?.color || node.props.bg || COLORS.default.bg;
-    let borderStyle =
-      node.props.border?.style === "rounded"
-        ? 1
-        : node.props.border?.style === "square"
-          ? 2
-          : 0;
-    result[offset++] = borderStyle;
-    result[offset++] = node.id;
-
-    let hasText =
-      node.type === "input" || node.type === "text" || node.type === "button";
-    const textValue = hasText
-      ? (node.props as TextProps | InputBoxProps | ButtonProps).text() || ""
-      : "";
-    result[offset++] = [...textValue].length;
-
-    if (hasText && textValue) {
-      texts.push(textValue);
-    }
-
-    for (let child of node.children) {
-      offset = serializeNodes(child, result, offset, texts);
-    }
-
-    return offset;
-  }
-
-  function countNodes(node: Node): number {
-    return 1 + node.children.reduce((a, c) => a + countNodes(c), 0);
-  }
-
-  function layout(node: Node) {
-    let nodeCount = countNodes(node);
-    let FIELDS_PER_NODE = 12;
-    let nodeData: Float32Array = new Float32Array(nodeCount * FIELDS_PER_NODE);
-    let offset = 0;
-    let texts: string[] = [];
-
-    serializeNodes(node, nodeData, offset, texts);
-
-    const textBuffer = new TextEncoder().encode(texts.join(""));
-    const safeTextBuffer =
-      textBuffer.length > 0 ? textBuffer : new Uint8Array(1);
-
-    api.calculate_layout(
-      ptr(nodeData),
-      nodeData.length,
-      ptr(safeTextBuffer),
-      textBuffer.length,
-      terminalWidth(),
-      terminalHeight(),
-    );
-
-    const framesPtr = api.get_frames_ptr()!;
-    const framesLen = Number(api.get_frames_len()!);
-
-    let frameArray = new Float32Array(
-      toArrayBuffer(framesPtr as Pointer, 0, framesLen * 4),
-    );
-
-    let idx = 0;
-    function updateFrames(n: Node) {
-      n.frame.x = frameArray![idx++]!;
-      n.frame.y = frameArray![idx++]!;
-      n.frame.width = frameArray![idx++]!;
-      n.frame.height = frameArray![idx++]!;
-      n.children.forEach(updateFrames);
-    }
-    updateFrames(node);
-  }
-
-  function triggerLayoutEvents(node: Node) {
-    if (node.props.onLayout) {
-      node.props.onLayout(node);
-    }
-    node.children.forEach(triggerLayoutEvents);
-  }
-
-  function paint(
-    node: Node,
-    overrideBg: number = COLORS.default.bg,
-    clipBounds?: { x: number; y: number; width: number; height: number },
-  ) {
-    nodeRegistry.set(node.id, node);
-
-    if (clipBounds) {
-      const nodeBottom = node.frame.y + node.frame.height;
-      const clipBottom = clipBounds.y + clipBounds.height;
-
-      if (node.frame.y < clipBounds.y || nodeBottom > clipBottom) {
-        return;
-      }
-    }
-
-    if (node.type === "column") {
-      let { bg = overrideBg } = node.props as ColumnProps;
-
-      drawBackground(buffer, node, bg, terminalWidth);
-      drawBorder(buffer, node, terminalWidth);
-    }
-
-    if (node.type === "row") {
-      let { bg = overrideBg } = node.props as RowProps;
-
-      drawBackground(buffer, node, bg, terminalWidth);
-      drawBorder(buffer, node, terminalWidth);
-    }
-
-    if (node.type === "text") {
-      let {
-        fg = COLORS.default.fg,
-        bg = overrideBg,
-        border = "none",
-        padding,
-        text,
-      } = node.props as TextProps;
-
-      drawBackground(buffer, node, bg, terminalWidth);
-      drawBorder(buffer, node, terminalWidth);
-
-      let paddingX = padding as number;
-      let paddingY = padding as number;
-      if (typeof padding === "string") {
-        [paddingX, paddingY] = padding.split(" ").map(Number) as [
-          number,
-          number,
-        ];
-      }
-      let cells: bigint[] = [];
-      for (const c of text()) {
-        cells.push(BigInt(c.codePointAt(0)!), BigInt(fg), BigInt(bg));
-      }
-      let textBuffer = new BigUint64Array(cells);
-      let offset =
-        (node.frame.y + paddingY + (border !== "none" ? 1 : 0)) *
-          terminalWidth() +
-        node.frame.x +
-        paddingX +
-        (border !== "none" ? 1 : 0);
-      buffer.set(textBuffer, offset * 3);
-    }
-
-    if (node.type === "button") {
-      let {
-        fg = COLORS.default.fg,
-        bg = overrideBg,
-        border = "none",
-        padding,
-        text: buttonText,
-        focus = false,
-      } = node.props as ButtonProps;
-
-      if (focus && initialRender) {
-        initialRender = false;
-        focusedComponentId(node.id);
-      }
-
-      let isFocused = focusedComponentId() === node.id;
-      let isPressed = pressedComponentId() === node.id;
-
-      drawBackground(buffer, node, isPressed ? fg : bg, terminalWidth);
-
-      if (border !== "none") {
-        drawBorder(
-          buffer,
-          node,
-          terminalWidth,
-          isFocused ? COLORS.default.green : COLORS.default.fg,
-          isPressed ? fg : bg,
-        );
-      }
-
-      let paddingX = padding as number;
-      let paddingY = padding as number;
-      if (typeof padding === "string") {
-        [paddingX, paddingY] = padding.split(" ").map(Number) as [
-          number,
-          number,
-        ];
-      }
-
-      const drawLine = (text: string, x: number, y: number) => {
-        let cells: bigint[] = [];
-        for (const c of text) {
-          cells.push(
-            BigInt(c.codePointAt(0)!),
-            BigInt(isPressed ? bg : fg),
-            BigInt(isPressed ? fg : bg),
-          );
-        }
-        let textBuffer = new BigUint64Array(cells);
-        buffer.set(
-          textBuffer,
-          ((y + paddingY + (border !== "none" ? 1 : 0)) * terminalWidth() +
-            x +
-            paddingX +
-            (border !== "none" ? 1 : 0)) *
-            3,
-        );
-      };
-
-      const maxWidth =
-        node.frame.width - paddingX * 2 - (border !== "none" ? 2 : 0);
-      const words = buttonText().split(/\s+/);
-      const lines: string[] = [];
-      let currentLine: string[] = [];
-      let currentWidth = 0;
-
-      for (const word of words) {
-        const wordWidth = word.length;
-        const neededWidth =
-          currentLine.length === 0 ? wordWidth : currentWidth + 1 + wordWidth;
-
-        if (neededWidth > maxWidth && currentLine.length > 0) {
-          lines.push(currentLine.join(" "));
-          currentLine = [word];
-          currentWidth = wordWidth;
-        } else {
-          currentLine.push(word);
-          currentWidth = neededWidth;
-        }
-      }
-
-      if (currentLine.length > 0) {
-        lines.push(currentLine.join(" "));
-      }
-
-      lines.forEach((line, lineIndex) => {
-        drawLine(line, node.frame.x, node.frame.y + lineIndex);
-      });
-
-      registerHit(node);
-    }
-
-    if (node.type === "input") {
-      let {
-        fg = COLORS.default.fg,
-        bg = overrideBg,
-        border = "none",
-        text: inputText,
-        padding = 0,
-        focus = false,
-      } = node.props as InputBoxProps;
-
-      if (focus && initialRender) {
-        initialRender = false;
-        focusedComponentId(node.id);
-      }
-
-      let isFocused = focusedComponentId() === node.id;
-
-      drawBackground(buffer, node, bg, terminalWidth);
-
-      if (border !== "none") {
-        drawBorder(
-          buffer,
-          node,
-          terminalWidth,
-          isFocused ? COLORS.default.green : COLORS.default.fg,
-          bg,
-        );
-      }
-
-      let paddingX = padding as number;
-      let paddingY = padding as number;
-      if (typeof padding === "string") {
-        [paddingX, paddingY] = padding.split(" ").map(Number) as [
-          number,
-          number,
-        ];
-      }
-      let cells: bigint[] = [];
-      for (const c of inputText()) {
-        cells.push(BigInt(c.codePointAt(0)!), BigInt(fg), BigInt(bg));
-      }
-      let textBuffer = new BigUint64Array(cells);
-      buffer.set(
-        textBuffer,
-        ((node.frame.y + paddingY + (border !== "none" ? 1 : 0)) *
-          terminalWidth() +
-          node.frame.x +
-          paddingX +
-          (border !== "none" ? 1 : 0)) *
-          3,
-      );
-
-      registerHit(node);
-    }
-
-    const childClipBounds = {
-      x: node.frame.x,
-      y: node.frame.y,
-      width: node.frame.width,
-      height: node.frame.height,
-    };
-
-    for (let child of node.children) {
-      paint(child, node.props.bg, childClipBounds);
-    }
-  }
-
-  let initialRender = true;
-  let previousFocusId = focusedComponentId();
-
-  ff(() => {
-    log(`ff triggered ${Date.now()}`);
-    const frameStart = startFrame();
-
-    pressedComponentId();
-    const currentFocusId = focusedComponentId();
-    let tw = terminalWidth();
-    let th = terminalHeight();
-
-    if (deps) {
-      for (let i = 0; i < deps.length; i++) {
-        deps[i]!();
-      }
-    }
-
-    spatialLookup.fill(undefined);
-
-    nodeRegistry.clear();
-
-    const node = nodeFactory(tw, th);
-
-    const layoutStart = startPhase();
-    layout(node);
-    endLayout(layoutStart);
-
-    triggerLayoutEvents(node);
-
-    const paintStart = startPhase();
-    paint(node, node.props.bg);
-    endPaint(paintStart);
-
-    if (currentFocusId !== previousFocusId) {
-      const oldNode = nodeRegistry.get(previousFocusId);
-      const newNode = nodeRegistry.get(currentFocusId);
-
-      if (oldNode?.type === "input") {
-        (oldNode.props as InputBoxProps).onBlur();
-      }
-      if (newNode?.type === "input") {
-        (newNode.props as InputBoxProps).onFocus();
-      }
-      previousFocusId = currentFocusId;
-    }
-
-    api.flush();
-
-    endFrame(frameStart);
-  });
 }
 
-function drawBackground(
-  buffer: BigUint64Array<ArrayBuffer>,
-  node: Node,
-  bg: number,
-  terminalWidth: Signal<number>,
-) {
-  let tw = terminalWidth();
-  for (let j = node.frame.y; j < node.frame.y + node.frame.height; j++) {
-    for (let i = node.frame.x; i < node.frame.x + node.frame.width; i++) {
-      setCell(buffer, (j * tw + i) * 3, " ", COLORS.default.bg, bg);
+function createBoxSignals(input: BoxProps): _BoxProps {
+  return {
+    ...createStyleSignals(input),
+    gap: $(input.gap),
+    direction: $(input.direction),
+  };
+}
+
+function createTextSignals(input: TextProps): _TextProps {
+  return {
+    ...createStyleSignals(input),
+    text: $(input.text),
+  };
+}
+
+function createInputSignals(
+  input: { placeholder?: string } & StyleProps,
+): _InputProps {
+  return {
+    ...createStyleSignals(input),
+    text: $(""),
+    placeholder: $(input.placeholder),
+  };
+}
+
+function createButtonSignals(
+  input: { text: string } & StyleProps,
+): _ButtonProps {
+  return {
+    ...createStyleSignals(input),
+    text: $(input.text),
+  };
+}
+
+// --- Generic setStyle ---
+
+function makeSetStyle<T extends Record<string, Signal<any>>>(
+  props: T,
+): (
+  newProps: Partial<{
+    [K in keyof T]: T[K] extends Signal<infer V> ? V : never;
+  }>,
+) => void {
+  return (newProps) => {
+    for (const [key, value] of Object.entries(newProps)) {
+      if (key in props) {
+        (props as any)[key](value);
+      }
     }
-  }
+  };
 }
 
-function setCell(
-  buffer: BigUint64Array<ArrayBuffer>,
-  offset: number,
-  char: string,
-  fg: number,
-  bg: number,
-) {
-  buffer[offset] = BigInt(char.codePointAt(0)!);
-  buffer[offset + 1] = BigInt(fg);
-  buffer[offset + 2] = BigInt(bg);
+// =============================================================================
+// FOCUS MANAGEMENT
+// =============================================================================
+
+let focusedNode: Node | null = null;
+
+export function getFocusedNode(): Node | null {
+  return focusedNode;
 }
 
-function getContainerCorners(node: Node, tw: number) {
-  let topLeft = node.frame.y * tw + node.frame.x;
-  let bottomLeft = topLeft + (node.frame.height - 1) * tw;
-  let topRight = topLeft + node.frame.width - 1;
-  let bottomRight = bottomLeft + node.frame.width - 1;
-  return { topLeft, bottomLeft, topRight, bottomRight };
-}
+export function focusNode(node: Node): void {
+  if (focusedNode === node) return;
 
-function drawBorder(
-  buffer: BigUint64Array<ArrayBuffer>,
-  node: Node,
-  terminalWidth: Signal<number>,
-  overrideFg?: number,
-  overrideBg?: number,
-) {
-  let border = node.props?.border;
-  if (!border) return;
-
-  let { width, height } = node.frame;
-  let style = border.style;
-
-  let fg = overrideFg || border.color || COLORS.default.fg;
-  let bg = overrideBg || node.props.bg || COLORS.default.bg;
-
-  let { topLeft, bottomLeft, topRight, bottomRight } = getContainerCorners(
-    node,
-    terminalWidth(),
-  );
-
-  setCell(buffer, topLeft * 3, style === "square" ? "┌" : "╭", fg, bg);
-  setCell(buffer, bottomLeft * 3, style === "square" ? "└" : "╰", fg, bg);
-
-  setCell(buffer, topRight * 3, style === "square" ? "┐" : "╮", fg, bg);
-  setCell(buffer, bottomRight * 3, style === "square" ? "┘" : "╯", fg, bg);
-
-  for (let i = 1; i < height - 1; i++) {
-    setCell(buffer, (topLeft + i * terminalWidth()) * 3, "│", fg, bg);
-    setCell(buffer, (topRight + i * terminalWidth()) * 3, "│", fg, bg);
+  if (focusedNode) {
+    const prev = focusedNode;
+    focusedNode = null;
+    const handler = (prev.handlers as any).onBlur;
+    if (handler) handler(prev);
   }
 
-  for (let i = 1; i < width - 1; i++) {
-    setCell(buffer, (topLeft + i) * 3, "─", fg, bg);
-    setCell(buffer, (bottomLeft + i) * 3, "─", fg, bg);
-  }
+  focusedNode = node;
+  const handler = (node.handlers as any).onFocus;
+  if (handler) handler(node);
 }
 
-export function Column(props: ColumnProps, children: Array<Node>): Node {
+function blurNode(node: Node): void {
+  if (focusedNode !== node) return;
+  focusedNode = null;
+  const handler = (node.handlers as any).onBlur;
+  if (handler) handler(node);
+}
+
+// =============================================================================
+// CONSTRUCTORS
+// =============================================================================
+
+export function Box(input: BoxProps, children: Node[]): Node {
+  const props = createBoxSignals(input);
+  const childrenSignal = $(children);
+
   const node: Node = {
+    type: "box",
     id: generateId(),
-    type: "column",
     props,
+    handlers: {},
     frame: getInitialFrame(),
-    children,
+    children: childrenSignal,
+    setChildren: (nodes) => childrenSignal(nodes),
+    setStyle: makeSetStyle(props),
+    focus: () => focusNode(node),
+    blur: () => blurNode(node),
+    isFocused: () => focusedNode === node,
   };
-  if (props.ref) props.ref.current = node;
+
   return node;
+}
+
+export function Column(
+  props: Omit<BoxProps, "direction">,
+  children: Node[],
+): Node {
+  return Box({ ...props, direction: "column" }, children);
 }
 
 export function Row(
-  props: RowProps & { id?: string },
-  children: Array<Node>,
+  props: Omit<BoxProps, "direction">,
+  children: Node[],
 ): Node {
-  const node: Node = {
-    id: generateId(),
-    type: "row",
-    props,
-    frame: getInitialFrame(),
-    children,
-  };
-  if (props.ref) props.ref.current = node;
-  return node;
+  return Box({ ...props, direction: "row" }, children);
 }
 
-export function Text(props: TextProps): Node {
+export function Text(input: TextProps): Node {
+  const props = createTextSignals(input);
+
   const node: Node = {
-    id: generateId(),
     type: "text",
-    props,
-    frame: getInitialFrame(),
-    children: [],
-  };
-  if (props.ref) props.ref.current = node;
-  return node;
-}
-
-export function Button(props: ButtonProps): Node {
-  const node: Node = {
     id: generateId(),
-    type: "button",
     props,
+    handlers: {},
     frame: getInitialFrame(),
-    children: [],
+    children: undefined,
+    setChildren: undefined,
+    setStyle: makeSetStyle(props),
+    setText: (v) => props.text(v),
+    focus: () => focusNode(node),
+    blur: () => blurNode(node),
+    isFocused: () => focusedNode === node,
   };
-
-  if (props.ref) props.ref.current = node;
 
   return node;
 }
 
-export function InputBox(props: InputBoxProps): Node {
+export function Input(input: InputProps): Node {
+  const { onChange, onSubmit, onFocus, onBlur, ...styleInput } = input;
+  const props = createInputSignals(styleInput);
+
   const node: Node = {
-    id: generateId(),
     type: "input",
+    id: generateId(),
     props,
+    handlers: { onChange, onSubmit, onFocus, onBlur },
     frame: getInitialFrame(),
-    children: [],
+    children: undefined,
+    setChildren: undefined,
+    setStyle: makeSetStyle(props),
+    setText: (v) => props.text(v),
+    focus: () => focusNode(node),
+    blur: () => blurNode(node),
+    isFocused: () => focusedNode === node,
   };
-  if (props.ref) props.ref.current = node;
+
   return node;
 }
 
-function getInitialFrame(): Frame {
-  return {
-    x: 0,
-    y: 0,
-    width: 0,
-    height: 0,
+export function Button(input: ButtonProps, children: Node[] = []): Node {
+  const { onClick, onKeyDown, onFocus, onBlur, ...styleInput } = input;
+  const props = createButtonSignals(styleInput);
+  const childrenSignal = $(children);
+
+  const node: Node = {
+    type: "button",
+    id: generateId(),
+    props,
+    handlers: { onClick, onKeyDown, onFocus, onBlur },
+    frame: getInitialFrame(),
+    children: childrenSignal,
+    setChildren: (nodes) => childrenSignal(nodes),
+    setStyle: makeSetStyle(props),
+    setText: (v) => props.text(v),
+    focus: () => focusNode(node),
+    blur: () => blurNode(node),
+    isFocused: () => focusedNode === node,
   };
+
+  return node;
 }
 
-// I need to handle two types of mouse/keyboard events
-// 1. On action, something USER WANTS runs - make API call
-// 2. On cation, something TUI WANTS happens - change background color
-
-export type Frame = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
-
-export type ComponentType = "column" | "row" | "input" | "button" | "text";
-
-export type Node = {
-  id: number;
-  type: ComponentType;
-  children: Array<Node>;
-  props: ColumnProps | RowProps | InputBoxProps | ButtonProps | TextProps;
-  frame: Frame;
-};
-
-export function createRef<T>(): Ref<T> {
-  return { current: null };
-}
-
-export type Ref<T> = { current: T | null };
-
-export type CommonProps = {
-  ref?: Ref<Node>;
-  fg?: number;
-  bg?: number;
-  padding?: number | `${number} ${number}`;
-  border?: BorderProps;
-  onLayout?: (node: Node) => void;
-};
-
-export type ColumnProps = CommonProps & {
-  gap?: number;
-};
-
-export type RowProps = CommonProps & {
-  gap?: number;
-};
-
-export type TextProps = CommonProps & {
-  text: Signal<string>;
-};
-
-export type BorderStyle = "square" | "rounded";
-
-export type BorderProps = {
-  color: number;
-  style: BorderStyle;
-};
-
-export type ButtonProps = CommonProps & {
-  focus?: boolean;
-  text: Signal<string>;
-  onClick: () => void | Promise<void>;
-  onKeyDown?: (key: string) => void;
-};
-
-export type InputBoxProps = CommonProps & {
-  focus?: boolean;
-  text: Signal<string>;
-  onBlur: () => void;
-  onFocus: () => void;
-  onType: (value: string) => void;
-  onSubmit?: (value: string) => void;
-};
+// Re-export runtime
+export { run, onKey } from "./runtime";
