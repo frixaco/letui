@@ -34,11 +34,13 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.85.0
 
       - name: Build Rust (Release)
         run: |
           cd letui-ffi
-          cargo build --release
+          cargo build --release --locked
 
       - name: Prepare Package
         shell: bash

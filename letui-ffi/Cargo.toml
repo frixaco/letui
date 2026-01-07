@@ -1,11 +1,11 @@
 [package]
 name = "letui-ffi"
-version = "0.0.8"
+version = "0.0.9"
 edition = "2024"
 
 [dependencies]
 crossterm = "0.29.0"
-taffy = "0.9.1"
+taffy = { version = "0.9.1", default-features = false, features = ["std", "taffy_tree", "flexbox", "grid", "block_layout"] }
 
 [lib]
 name = "letui_ffi"
