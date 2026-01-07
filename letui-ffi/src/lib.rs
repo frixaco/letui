@@ -322,11 +322,11 @@ fn parse_node(
     let padding_y = node_data[base + 3];
     let border = node_data[base + 4];
     let child_count = node_data[base + 5] as usize;
-    let bg = node_data[base + 6] as usize;
-    let fg = node_data[base + 7] as usize;
-    let border_color = node_data[base + 8] as usize;
-    let border_style = BorderStyle::from_f32(node_data[base + 9]);
-    let node_id = node_data[base + 10] as usize;
+    let _bg = node_data[base + 6] as usize;
+    let _fg = node_data[base + 7] as usize;
+    let _border_color = node_data[base + 8] as usize;
+    let _border_style = BorderStyle::from_f32(node_data[base + 9]);
+    let _node_id = node_data[base + 10] as usize;
     let text_len = node_data[base + 11] as usize;
     let flex_grow = node_data[base + 12];
 

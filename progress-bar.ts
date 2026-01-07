@@ -1,44 +1,59 @@
 import { Row, Text } from "./components";
-import { $, ff, type Signal } from "./signals";
+import { $, ff } from "./signals";
 import type { Node } from "./types";
+import { log } from "./debug";
 
-export type ProgressBarProps = {
-  width?: number;
-  filledColor: number;
-  unfilledColor: number;
+export type LoadingBarProps = {
+  dotColor: number;
+  trackColor: number;
+  flexGrow?: number;
+  interval?: number; // ms between frames
 };
 
-export type ProgressBarController = {
+export type LoadingBarController = {
   node: Node;
-  progress: Signal<number>;
-  /** Start animated progress toward target (default 90%), completes in ~duration ms */
-  start: (target?: number, duration?: number) => void;
-  /** Instantly set to 100% and stop animation */
-  complete: () => void;
-  /** Reset to 0% and stop animation */
-  reset: () => void;
+  start: () => void;
+  stop: () => void;
 };
 
-export function ProgressBar(props: ProgressBarProps): ProgressBarController {
-  const { width = 30, filledColor, unfilledColor } = props;
+export function LoadingBar(props: LoadingBarProps): LoadingBarController {
+  const { dotColor, trackColor, flexGrow = 1, interval = 80 } = props;
 
-  const progress = $(0);
+  const position = $(0);
+  const direction = $(1); // 1 = right, -1 = left
+  const active = $(false);
   let timer: Timer | null = null;
 
-  // Two text nodes: filled (left) + unfilled (right)
-  const filledNode = Text({ text: "", background: filledColor, foreground: filledColor });
-  const unfilledNode = Text({ text: "", background: unfilledColor, foreground: unfilledColor });
-  const node = Row({}, [filledNode, unfilledNode]);
+  const leftTrack = Text({
+    text: "",
+    background: trackColor,
+    foreground: trackColor,
+  });
+  const dot = Text({ text: "", background: dotColor, foreground: dotColor });
+  const rightTrack = Text({
+    text: "",
+    background: trackColor,
+    foreground: trackColor,
+  });
 
-  // React to progress changes - update text lengths
+  const node = Row({ flexGrow }, [leftTrack, dot, rightTrack]);
+
+  // React to position changes
   ff(() => {
-    const p = progress();
-    const filledChars = Math.round((p / 100) * width);
-    const unfilledChars = width - filledChars;
+    const isActive = active();
+    const pos = position();
+    const width = node.frameWidth();
+    log(
+      `LoadingBar: x=${node.frame.x}, width=${width}, pos=${pos}, active=${isActive}`,
+    );
+    if (width === 0 || !isActive) return;
 
-    // Use spaces - background color creates the bar visual
-    filledNode.setStyle?.({ text: " ".repeat(filledChars) });
-    unfilledNode.setStyle?.({ text: " ".repeat(unfilledChars) });
+    const maxPos = width - 1;
+    const clampedPos = Math.max(0, Math.min(pos, maxPos));
+
+    leftTrack.setStyle?.({ text: " ".repeat(clampedPos) });
+    dot.setStyle?.({ text: " " });
+    rightTrack.setStyle?.({ text: " ".repeat(maxPos - clampedPos) });
   });
 
   function clearTimer() {
@@ -48,33 +63,43 @@ export function ProgressBar(props: ProgressBarProps): ProgressBarController {
     }
   }
 
-  function start(target = 90, duration = 1000) {
-    clearTimer();
-    progress(0);
-
-    const steps = 10;
-    const interval = duration / steps;
-    const increment = target / steps;
+  function start() {
+    if (active()) return;
+    active(true);
+    position(0);
+    direction(1);
 
     timer = setInterval(() => {
-      const current = progress();
-      if (current >= target) {
-        clearTimer();
+      const width = node.frameWidth();
+      if (width === 0) return;
+
+      const maxPos = width - 1;
+      const pos = position();
+      const dir = direction();
+
+      const step = 12;
+      const nextPos = pos + dir * step;
+      if (nextPos >= maxPos) {
+        direction(-1);
+        position(maxPos);
+      } else if (nextPos <= 0) {
+        direction(1);
+        position(0);
       } else {
-        progress(Math.min(current + increment, target));
+        position(nextPos);
       }
     }, interval);
   }
 
-  function complete() {
+  function stop() {
     clearTimer();
-    progress(100);
+    active(false);
+    position(0);
+    // Clear all three segments
+    leftTrack.setStyle?.({ text: "" });
+    dot.setStyle?.({ text: "" });
+    rightTrack.setStyle?.({ text: "" });
   }
 
-  function reset() {
-    clearTimer();
-    progress(0);
-  }
-
-  return { node, progress, start, complete, reset };
+  return { node, start, stop };
 }

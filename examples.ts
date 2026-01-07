@@ -3,9 +3,10 @@
 // - Virtual windowing results list
 // - Keyboard navigation (j/k/h/l)
 
+import { existsSync } from "fs";
 import { COLORS } from "./colors";
-import { Button, Column, Input, run, onKey } from "./components";
-import { ProgressBar } from "./progress-bar";
+import { Button, Column, Input, Row, run, onKey } from "./components";
+import { LoadingBar } from "./progress-bar";
 import { $, ff, whenSettled } from "./signals";
 
 // --- Types ---
@@ -37,17 +38,16 @@ const results = $<ScrapeResultItem[]>([]);
 const loading = $(false);
 const selectedIndex = $(0);
 
-// --- Progress Bar ---
-const progressBar = ProgressBar({
-  width: 40,
-  filledColor: COLORS.default.green,
-  unfilledColor: COLORS.default.bg_alt,
+// --- Loading Bars ---
+const loadingBar = LoadingBar({
+  dotColor: COLORS.default.green,
+  trackColor: COLORS.default.bg_alt,
 });
 
 // --- API ---
 async function fetchResults(query: string) {
   loading(true);
-  progressBar.start(90, 1000); // Animate to 90% over 1 second
+  loadingBar.start();
 
   const response = await fetch(
     `https://scrape.anitrack.frixaco.com/scrape?q=${query}`,
@@ -57,10 +57,12 @@ async function fetchResults(query: string) {
   results(data.results);
   selectedIndex(0);
   loading(false);
-  progressBar.complete(); // Snap to 100%
+  loadingBar.stop();
 }
 
 async function streamResult(magnet: string) {
+  loadingBar.start();
+
   const response = await fetch("https://rqbit.anitrack.frixaco.com/torrents", {
     method: "post",
     body: magnet,
@@ -69,11 +71,20 @@ async function streamResult(magnet: string) {
   const streamUrl = `https://rqbit.anitrack.frixaco.com/torrents/${data.details.info_hash}/stream/${
     data.details.files.length - 1
   }`;
+
+  const ipcPath = `/tmp/mpv-socket-${Date.now()}`;
   Bun.spawn({
-    cmd: ["mpv", streamUrl],
+    cmd: ["mpv", `--input-ipc-server=${ipcPath}`, streamUrl],
     stdout: "ignore",
     stderr: "ignore",
   });
+
+  // Poll until socket exists (mpv fully initialized)
+  while (!existsSync(ipcPath)) {
+    await Bun.sleep(50);
+  }
+
+  loadingBar.stop();
 }
 
 // --- Styles ---
@@ -98,12 +109,12 @@ const searchInput = Input({
 });
 whenSettled(() => searchInput.focus());
 
-const loadingBar = progressBar.node;
+const loadingBars = Row({ flexGrow: 1 }, [loadingBar.node]);
 
 const resultsList = Column({ gap: 1, padding: "1 0", flexGrow: 1 }, []);
 
 const root = Column({ border: borderStyle, gap: 1, padding: "1 0" }, [
-  Column({ padding: "1 0" }, [searchInput, loadingBar]),
+  Column({ padding: "1 0" }, [searchInput, loadingBars]),
   resultsList,
 ]);
 
