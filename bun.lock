@@ -11,10 +11,10 @@
         "@types/bun": "latest",
       },
       "optionalDependencies": {
-        "@frixaco/letui-darwin-arm64": "0.0.4",
-        "@frixaco/letui-darwin-x64": "0.0.4",
-        "@frixaco/letui-linux-x64": "0.0.4",
-        "@frixaco/letui-win32-x64": "0.0.4",
+        "@frixaco/letui-darwin-arm64": "0.0.8",
+        "@frixaco/letui-darwin-x64": "0.0.8",
+        "@frixaco/letui-linux-x64": "0.0.8",
+        "@frixaco/letui-win32-x64": "0.0.8",
       },
       "peerDependencies": {
         "typescript": "^5",
@@ -22,14 +22,6 @@
     },
   },
   "packages": {
-    "@frixaco/letui-darwin-arm64": ["@frixaco/letui-darwin-arm64@0.0.4", "", { "os": "darwin", "cpu": "arm64" }, "sha512-3EFi2cDOGFxnZ6HMnmVS9CiFEplELu+71PPNvmiAgSzOSV3/qjfgW1kO7lzNHIFDnm9D4X7yFKdoUUue1NT8Eg=="],
-
-    "@frixaco/letui-darwin-x64": ["@frixaco/letui-darwin-x64@0.0.4", "", { "os": "darwin", "cpu": "x64" }, "sha512-8olf8kU/6tOfkFRdbGljbdUVdHTZhdp+bpWkfcLgvoI7tDDb2216FInZ8iPXUFw6lq+AhrS88q7umc1lmbL0cg=="],
-
-    "@frixaco/letui-linux-x64": ["@frixaco/letui-linux-x64@0.0.4", "", { "os": "linux", "cpu": "x64" }, "sha512-1/N5wjkkkI16ODEcX6kwaW/jbslBc+a6wX4N3OjPqFiHHo66H0HjX9T5nombsaHIVQOyGbZoMjGJxOr+bZgBvQ=="],
-
-    "@frixaco/letui-win32-x64": ["@frixaco/letui-win32-x64@0.0.4", "", { "os": "win32", "cpu": "x64" }, "sha512-NtI+OmZkjumVpu2EKBn8QyocUGbkf0Q9ugDPpkiYI+EmAzcL11YRlLURdlkNz/4QnORpjJfCCXFDSKUAzevFCQ=="],
-
     "@types/bun": ["@types/bun@1.3.2", "", { "dependencies": { "bun-types": "1.3.2" } }, "sha512-t15P7k5UIgHKkxwnMNkJbWlh/617rkDGEdSsDbu+qNHTaz9SKf7aC8fiIlUdD5RPpH6GEkP0cK7WlvmrEBRtWg=="],
 
     "@types/node": ["@types/node@24.3.1", "", { "dependencies": { "undici-types": "~7.10.0" } }, "sha512-3vXmQDXy+woz+gnrTvuvNrPzekOi+Ds0ReMxw0LzBiK3a+1k0kQn9f2NWk+lgD4rJehFUmYy2gMhJ2ZI+7YP9g=="],

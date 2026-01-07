@@ -43,6 +43,7 @@ Simple TUI library written using Rust and TypeScript
 ### NPM publish notes:
 
 1. push your changes
-2. `git tag v0.0.1` - tag a commit
-3. `git push origin v0.0.1` - push the tag
-4. release action will build and deploy it as package
+2. update versions in `Cargo.toml` and `package.json`
+3. `git tag v0.0.1` - tag a commit
+4. `git push origin v0.0.1` - push the tag
+5. release action will build and deploy it as package
