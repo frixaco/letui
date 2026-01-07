@@ -55,7 +55,7 @@ function getNodeAt(x: number, y: number): Node | undefined {
 // SERIALIZATION
 // =============================================================================
 
-const FIELDS_PER_NODE = 12;
+const FIELDS_PER_NODE = 13;
 
 function countNodes(node: Node): number {
   const children = node.children?.() ?? [];
@@ -103,6 +103,7 @@ function serialize(root: Node): {
 
     const background = node.props.background?.() ?? COLORS.default.bg;
     const foreground = node.props.foreground?.() ?? COLORS.default.fg;
+    const flexGrow = node.props.flexGrow?.() ?? 0;
 
     // Children count
     const children = node.children?.() ?? [];
@@ -123,7 +124,7 @@ function serialize(root: Node): {
       texts.push(textContent);
     }
 
-    // Write 12 fields
+    // Write 13 fields
     nodeData[offset++] = nodeType;
     nodeData[offset++] = gap;
     nodeData[offset++] = paddingX;
@@ -136,6 +137,7 @@ function serialize(root: Node): {
     nodeData[offset++] = borderStyle;
     nodeData[offset++] = node.id;
     nodeData[offset++] = textLength;
+    nodeData[offset++] = flexGrow;
 
     // Recurse into children
     for (const child of children) {
@@ -186,6 +188,9 @@ function layout(
     node.frame.y = framesArray[idx++]!;
     node.frame.width = framesArray[idx++]!;
     node.frame.height = framesArray[idx++]!;
+
+    node.frameWidth(node.frame.width);
+    node.frameHeight(node.frame.height);
 
     const children = node.children?.() ?? [];
     for (const child of children) {

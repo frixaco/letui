@@ -1,1 +1,1 @@
-274fps | 2.9ms avg (1.3-4.6) | 5MB heap | 26 frames | 0.2ms avg (0-0.4) | 2.5ms avg (1-4.1)
+206fps | 5.1ms avg (1.9-11.2) | 17MB heap | 48 frames | 0.2ms avg (0.1-0.4) | 4.5ms avg (1.7-10.2)

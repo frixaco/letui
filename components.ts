@@ -48,6 +48,7 @@ function createStyleSignals(input: StyleProps): _StyleProps {
     padding: $(input.padding),
     background: $(input.background),
     foreground: $(input.foreground),
+    flexGrow: $(input.flexGrow),
   };
 }
 
@@ -142,6 +143,8 @@ function blurNode(node: Node): void {
 export function Box(input: BoxProps, children: Node[]): Node {
   const props = createBoxSignals(input);
   const childrenSignal = $(children);
+  const frameWidth = $(0);
+  const frameHeight = $(0);
 
   const node: Node = {
     type: "box",
@@ -149,6 +152,8 @@ export function Box(input: BoxProps, children: Node[]): Node {
     props,
     handlers: {},
     frame: getInitialFrame(),
+    frameWidth,
+    frameHeight,
     children: childrenSignal,
     setChildren: (nodes) => childrenSignal(nodes),
     setStyle: makeSetStyle(props),
@@ -176,6 +181,8 @@ export function Row(
 
 export function Text(input: TextProps): Node {
   const props = createTextSignals(input);
+  const frameWidth = $(0);
+  const frameHeight = $(0);
 
   const node: Node = {
     type: "text",
@@ -183,6 +190,8 @@ export function Text(input: TextProps): Node {
     props,
     handlers: {},
     frame: getInitialFrame(),
+    frameWidth,
+    frameHeight,
     children: undefined,
     setChildren: undefined,
     setStyle: makeSetStyle(props),
@@ -198,6 +207,8 @@ export function Text(input: TextProps): Node {
 export function Input(input: InputProps): Node {
   const { onChange, onSubmit, onFocus, onBlur, ...styleInput } = input;
   const props = createInputSignals(styleInput);
+  const frameWidth = $(0);
+  const frameHeight = $(0);
 
   const node: Node = {
     type: "input",
@@ -205,6 +216,8 @@ export function Input(input: InputProps): Node {
     props,
     handlers: { onChange, onSubmit, onFocus, onBlur },
     frame: getInitialFrame(),
+    frameWidth,
+    frameHeight,
     children: undefined,
     setChildren: undefined,
     setStyle: makeSetStyle(props),
@@ -221,6 +234,8 @@ export function Button(input: ButtonProps, children: Node[] = []): Node {
   const { onClick, onKeyDown, onFocus, onBlur, ...styleInput } = input;
   const props = createButtonSignals(styleInput);
   const childrenSignal = $(children);
+  const frameWidth = $(0);
+  const frameHeight = $(0);
 
   const node: Node = {
     type: "button",
@@ -228,6 +243,8 @@ export function Button(input: ButtonProps, children: Node[] = []): Node {
     props,
     handlers: { onClick, onKeyDown, onFocus, onBlur },
     frame: getInitialFrame(),
+    frameWidth,
+    frameHeight,
     children: childrenSignal,
     setChildren: (nodes) => childrenSignal(nodes),
     setStyle: makeSetStyle(props),

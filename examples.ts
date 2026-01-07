@@ -1,10 +1,10 @@
 // TORRENT SEARCH APP
 // - Search input with loading bar
-// - Paginated results list
+// - Virtual windowing results list
 // - Keyboard navigation (j/k/h/l)
 
 import { COLORS } from "./colors";
-import { Box, Button, Column, Input, Row, Text, run, onKey } from "./components";
+import { Button, Column, Input, run, onKey } from "./components";
 import { ProgressBar } from "./progress-bar";
 import { $, ff, whenSettled } from "./signals";
 
@@ -35,8 +35,7 @@ type TorrentResponse = {
 // --- State ---
 const results = $<ScrapeResultItem[]>([]);
 const loading = $(false);
-const maxItems = $(1);
-const page = $(0);
+const selectedIndex = $(0);
 
 // --- Progress Bar ---
 const progressBar = ProgressBar({
@@ -56,16 +55,9 @@ async function fetchResults(query: string) {
   const data = (await response.json()) as ScrapeResult;
 
   results(data.results);
-  page(0);
+  selectedIndex(0);
   loading(false);
   progressBar.complete(); // Snap to 100%
-
-  // Focus first result after effects run
-  whenSettled(() => {
-    if (resultButtons.length > 0) {
-      resultButtons[0]?.focus();
-    }
-  });
 }
 
 async function streamResult(magnet: string) {
@@ -108,82 +100,99 @@ whenSettled(() => searchInput.focus());
 
 const loadingBar = progressBar.node;
 
-const resultsList = Column({ gap: 1, padding: "1 0" }, []);
+const resultsList = Column({ gap: 1, padding: "1 0", flexGrow: 1 }, []);
 
-const root = Column(
-  { border: borderStyle, gap: 1, padding: "1 0" },
-  [Column({ padding: "1 0" }, [searchInput, loadingBar]), resultsList],
-);
+const root = Column({ border: borderStyle, gap: 1, padding: "1 0" }, [
+  Column({ padding: "1 0" }, [searchInput, loadingBar]),
+  resultsList,
+]);
 
 // --- Keep track of result buttons for focus management ---
 let resultButtons: ReturnType<typeof Button>[] = [];
 
 // --- Reactive effects ---
 
-// Update results list when results/page/maxItems change
+// Update results list with virtual windowing
 ff(() => {
-  const currentResults = results().slice(
-    page() * maxItems(),
-    (page() + 1) * maxItems(),
-  );
+  const all = results();
+  const selected = selectedIndex();
 
-  resultButtons = currentResults.map((item) =>
-    Button({
-      text: item.title,
-      border: borderStyle,
+  if (all.length === 0) {
+    resultsList.setChildren?.([]);
+    return;
+  }
+
+  // Use actual computed frame height from Taffy
+  const availableHeight = resultsList.frameHeight();
+
+  // Each item: border(2) + text(1) = 3, plus gap(1) between items
+  const itemHeight = 3;
+  const visibleCount = Math.max(1, Math.floor(availableHeight / itemHeight));
+
+  // Calculate window with selection at bottom (scroll only when needed)
+  let start = selected - visibleCount + 1;
+  start = Math.max(0, Math.min(start, all.length - visibleCount));
+  const end = Math.min(start + visibleCount, all.length);
+  const visible = all.slice(start, end);
+
+  resultButtons = visible.map((item, i) => {
+    const globalIdx = start + i;
+    const isActive = globalIdx === selected;
+    return Button({
+      text: `${isActive ? "▶ " : "  "}${item.title}`,
+      border: isActive ? focusedBorderStyle : borderStyle,
       padding: "1 0",
       onClick: () => streamResult(item.magnet),
-    }),
-  );
+    });
+  });
 
   resultsList.setChildren?.(resultButtons);
+
+  // Focus the selected button
+  const selectedVisibleIndex = selected - start;
+  if (resultButtons[selectedVisibleIndex]) {
+    resultButtons[selectedVisibleIndex].focus();
+  }
 });
 
 // --- Keyboard navigation ---
 onKey("/", () => searchInput.focus());
 
-onKey("j", () => focusNext());
-onKey("\x1b[B", () => focusNext()); // Arrow Down
+onKey("j", () => selectNext());
+onKey("\x1b[B", () => selectNext()); // Arrow Down
 
-onKey("k", () => focusPrev());
-onKey("\x1b[A", () => focusPrev()); // Arrow Up
+onKey("k", () => selectPrev());
+onKey("\x1b[A", () => selectPrev()); // Arrow Up
 
-onKey("l", () => pageNext());
-onKey("\x1b[C", () => pageNext()); // Arrow Right
+onKey("l", () => selectLast());
+onKey("\x1b[C", () => selectLast()); // Arrow Right - jump to end
 
-onKey("h", () => pagePrev());
-onKey("\x1b[D", () => pagePrev()); // Arrow Left
+onKey("h", () => selectFirst());
+onKey("\x1b[D", () => selectFirst()); // Arrow Left - jump to start
 
 onKey("q", () => app.quit());
 
-function focusNext() {
-  const currentIndex = resultButtons.findIndex((b) => b.isFocused());
-  if (currentIndex < resultButtons.length - 1) {
-    resultButtons[currentIndex + 1]?.focus();
+function selectNext() {
+  const max = results().length - 1;
+  if (selectedIndex() < max) {
+    selectedIndex(selectedIndex() + 1);
   }
 }
 
-function focusPrev() {
-  const currentIndex = resultButtons.findIndex((b) => b.isFocused());
-  if (currentIndex > 0) {
-    resultButtons[currentIndex - 1]?.focus();
-  } else if (currentIndex === 0) {
-    searchInput.focus();
+function selectPrev() {
+  if (selectedIndex() > 0) {
+    selectedIndex(selectedIndex() - 1);
   }
 }
 
-function pageNext() {
-  const totalPages = Math.ceil(results().length / maxItems());
-  if (page() < totalPages - 1) {
-    page(page() + 1);
-    whenSettled(() => resultButtons[0]?.focus());
-  }
+function selectFirst() {
+  selectedIndex(0);
 }
 
-function pagePrev() {
-  if (page() > 0) {
-    page(page() - 1);
-    whenSettled(() => resultButtons[0]?.focus());
+function selectLast() {
+  const max = results().length - 1;
+  if (max >= 0) {
+    selectedIndex(max);
   }
 }
 

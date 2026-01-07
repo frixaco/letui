@@ -27,6 +27,7 @@ export type _StyleProps = {
   padding: Signal<number | `${number} ${number}` | undefined>;
   background: Signal<number | undefined>;
   foreground: Signal<number | undefined>;
+  flexGrow: Signal<number | undefined>;
 };
 
 export type _BoxProps = _StyleProps & {
@@ -56,6 +57,7 @@ export type StyleProps = {
   padding?: number | `${number} ${number}`;
   background?: number;
   foreground?: number;
+  flexGrow?: number;
 };
 
 export type BoxProps = StyleProps & {
@@ -112,6 +114,8 @@ export type ButtonHandlers = {
 type CommonFields = {
   id: number;
   frame: Frame;
+  frameWidth: Signal<number>;
+  frameHeight: Signal<number>;
   focus: () => void;
   blur: () => void;
   isFocused: () => boolean;

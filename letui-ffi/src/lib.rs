@@ -302,11 +302,12 @@ struct Node {
     padding_x: f32,
     padding_y: f32,
     border: f32,
+    flex_grow: f32,
     text: String,
     children: Vec<Node>,
 }
 
-const FIELDS_PER_NODE: usize = 12;
+const FIELDS_PER_NODE: usize = 13;
 
 fn parse_node(
     node_data: &[f32],
@@ -327,6 +328,7 @@ fn parse_node(
     let border_style = BorderStyle::from_f32(node_data[base + 9]);
     let node_id = node_data[base + 10] as usize;
     let text_len = node_data[base + 11] as usize;
+    let flex_grow = node_data[base + 12];
 
     *node_offset += FIELDS_PER_NODE;
 
@@ -351,6 +353,7 @@ fn parse_node(
         padding_x,
         padding_y,
         border,
+        flex_grow,
         text,
         children,
     }
@@ -374,6 +377,7 @@ fn get_styles(node: &Node) -> Style {
             top: length(node.border),
             bottom: length(node.border),
         },
+        flex_grow: node.flex_grow,
         ..Default::default()
     };
 
@@ -381,7 +385,6 @@ fn get_styles(node: &Node) -> Style {
         NodeType::Column => {
             style.flex_direction = FlexDirection::Column;
             style.align_items = Some(AlignItems::Stretch);
-            // flex_grow: 0 by default - only root gets flex_grow: 1.0
             style.overflow = Point {
                 x: Overflow::Hidden,
                 y: Overflow::Hidden,
@@ -392,7 +395,9 @@ fn get_styles(node: &Node) -> Style {
         }
         NodeType::Input => {
             style.flex_direction = FlexDirection::Row;
-            style.flex_grow = 1.0;
+            if node.flex_grow == 0.0 {
+                style.flex_grow = 1.0;
+            }
         }
         _ => {}
     }
