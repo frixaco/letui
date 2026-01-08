@@ -11,7 +11,12 @@ Simple TUI library written using Rust and TypeScript
 
 **TODO**:
 
+- [ ] Will SIMD work if I wanna implement caching for serialization. For example, when comparing trees I used SIMD (idk what i'm talking about)
 - [ ] Hover support
+- [ ] Add render caching - skip serialize/layout if signals unchanged (pi-mono pattern)
+- [ ] Incremental tree updates - don't rebuild entire Taffy tree each frame, cache structure and update only changed nodes
+- [ ] Visibility culling - skip `paint()` for off-screen nodes (OpenTUI's `_getVisibleChildren` pattern)
+- [ ] Batch signal updates - ensure `whenSettled` is used in hot paths to prevent redundant renders
 - [ ] Try to optimizatize the shit out of everything
 - [ ] Add logging and debugging utilities
 - [ ] Improve overall architecture ("make it work" is done, now "make it right, make it fast" is left)
