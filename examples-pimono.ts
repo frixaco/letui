@@ -14,6 +14,15 @@ import {
   type SelectItem,
   matchesKey,
 } from "pi-monorepo/packages/tui/src/index";
+import {
+  startFrame,
+  endFrame,
+  saveMetrics,
+  resetMetrics,
+} from "./metrics";
+
+// --- Metrics state ---
+let frameStartTime = 0;
 
 // --- Types ---
 type ScrapeResultItem = {
@@ -319,6 +328,7 @@ class TorrentApp implements Component {
       this.ui.requestRender();
     } else if (matchesKey(data, "q") || data === "\x03") {
       // q or Ctrl+C - quit
+      saveMetrics("metrics-pimono.txt");
       this.ui.stop();
       process.exit(0);
     }
@@ -327,8 +337,24 @@ class TorrentApp implements Component {
 
 // --- Main ---
 function main() {
+  resetMetrics();
+  
   const terminal = new ProcessTerminal();
   const ui = new TUI(terminal);
+
+  // Wrap requestRender to measure frame times
+  const originalRequestRender = ui.requestRender.bind(ui);
+  ui.requestRender = () => {
+    frameStartTime = startFrame();
+    originalRequestRender();
+    // Pi-mono renders synchronously, measure after completion
+    queueMicrotask(() => {
+      if (frameStartTime > 0) {
+        endFrame(frameStartTime);
+        frameStartTime = 0;
+      }
+    });
+  };
 
   const app = new TorrentApp(ui);
   ui.addChild(app);

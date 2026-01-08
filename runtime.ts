@@ -8,8 +8,10 @@ import {
   startFrame,
   endFrame,
   startPhase,
+  endSerialize,
   endLayout,
   endPaint,
+  endFlush,
   formatMetrics,
 } from "./metrics";
 import { logWriter } from "./debug";
@@ -27,6 +29,7 @@ export type RunOptions = {
 // =============================================================================
 
 let buffer: BigUint64Array;
+let stagingBuffer: Uint32Array = null!; // Staging buffer for batched setCell writes
 let terminalWidth: Signal<number>;
 let terminalHeight: Signal<number>;
 let spatialLookup: (number | undefined)[];
@@ -205,10 +208,19 @@ function layout(
 // DRAWING HELPERS
 // =============================================================================
 
+// Write to staging buffer (no BigInt conversion)
 function setCell(offset: number, char: string, fg: number, bg: number): void {
-  buffer[offset] = BigInt(char.codePointAt(0)!);
-  buffer[offset + 1] = BigInt(fg);
-  buffer[offset + 2] = BigInt(bg);
+  stagingBuffer[offset] = char.codePointAt(0)!;
+  stagingBuffer[offset + 1] = fg;
+  stagingBuffer[offset + 2] = bg;
+}
+
+// Flush staging buffer to BigUint64Array in one pass
+function flushStagingBuffer(): void {
+  const len = stagingBuffer.length;
+  for (let i = 0; i < len; i++) {
+    buffer[i] = BigInt(stagingBuffer[i]!);
+  }
 }
 
 function drawBackground(node: Node, bg: number): void {
@@ -532,6 +544,7 @@ function handleResize(): void {
   api.free_buffer();
   api.init_buffer();
   buffer = getBuffer();
+  stagingBuffer = new Uint32Array(buffer.length);
 
   spatialLookup = new Array(terminalWidth() * terminalHeight());
   // Render effect will re-run automatically due to signal changes
@@ -553,6 +566,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   api.init_buffer();
   api.init_letui();
   buffer = getBuffer();
+  stagingBuffer = new Uint32Array(buffer.length);
 
   // 2. Initialize state (after init_buffer so terminal size is available)
   terminalWidth = $(api.get_width());
@@ -582,20 +596,25 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     nodeRegistry.clear();
 
     // Phase 1: Serialize (reads signals -> auto-subscribes)
+    const serializeStart = options?.debug ? startPhase() : 0;
     const { nodeData, textData } = serialize(root);
+    if (options?.debug) endSerialize(serializeStart);
 
     // Phase 2: Layout (FFI call to Rust/Taffy)
     const layoutStart = options?.debug ? startPhase() : 0;
     layout(root, nodeData, textData);
     if (options?.debug) endLayout(layoutStart);
 
-    // Phase 3: Paint (write to buffer)
+    // Phase 3: Paint (write to staging buffer)
     const paintStart = options?.debug ? startPhase() : 0;
     paint(root, COLORS.default.bg);
+    flushStagingBuffer(); // Batch copy staging → BigUint64Array
     if (options?.debug) endPaint(paintStart);
 
     // Phase 4: Flush (Rust writes buffer to terminal)
+    const flushStart = options?.debug ? startPhase() : 0;
     api.flush();
+    if (options?.debug) endFlush(flushStart);
 
     if (options?.debug) endFrame(frameStart);
   });

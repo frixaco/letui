@@ -24,7 +24,10 @@
   },
   "dependencies": {
     "@opentui": "github:anomalyco/opentui",
+    "@opentui/core": "^0.1.69",
+    "bun-ffi-structs": "^0.1.2",
     "bun-types": "^1.3.5",
-    "pi-monorepo": "github:badlogic/pi-mono"
+    "pi-monorepo": "github:badlogic/pi-mono",
+    "yoga-layout": "^3.2.1"
   }
 }

@@ -10,6 +10,15 @@ import {
   TextRenderable,
   type CliRenderer,
 } from "@opentui/packages/core/src/index";
+import {
+  startFrame,
+  endFrame,
+  saveMetrics,
+  resetMetrics,
+} from "./metrics";
+
+// --- Metrics state ---
+let frameStartTime = 0;
 
 // --- Types ---
 type ScrapeResultItem = {
@@ -197,10 +206,26 @@ function selectCurrent() {
 
 // --- Main ---
 async function main() {
+  resetMetrics();
+  
   renderer = await createCliRenderer({
     exitOnCtrlC: true,
     useKittyKeyboard: { disambiguate: true },
   });
+
+  // Wrap requestRender to measure frame times
+  const originalRequestRender = renderer.requestRender.bind(renderer);
+  renderer.requestRender = () => {
+    frameStartTime = startFrame();
+    originalRequestRender();
+    // Note: OpenTUI's requestRender is async/batched, so we measure on next tick
+    queueMicrotask(() => {
+      if (frameStartTime > 0) {
+        endFrame(frameStartTime);
+        frameStartTime = 0;
+      }
+    });
+  };
 
   renderer.setBackgroundColor("#1a1a2e");
 
@@ -294,6 +319,7 @@ async function main() {
           selectCurrent();
           break;
         case "q":
+          saveMetrics("metrics-opentui.txt");
           renderer.destroy();
           process.exit(0);
           break;

@@ -16,6 +16,20 @@ Simple TUI library written using Rust and TypeScript
 - [ ] Add render caching - skip serialize/layout if signals unchanged (pi-mono pattern)
 - [ ] Incremental tree updates - don't rebuild entire Taffy tree each frame, cache structure and update only changed nodes
 - [ ] Visibility culling - skip `paint()` for off-screen nodes (OpenTUI's `_getVisibleChildren` pattern)
+- [ ] Move paint to Rust (currently 81% of frame time @ 1.7ms avg)
+  - **Why**: Eliminates JS per-cell loops, staging buffer, and BigInt conversions
+  - **New FFI function**: `paint(node_data, text_data, focused_id, pressed_id, colors...)`
+  - **Rust side**:
+    - Reuse parsed node tree from `calculate_layout` (already has frames)
+    - Add `PaintNode` struct with: frame, bg, fg, border_color, border_style, text range, node_type
+    - Implement `draw_background()`, `draw_border()`, `draw_text()`, `draw_cursor()` writing directly to `CURRENT_BUFFER`
+    - Recursive `paint_node()` traversal matching JS logic
+  - **TS side**:
+    - Add `isFocused` and `isPressed` fields to serialization (FIELDS_PER_NODE: 13 → 15)
+    - Replace JS `paint()` call with `api.paint(...)` FFI call
+    - Keep `registerHit()` in JS for mouse hit testing (cheap traversal)
+    - Remove `stagingBuffer` and `flushStagingBuffer()` (no longer needed)
+  - **Expected result**: Paint phase from 1.7ms → ~0.1-0.2ms
 - [ ] Batch signal updates - ensure `whenSettled` is used in hot paths to prevent redundant renders
 - [ ] Try to optimizatize the shit out of everything
 - [ ] Add logging and debugging utilities

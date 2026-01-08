@@ -8,6 +8,7 @@ import { COLORS } from "./colors";
 import { Button, Column, Input, Row, run, onKey } from "./components";
 import { LoadingBar } from "./progress-bar";
 import { $, ff, whenSettled } from "./signals";
+import { saveMetrics } from "./metrics";
 
 // --- Types ---
 type ScrapeResultItem = {
@@ -181,7 +182,10 @@ onKey("\x1b[C", () => selectLast()); // Arrow Right - jump to end
 onKey("h", () => selectFirst());
 onKey("\x1b[D", () => selectFirst()); // Arrow Left - jump to start
 
-onKey("q", () => app.quit());
+onKey("q", () => {
+  saveMetrics("metrics-letui.txt");
+  app.quit();
+});
 
 function selectNext() {
   const max = results().length - 1;
