@@ -12,6 +12,7 @@ Simple TUI library written using Rust and TypeScript
 **TODO**:
 
 - [ ] Will SIMD work if I wanna implement caching for serialization. For example, when comparing trees I used SIMD (idk what i'm talking about)
+- [ ] Neovim as text input
 - [ ] Hover support
 - [ ] Add render caching - skip serialize/layout if signals unchanged (pi-mono pattern)
 - [ ] Incremental tree updates - don't rebuild entire Taffy tree each frame, cache structure and update only changed nodes
