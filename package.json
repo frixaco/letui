@@ -8,10 +8,10 @@
     "dev": "bun run build-ffi && bun run examples.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "1.3.6"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   },
   "files": [
     "*.ts",
@@ -24,9 +24,9 @@
   },
   "dependencies": {
     "@opentui": "github:anomalyco/opentui",
-    "@opentui/core": "^0.1.69",
+    "@opentui/core": "^0.1.74",
     "bun-ffi-structs": "^0.1.2",
-    "bun-types": "^1.3.5",
+    "bun-types": "^1.3.6",
     "pi-monorepo": "github:badlogic/pi-mono",
     "yoga-layout": "^3.2.1"
   }

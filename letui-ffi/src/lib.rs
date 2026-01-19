@@ -594,10 +594,7 @@ fn measure_function(
     }
 }
 
-fn draw_background_at(x: f32, y: f32, w: f32, h: f32, bg: u32, tw: u16, th: u16) {
-    let mut cb = CURRENT_BUFFER.lock().unwrap();
-    let Some(ref mut buf) = *cb else { return };
-
+fn draw_background_at(buf: &mut [u64], x: f32, y: f32, w: f32, h: f32, bg: u32, tw: u16, th: u16) {
     let x_start = x as u16;
     let y_start = y as u16;
     let x_end = (x + w).min(tw as f32) as u16;
@@ -614,10 +611,7 @@ fn draw_background_at(x: f32, y: f32, w: f32, h: f32, bg: u32, tw: u16, th: u16)
     }
 }
 
-fn draw_text_at(x: f32, y: f32, text: &str, fg: u32, bg: u32, tw: u16, th: u16) {
-    let mut cb = CURRENT_BUFFER.lock().unwrap();
-    let Some(ref mut buf) = *cb else { return };
-
+fn draw_text_at(buf: &mut [u64], x: f32, y: f32, text: &str, fg: u32, bg: u32, tw: u16, th: u16) {
     let x_start = x as u16;
     let y_row = y as u16;
 
@@ -631,15 +625,14 @@ fn draw_text_at(x: f32, y: f32, text: &str, fg: u32, bg: u32, tw: u16, th: u16) 
             break;
         }
         let idx = (tw * y_row + col) as usize * 3;
-        // if idx + 2 < buf.len() {
         buf[idx] = ch as u64;
         buf[idx + 1] = fg as u64;
         buf[idx + 2] = bg as u64;
-        // }
     }
 }
 
 fn draw_border_at(
+    buf: &mut [u64],
     x: f32,
     y: f32,
     w: f32,
@@ -650,9 +643,6 @@ fn draw_border_at(
     tw: u16,
     th: u16,
 ) {
-    let mut cb = CURRENT_BUFFER.lock().unwrap();
-    let Some(ref mut buf) = *cb else { return };
-
     let x_start = x as u16;
     let y_start = y as u16;
     let x_end = ((x + w) as u16).saturating_sub(1).min(tw.saturating_sub(1));
@@ -664,14 +654,12 @@ fn draw_border_at(
         BorderStyle::None => return,
     };
 
-    let set_cell = |buf: &mut Vec<u64>, col: u16, row: u16, ch: char| {
+    let set_cell = |buf: &mut [u64], col: u16, row: u16, ch: char| {
         if col < tw && row < th {
             let idx = (tw * row + col) as usize * 3;
-            // if idx + 2 < buf.len() {
             buf[idx] = ch as u64;
             buf[idx + 1] = color as u64;
             buf[idx + 2] = bg as u64;
-            //
         }
     };
 
@@ -690,10 +678,7 @@ fn draw_border_at(
     }
 }
 
-fn draw_cursor_at(x: f32, y: f32, text_len: f32, fg: u32, bg: u32, tw: u16, th: u16) {
-    let mut cb = CURRENT_BUFFER.lock().unwrap();
-    let Some(ref mut buf) = *cb else { return };
-
+fn draw_cursor_at(buf: &mut [u64], x: f32, y: f32, text_len: f32, fg: u32, bg: u32, tw: u16, th: u16) {
     let col = (x + text_len) as u16;
     let row = y as u16;
 
@@ -710,6 +695,7 @@ fn draw_cursor_at(x: f32, y: f32, text_len: f32, fg: u32, bg: u32, tw: u16, th: 
 fn paint_taffy_node(
     taffy: &TaffyTree<NodeContext>,
     node_id: NodeId,
+    buf: &mut [u64],
     abs_x: f32,
     abs_y: f32,
     parent_fg: u32,
@@ -731,8 +717,8 @@ fn paint_taffy_node(
         Some(NodeContext::Text { content, fg, bg }) => {
             let fg = if *fg != 0 { *fg } else { parent_fg };
             let bg = if *bg != 0 { *bg } else { parent_bg };
-            draw_background_at(x, y, w, h, bg, tw, th);
-            draw_text_at(content_x, content_y, content, fg, bg, tw, th);
+            draw_background_at(buf, x, y, w, h, bg, tw, th);
+            draw_text_at(buf, content_x, content_y, content, fg, bg, tw, th);
             (fg, bg)
         }
         Some(NodeContext::Button {
@@ -744,11 +730,11 @@ fn paint_taffy_node(
         }) => {
             let fg = if *fg != 0 { *fg } else { parent_fg };
             let bg = if *bg != 0 { *bg } else { parent_bg };
-            draw_background_at(x, y, w, h, bg, tw, th);
+            draw_background_at(buf, x, y, w, h, bg, tw, th);
             if *border_style != BorderStyle::None {
-                draw_border_at(x, y, w, h, *border_color, bg, *border_style, tw, th);
+                draw_border_at(buf, x, y, w, h, *border_color, bg, *border_style, tw, th);
             }
-            draw_text_at(content_x, content_y, label, fg, bg, tw, th);
+            draw_text_at(buf, content_x, content_y, label, fg, bg, tw, th);
             (fg, bg)
         }
         Some(NodeContext::Input {
@@ -760,12 +746,13 @@ fn paint_taffy_node(
         }) => {
             let fg = if *fg != 0 { *fg } else { parent_fg };
             let bg = if *bg != 0 { *bg } else { parent_bg };
-            draw_background_at(x, y, w, h, bg, tw, th);
+            draw_background_at(buf, x, y, w, h, bg, tw, th);
             if *border_style != BorderStyle::None {
-                draw_border_at(x, y, w, h, *border_color, bg, *border_style, tw, th);
+                draw_border_at(buf, x, y, w, h, *border_color, bg, *border_style, tw, th);
             }
-            draw_text_at(content_x, content_y, content, fg, bg, tw, th);
+            draw_text_at(buf, content_x, content_y, content, fg, bg, tw, th);
             draw_cursor_at(
+                buf,
                 content_x,
                 content_y,
                 content.chars().count() as f32,
@@ -790,9 +777,9 @@ fn paint_taffy_node(
         }) => {
             let fg = if *fg != 0 { *fg } else { parent_fg };
             let bg = if *bg != 0 { *bg } else { parent_bg };
-            draw_background_at(x, y, w, h, bg, tw, th);
+            draw_background_at(buf, x, y, w, h, bg, tw, th);
             if *border_style != BorderStyle::None {
-                draw_border_at(x, y, w, h, *border_color, bg, *border_style, tw, th);
+                draw_border_at(buf, x, y, w, h, *border_color, bg, *border_style, tw, th);
             }
             (fg, bg)
         }
@@ -800,7 +787,7 @@ fn paint_taffy_node(
     };
 
     for child in taffy.children(node_id).unwrap() {
-        paint_taffy_node(taffy, child, x, y, fg, bg, tw, th);
+        paint_taffy_node(taffy, child, buf, x, y, fg, bg, tw, th);
     }
 }
 
@@ -808,6 +795,7 @@ fn paint_taffy_node(
 pub extern "C" fn paint(pn: *const f32, ln: u32, pt: *const u8, lt: u32) -> c_int {
     let term_size = TERMINAL_SIZE.lock().unwrap();
     let (tw, th) = *term_size;
+    drop(term_size); // Release early
 
     let node_data = unsafe { slice::from_raw_parts(pn, ln as usize) };
     let text_data = unsafe { slice::from_raw_parts(pt, lt as usize) };
@@ -855,7 +843,11 @@ pub extern "C" fn paint(pn: *const f32, ln: u32, pt: *const u8, lt: u32) -> c_in
     let parent_fg = colors::DEFAULT.fg;
     let parent_bg = colors::DEFAULT.bg;
 
-    paint_taffy_node(&taffy, root, 0.0, 0.0, parent_fg, parent_bg, tw, th);
+    // Single lock for entire paint phase
+    let mut cb = CURRENT_BUFFER.lock().unwrap();
+    if let Some(ref mut buf) = *cb {
+        paint_taffy_node(&taffy, root, buf, 0.0, 0.0, parent_fg, parent_bg, tw, th);
+    }
 
     1
 }

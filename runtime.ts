@@ -9,8 +9,8 @@ import {
   endFrame,
   startPhase,
   endSerialize,
-  endLayout,
-  endPaint,
+  endRust,
+  endSync,
   endFlush,
   formatMetrics,
 } from "./metrics";
@@ -584,13 +584,13 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     spatialLookup.fill(undefined);
     nodeRegistry.clear();
 
-    // Phase 1: Serialize (reads signals -> auto-subscribes)
+    // Phase 1: Serialize node tree to flat arrays
     const serializeStart = options?.debug ? startPhase() : 0;
     const { nodeData, textData } = serialize(root);
     if (options?.debug) endSerialize(serializeStart);
 
-    // Phase 2: Layout + Paint (single FFI call)
-    const layoutStart = options?.debug ? startPhase() : 0;
+    // Phase 2: Rust FFI (taffy layout + buffer paint)
+    const rustStart = options?.debug ? startPhase() : 0;
     const safeTextData = textData.length > 0 ? textData : new Uint8Array(1);
     api.paint(
       ptr(nodeData),
@@ -598,14 +598,14 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
       ptr(safeTextData),
       textData.length,
     );
-    if (options?.debug) endLayout(layoutStart);
+    if (options?.debug) endRust(rustStart);
 
-    // Phase 3: Update node frames from Rust
-    const paintStart = options?.debug ? startPhase() : 0;
+    // Phase 3: Sync frame data back to JS nodes
+    const syncStart = options?.debug ? startPhase() : 0;
     updateNodeFrames(root);
-    if (options?.debug) endPaint(paintStart);
+    if (options?.debug) endSync(syncStart);
 
-    // Phase 4: Flush (Rust writes buffer to terminal)
+    // Phase 4: Flush buffer to terminal
     const flushStart = options?.debug ? startPhase() : 0;
     api.flush();
     if (options?.debug) endFlush(flushStart);

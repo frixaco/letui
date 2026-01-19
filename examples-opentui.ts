@@ -9,7 +9,7 @@ import {
   InputRenderableEvents,
   TextRenderable,
   type CliRenderer,
-} from "@opentui/packages/core/src/index";
+} from "@opentui/core";
 import {
   startFrame,
   endFrame,
@@ -214,17 +214,18 @@ async function main() {
   });
 
   // Wrap requestRender to measure frame times
+  // OpenTUI schedules activateFrame via nextTick/setTimeout, so use setTimeout(0)
+  // to measure AFTER render + native Zig I/O completes
   const originalRequestRender = renderer.requestRender.bind(renderer);
   renderer.requestRender = () => {
     frameStartTime = startFrame();
     originalRequestRender();
-    // Note: OpenTUI's requestRender is async/batched, so we measure on next tick
-    queueMicrotask(() => {
+    setTimeout(() => {
       if (frameStartTime > 0) {
         endFrame(frameStartTime);
         frameStartTime = 0;
       }
-    });
+    }, 0);
   };
 
   renderer.setBackgroundColor("#1a1a2e");

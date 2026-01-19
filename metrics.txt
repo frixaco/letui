@@ -1,5 +1,5 @@
-827fps | 0.6ms avg (0.2-2.2) | 46MB heap | 80 frames
-  serialize: 0.1ms (0-0.3)
-  layout:    0.2ms (0.1-0.4)
-  paint:     0ms (0-0.1)
-  flush:     0.2ms (0.1-1.4)
+1966fps | 0.5ms avg (0.2-1.6, p99:1.6) | 40MB | 83 frames
+  serialize: 0.1ms (0-0.4)
+  rust:      0.2ms (0.1-0.4) [layout+paint]
+  sync:      0ms (0-0.2) [frames→JS]
+  flush:     0.2ms (0-1.1) [terminal I/O]

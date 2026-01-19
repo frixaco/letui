@@ -343,17 +343,18 @@ function main() {
   const ui = new TUI(terminal);
 
   // Wrap requestRender to measure frame times
+  // Pi-mono schedules doRender via process.nextTick, so use setTimeout(0)
+  // to measure AFTER render + terminal I/O completes
   const originalRequestRender = ui.requestRender.bind(ui);
   ui.requestRender = () => {
     frameStartTime = startFrame();
     originalRequestRender();
-    // Pi-mono renders synchronously, measure after completion
-    queueMicrotask(() => {
+    setTimeout(() => {
       if (frameStartTime > 0) {
         endFrame(frameStartTime);
         frameStartTime = 0;
       }
-    });
+    }, 0);
   };
 
   const app = new TorrentApp(ui);

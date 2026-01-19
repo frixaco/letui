@@ -1,173 +1,123 @@
 interface MetricsData {
   frameTimes: number[];
   serializeTimes: number[];
-  layoutTimes: number[];
-  paintTimes: number[];
+  rustTimes: number[]; // FFI call: taffy layout + buffer paint
+  syncTimes: number[]; // Reading frames back to JS
   flushTimes: number[];
   frameCount: number;
-  lastFrameTime: number;
 }
 
 const metrics: MetricsData = {
   frameTimes: [],
   serializeTimes: [],
-  layoutTimes: [],
-  paintTimes: [],
+  rustTimes: [],
+  syncTimes: [],
   flushTimes: [],
   frameCount: 0,
-  lastFrameTime: 0,
 };
 
-const MAX_SAMPLES = 120; // Keep last 120 frames for rolling average
+const MAX_SAMPLES = 120;
 
-export function startFrame() {
+export function startFrame(): number {
   return Bun.nanoseconds();
 }
 
-export function startPhase() {
+export function startPhase(): number {
   return Bun.nanoseconds();
 }
 
-export function endSerialize(startTime: number) {
-  const elapsed = (Bun.nanoseconds() - startTime) / 1_000_000; // ms
-  metrics.serializeTimes.push(elapsed);
-  if (metrics.serializeTimes.length > MAX_SAMPLES) {
-    metrics.serializeTimes.shift();
-  }
+function recordTime(arr: number[], startTime: number): void {
+  const elapsed = (Bun.nanoseconds() - startTime) / 1_000_000;
+  arr.push(elapsed);
+  if (arr.length > MAX_SAMPLES) arr.shift();
 }
 
-export function endLayout(startTime: number) {
-  const elapsed = (Bun.nanoseconds() - startTime) / 1_000_000; // ms
-  metrics.layoutTimes.push(elapsed);
-  if (metrics.layoutTimes.length > MAX_SAMPLES) {
-    metrics.layoutTimes.shift();
-  }
+export function endSerialize(startTime: number): void {
+  recordTime(metrics.serializeTimes, startTime);
 }
 
-export function endPaint(startTime: number) {
-  const elapsed = (Bun.nanoseconds() - startTime) / 1_000_000; // ms
-  metrics.paintTimes.push(elapsed);
-  if (metrics.paintTimes.length > MAX_SAMPLES) {
-    metrics.paintTimes.shift();
-  }
+export function endRust(startTime: number): void {
+  recordTime(metrics.rustTimes, startTime);
 }
 
-export function endFlush(startTime: number) {
-  const elapsed = (Bun.nanoseconds() - startTime) / 1_000_000; // ms
-  metrics.flushTimes.push(elapsed);
-  if (metrics.flushTimes.length > MAX_SAMPLES) {
-    metrics.flushTimes.shift();
-  }
+export function endSync(startTime: number): void {
+  recordTime(metrics.syncTimes, startTime);
+}
+
+export function endFlush(startTime: number): void {
+  recordTime(metrics.flushTimes, startTime);
 }
 
 export function endFrame(startTime: number): void {
-  const elapsed = (Bun.nanoseconds() - startTime) / 1_000_000; // ms
-  metrics.frameTimes.push(elapsed);
+  recordTime(metrics.frameTimes, startTime);
   metrics.frameCount++;
-  metrics.lastFrameTime = elapsed;
-  if (metrics.frameTimes.length > MAX_SAMPLES) {
-    metrics.frameTimes.shift();
-  }
 }
 
-function calculateStats(times: number[]) {
-  if (times.length === 0) return { avg: 0, min: 0, max: 0 };
+interface Stats {
+  avg: number;
+  min: number;
+  max: number;
+  p99: number;
+}
+
+function calculateStats(times: number[]): Stats {
+  if (times.length === 0) return { avg: 0, min: 0, max: 0, p99: 0 };
+  const sorted = [...times].sort((a, b) => a - b);
   const avg = times.reduce((a, b) => a + b, 0) / times.length;
-  const min = Math.min(...times);
-  const max = Math.max(...times);
-  return { avg, min, max };
+  const min = sorted[0]!;
+  const max = sorted[sorted.length - 1]!;
+  const p99Idx = Math.floor(sorted.length * 0.99);
+  const p99 = sorted[p99Idx] ?? max;
+  return { avg, min, max, p99 };
+}
+
+function fmt(n: number): string {
+  return (Math.round(n * 10) / 10).toString();
 }
 
 export function getMetrics() {
-  const frameStats = calculateStats(metrics.frameTimes);
-  const serializeStats = calculateStats(metrics.serializeTimes);
-  const layoutStats = calculateStats(metrics.layoutTimes);
-  const paintStats = calculateStats(metrics.paintTimes);
-  const flushStats = calculateStats(metrics.flushTimes);
+  const frame = calculateStats(metrics.frameTimes);
+  const serialize = calculateStats(metrics.serializeTimes);
+  const rust = calculateStats(metrics.rustTimes);
+  const sync = calculateStats(metrics.syncTimes);
+  const flush = calculateStats(metrics.flushTimes);
 
-  const fps =
-    metrics.lastFrameTime > 0 ? Math.round(1000 / metrics.lastFrameTime) : 0;
-  const memUsage = process.memoryUsage();
-  const heapMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+  const fps = frame.avg > 0 ? Math.round(1000 / frame.avg) : 0;
+  const heapMB = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
 
   return {
     fps,
-    avgFrameTime: Math.round(frameStats.avg * 10) / 10,
-    minFrameTime: Math.round(frameStats.min * 10) / 10,
-    maxFrameTime: Math.round(frameStats.max * 10) / 10,
     heapMB,
     frameCount: metrics.frameCount,
-    avgSerializeTime: Math.round(serializeStats.avg * 10) / 10,
-    minSerializeTime: Math.round(serializeStats.min * 10) / 10,
-    maxSerializeTime: Math.round(serializeStats.max * 10) / 10,
-    avgLayoutTime: Math.round(layoutStats.avg * 10) / 10,
-    minLayoutTime: Math.round(layoutStats.min * 10) / 10,
-    maxLayoutTime: Math.round(layoutStats.max * 10) / 10,
-    avgPaintTime: Math.round(paintStats.avg * 10) / 10,
-    minPaintTime: Math.round(paintStats.min * 10) / 10,
-    maxPaintTime: Math.round(paintStats.max * 10) / 10,
-    avgFlushTime: Math.round(flushStats.avg * 10) / 10,
-    minFlushTime: Math.round(flushStats.min * 10) / 10,
-    maxFlushTime: Math.round(flushStats.max * 10) / 10,
+    frame,
+    serialize,
+    rust,
+    sync,
+    flush,
   };
 }
 
-export function formatMetrics() {
+export function formatMetrics(): string {
   const m = getMetrics();
+  const f = m.frame;
   return [
-    `${m.fps}fps | ${m.avgFrameTime}ms avg (${m.minFrameTime}-${m.maxFrameTime}) | ${m.heapMB}MB heap | ${m.frameCount} frames`,
-    `  serialize: ${m.avgSerializeTime}ms (${m.minSerializeTime}-${m.maxSerializeTime})`,
-    `  layout:    ${m.avgLayoutTime}ms (${m.minLayoutTime}-${m.maxLayoutTime})`,
-    `  paint:     ${m.avgPaintTime}ms (${m.minPaintTime}-${m.maxPaintTime})`,
-    `  flush:     ${m.avgFlushTime}ms (${m.minFlushTime}-${m.maxFlushTime})`,
-  ].join('\n');
+    `${m.fps}fps | ${fmt(f.avg)}ms avg (${fmt(f.min)}-${fmt(f.max)}, p99:${fmt(f.p99)}) | ${m.heapMB}MB | ${m.frameCount} frames`,
+    `  serialize: ${fmt(m.serialize.avg)}ms (${fmt(m.serialize.min)}-${fmt(m.serialize.max)})`,
+    `  rust:      ${fmt(m.rust.avg)}ms (${fmt(m.rust.min)}-${fmt(m.rust.max)}) [layout+paint]`,
+    `  sync:      ${fmt(m.sync.avg)}ms (${fmt(m.sync.min)}-${fmt(m.sync.max)}) [frames→JS]`,
+    `  flush:     ${fmt(m.flush.avg)}ms (${fmt(m.flush.min)}-${fmt(m.flush.max)}) [terminal I/O]`,
+  ].join("\n");
 }
 
-export function resetMetrics() {
+export function resetMetrics(): void {
   metrics.frameTimes = [];
   metrics.serializeTimes = [];
-  metrics.layoutTimes = [];
-  metrics.paintTimes = [];
+  metrics.rustTimes = [];
+  metrics.syncTimes = [];
   metrics.flushTimes = [];
   metrics.frameCount = 0;
-  metrics.lastFrameTime = 0;
 }
 
-export function saveMetrics(filename: string) {
-  const m = getMetrics();
-  const lines = [
-    `=== Performance Metrics ===`,
-    `Frames: ${m.frameCount}`,
-    ``,
-    `Frame Time:`,
-    `  avg: ${m.avgFrameTime}ms`,
-    `  min: ${m.minFrameTime}ms`,
-    `  max: ${m.maxFrameTime}ms`,
-    ``,
-    `Serialize Time:`,
-    `  avg: ${m.avgSerializeTime}ms`,
-    `  min: ${m.minSerializeTime}ms`,
-    `  max: ${m.maxSerializeTime}ms`,
-    ``,
-    `Layout Time:`,
-    `  avg: ${m.avgLayoutTime}ms`,
-    `  min: ${m.minLayoutTime}ms`,
-    `  max: ${m.maxLayoutTime}ms`,
-    ``,
-    `Paint Time:`,
-    `  avg: ${m.avgPaintTime}ms`,
-    `  min: ${m.minPaintTime}ms`,
-    `  max: ${m.maxPaintTime}ms`,
-    ``,
-    `Flush Time:`,
-    `  avg: ${m.avgFlushTime}ms`,
-    `  min: ${m.minFlushTime}ms`,
-    `  max: ${m.maxFlushTime}ms`,
-    ``,
-    `Memory: ${m.heapMB}MB heap`,
-    `FPS (last frame): ${m.fps}`,
-    ``,
-    `Raw frame times (ms): ${metrics.frameTimes.map(t => t.toFixed(2)).join(', ')}`,
-  ];
-  Bun.write(filename, lines.join('\n') + '\n');
+export function saveMetrics(filename: string): void {
+  Bun.write(filename, formatMetrics() + "\n");
 }
