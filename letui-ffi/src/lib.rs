@@ -240,6 +240,7 @@ pub extern "C" fn get_buffer_len() -> u64 {
 pub extern "C" fn free_buffer() -> c_int {
     *CURRENT_BUFFER.lock().unwrap() = None;
     *LAST_BUFFER.lock().unwrap() = None;
+    *FIRST_DIFF.lock().unwrap() = true;
 
     execute!(
         stdout(),

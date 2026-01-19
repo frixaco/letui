@@ -522,16 +522,17 @@ function handleInput(data: string, options?: RunOptions): void {
 
 function handleResize(): void {
   api.update_terminal_size();
-  terminalWidth(api.get_width());
-  terminalHeight(api.get_height());
 
+  // Reallocate buffer BEFORE updating signals (which trigger render)
   api.free_buffer();
   api.init_buffer();
   buffer = getBuffer();
   stagingBuffer = new Uint32Array(buffer.length);
 
+  // Now update signals - this triggers render with correct buffer
+  terminalWidth(api.get_width());
+  terminalHeight(api.get_height());
   spatialLookup = new Array(terminalWidth() * terminalHeight());
-  // Render effect will re-run automatically due to signal changes
 }
 
 // =============================================================================
@@ -572,6 +573,10 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   // 5. Create render effect
   ff(() => {
     if (!isRunning) return;
+
+    // Subscribe to terminal size changes (triggers re-render on resize)
+    terminalWidth();
+    terminalHeight();
 
     const frameStart = options?.debug ? startFrame() : 0;
 
