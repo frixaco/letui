@@ -8,10 +8,9 @@ import { fileURLToPath } from "url";
 function getLibraryPath(): string {
   const { platform, arch } = process;
 
-  const localPath = fileURLToPath(new URL(
-    `./letui-ffi/target/release/${filename}`,
-    import.meta.url,
-  ));
+  const localPath = fileURLToPath(
+    new URL(`./letui-ffi/target/release/${filename}`, import.meta.url),
+  );
 
   console.log("Attempting to load local build from:", localPath);
 
@@ -52,8 +51,9 @@ const { symbols: api } = dlopen(path, {
     args: [],
     returns: "u64",
   },
-  calculate_layout: {
-    args: ["pointer", "u32", "pointer", "u32", "f32", "f32"],
+
+  paint: {
+    args: ["pointer", "u32", "pointer", "u32"],
     returns: "i32",
   },
   get_frames_ptr: {

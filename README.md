@@ -11,12 +11,6 @@ Simple TUI library written using Rust and TypeScript
 
 **TODO**:
 
-- [ ] Will SIMD work if I wanna implement caching for serialization. For example, when comparing trees I used SIMD (idk what i'm talking about)
-- [ ] Neovim as text input
-- [ ] Hover support
-- [ ] Add render caching - skip serialize/layout if signals unchanged (pi-mono pattern)
-- [ ] Incremental tree updates - don't rebuild entire Taffy tree each frame, cache structure and update only changed nodes
-- [ ] Visibility culling - skip `paint()` for off-screen nodes (OpenTUI's `_getVisibleChildren` pattern)
 - [ ] Move paint to Rust (currently 81% of frame time @ 1.7ms avg)
   - **Why**: Eliminates JS per-cell loops, staging buffer, and BigInt conversions
   - **New FFI function**: `paint(node_data, text_data, focused_id, pressed_id, colors...)`
@@ -31,17 +25,20 @@ Simple TUI library written using Rust and TypeScript
     - Keep `registerHit()` in JS for mouse hit testing (cheap traversal)
     - Remove `stagingBuffer` and `flushStagingBuffer()` (no longer needed)
   - **Expected result**: Paint phase from 1.7ms → ~0.1-0.2ms
-- [ ] Batch signal updates - ensure `whenSettled` is used in hot paths to prevent redundant renders
-- [ ] Try to optimizatize the shit out of everything
-- [ ] Add logging and debugging utilities
-- [ ] Improve overall architecture ("make it work" is done, now "make it right, make it fast" is left)
+- [ ] Add scrollable containers
+
+- [ ] Add render caching - skip serialize/layout if signals unchanged (pi-mono pattern)
+- [ ] Incremental tree updates - don't rebuild entire Taffy tree each frame, cache structure and update only changed nodes
+- [ ] Visibility culling - skip `paint()` for off-screen nodes (OpenTUI's `_getVisibleChildren` pattern)
+
+- [ ] Neovim as text input
+- [ ] Will SIMD work if I wanna implement caching for serialization. For example, when comparing trees I used SIMD (idk what i'm talking about)
 - [ ] Refactor flush function with BatchWriter pattern to reduce nesting
   - BatchWriter struct holds stdout ref, char_seq, batch_start_x/y, prev_fg/bg
   - `new()` initializes with sentinel colors (u64::MAX) to force first color emit
   - `push(x, y, ch, fg, bg)` handles gap detection, color changes, and accumulates chars
   - `flush_pending()` emits MoveTo + Print for accumulated batch
   - Encapsulates all batching logic, main loop just calls push() for changed cells
-- [ ] Add scrollable containers
 - [ ] Add performance stats overlay that update independently from rest of the app (can i use a separate thread?)
 - [ ] Add `flexGrow` support for dynamic width components (e.g., progress bars)
   - **TypeScript side:**

@@ -1,5 +1,5 @@
-674fps | 2.1ms avg (1-5.5) | 6MB heap | 70 frames
-  serialize: 0.1ms (0-0.4)
-  layout:    0.1ms (0.1-0.6)
-  paint:     1.7ms (0.8-4.2)
-  flush:     0.2ms (0-1.3)
+1139fps | 0.8ms avg (0.2-2.7) | 16MB heap | 38 frames
+  serialize: 0.2ms (0-0.4)
+  layout:    0.2ms (0.1-0.5)
+  paint:     0.1ms (0-0.1)
+  flush:     0.3ms (0-1.9)

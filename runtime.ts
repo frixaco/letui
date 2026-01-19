@@ -121,7 +121,7 @@ function serialize(root: Node): {
     ) {
       textContent = (node.props as any).text?.() ?? "";
     }
-    const textLength = [...textContent].length; // Handle unicode
+    const textLength = new TextEncoder().encode(textContent).length; // Byte length for Rust
 
     if (textContent) {
       texts.push(textContent);
@@ -156,37 +156,21 @@ function serialize(root: Node): {
 }
 
 // =============================================================================
-// LAYOUT
+// LAYOUT (reads frames from Rust after paint computes layout)
 // =============================================================================
 
-function layout(
-  root: Node,
-  nodeData: Float32Array,
-  textData: Uint8Array,
-): void {
-  // Ensure non-empty buffer for FFI
-  const safeTextData = textData.length > 0 ? textData : new Uint8Array(1);
-
-  api.calculate_layout(
-    ptr(nodeData),
-    nodeData.length,
-    ptr(safeTextData),
-    textData.length,
-    terminalWidth(),
-    terminalHeight(),
-  );
-
-  // Get computed frames from Rust
+function updateNodeFrames(root: Node): void {
   const framesPtr = api.get_frames_ptr()!;
   const framesLen = Number(api.get_frames_len()!);
   const framesArray = new Float32Array(
     toArrayBuffer(framesPtr as Pointer, 0, framesLen * 4),
   );
 
-  // Update node frames
   let idx = 0;
 
   function updateFrames(node: Node): void {
+    nodeRegistry.set(node.id, node);
+
     node.frame.x = framesArray[idx++]!;
     node.frame.y = framesArray[idx++]!;
     node.frame.width = framesArray[idx++]!;
@@ -209,206 +193,206 @@ function layout(
 // =============================================================================
 
 // Write to staging buffer (no BigInt conversion)
-function setCell(offset: number, char: string, fg: number, bg: number): void {
-  stagingBuffer[offset] = char.codePointAt(0)!;
-  stagingBuffer[offset + 1] = fg;
-  stagingBuffer[offset + 2] = bg;
-}
+// function setCell(offset: number, char: string, fg: number, bg: number): void {
+//   stagingBuffer[offset] = char.codePointAt(0)!;
+//   stagingBuffer[offset + 1] = fg;
+//   stagingBuffer[offset + 2] = bg;
+// }
 
 // Flush staging buffer to BigUint64Array in one pass
-function flushStagingBuffer(): void {
-  const len = stagingBuffer.length;
-  for (let i = 0; i < len; i++) {
-    buffer[i] = BigInt(stagingBuffer[i]!);
-  }
-}
+// function flushStagingBuffer(): void {
+//   const len = stagingBuffer.length;
+//   for (let i = 0; i < len; i++) {
+//     buffer[i] = BigInt(stagingBuffer[i]!);
+//   }
+// }
 
-function drawBackground(node: Node, bg: number): void {
-  const tw = terminalWidth();
-  const { x, y, width, height } = node.frame;
-
-  for (let row = y; row < y + height; row++) {
-    for (let col = x; col < x + width; col++) {
-      setCell((row * tw + col) * 3, " ", COLORS.default.fg, bg);
-    }
-  }
-}
-
-function drawBorder(
-  node: Node,
-  style: BorderStyle,
-  fg: number,
-  bg: number,
-): void {
-  const tw = terminalWidth();
-  const { x, y, width, height } = node.frame;
-
-  const topLeft = y * tw + x;
-  const topRight = topLeft + width - 1;
-  const bottomLeft = topLeft + (height - 1) * tw;
-  const bottomRight = bottomLeft + width - 1;
-
-  // Corners
-  const [tl, tr, bl, br] =
-    style === "square" ? ["┌", "┐", "└", "┘"] : ["╭", "╮", "╰", "╯"];
-
-  setCell(topLeft * 3, tl, fg, bg);
-  setCell(topRight * 3, tr, fg, bg);
-  setCell(bottomLeft * 3, bl, fg, bg);
-  setCell(bottomRight * 3, br, fg, bg);
-
-  // Horizontal edges
-  for (let i = 1; i < width - 1; i++) {
-    setCell((topLeft + i) * 3, "─", fg, bg);
-    setCell((bottomLeft + i) * 3, "─", fg, bg);
-  }
-
-  // Vertical edges
-  for (let i = 1; i < height - 1; i++) {
-    setCell((topLeft + i * tw) * 3, "│", fg, bg);
-    setCell((topRight + i * tw) * 3, "│", fg, bg);
-  }
-}
-
-function drawText(node: Node, text: string, fg: number, bg: number): void {
-  const tw = terminalWidth();
-  const { x, y } = node.frame;
-
-  const padding = node.props.padding?.() ?? 0;
-  let paddingX: number, paddingY: number;
-  if (typeof padding === "string") {
-    [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
-  } else {
-    paddingX = paddingY = padding;
-  }
-
-  const border = node.props.border?.();
-  const borderOffset = border ? 1 : 0;
-
-  const startX = x + paddingX + borderOffset;
-  const startY = y + paddingY + borderOffset;
-
-  let col = 0;
-  for (const char of text) {
-    const offset = (startY * tw + startX + col) * 3;
-    setCell(offset, char, fg, bg);
-    col++;
-  }
-}
-
-function drawCursor(
-  node: Node,
-  textLength: number,
-  fg: number,
-  bg: number,
-): void {
-  const tw = terminalWidth();
-  const { x, y } = node.frame;
-
-  const padding = node.props.padding?.() ?? 0;
-  let paddingX: number, paddingY: number;
-  if (typeof padding === "string") {
-    [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
-  } else {
-    paddingX = paddingY = padding;
-  }
-
-  const border = node.props.border?.();
-  const borderOffset = border ? 1 : 0;
-
-  const cursorX = x + paddingX + borderOffset + textLength;
-  const cursorY = y + paddingY + borderOffset;
-
-  const offset = (cursorY * tw + cursorX) * 3;
-  setCell(offset, "▌", fg, bg);
-}
-
-function registerHit(node: Node): void {
-  const tw = terminalWidth();
-  const { x, y, width, height } = node.frame;
-
-  for (let row = y; row < y + height; row++) {
-    for (let col = x; col < x + width; col++) {
-      spatialLookup[row * tw + col] = node.id;
-    }
-  }
-}
+// function drawBackground(node: Node, bg: number): void {
+//   const tw = terminalWidth();
+//   const { x, y, width, height } = node.frame;
+//
+//   for (let row = y; row < y + height; row++) {
+//     for (let col = x; col < x + width; col++) {
+//       setCell((row * tw + col) * 3, " ", COLORS.default.fg, bg);
+//     }
+//   }
+// }
+//
+// function drawBorder(
+//   node: Node,
+//   style: BorderStyle,
+//   fg: number,
+//   bg: number,
+// ): void {
+//   const tw = terminalWidth();
+//   const { x, y, width, height } = node.frame;
+//
+//   const topLeft = y * tw + x;
+//   const topRight = topLeft + width - 1;
+//   const bottomLeft = topLeft + (height - 1) * tw;
+//   const bottomRight = bottomLeft + width - 1;
+//
+//   // Corners
+//   const [tl, tr, bl, br] =
+//     style === "square" ? ["┌", "┐", "└", "┘"] : ["╭", "╮", "╰", "╯"];
+//
+//   setCell(topLeft * 3, tl, fg, bg);
+//   setCell(topRight * 3, tr, fg, bg);
+//   setCell(bottomLeft * 3, bl, fg, bg);
+//   setCell(bottomRight * 3, br, fg, bg);
+//
+//   // Horizontal edges
+//   for (let i = 1; i < width - 1; i++) {
+//     setCell((topLeft + i) * 3, "─", fg, bg);
+//     setCell((bottomLeft + i) * 3, "─", fg, bg);
+//   }
+//
+//   // Vertical edges
+//   for (let i = 1; i < height - 1; i++) {
+//     setCell((topLeft + i * tw) * 3, "│", fg, bg);
+//     setCell((topRight + i * tw) * 3, "│", fg, bg);
+//   }
+// }
+//
+// function drawText(node: Node, text: string, fg: number, bg: number): void {
+//   const tw = terminalWidth();
+//   const { x, y } = node.frame;
+//
+//   const padding = node.props.padding?.() ?? 0;
+//   let paddingX: number, paddingY: number;
+//   if (typeof padding === "string") {
+//     [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
+//   } else {
+//     paddingX = paddingY = padding;
+//   }
+//
+//   const border = node.props.border?.();
+//   const borderOffset = border ? 1 : 0;
+//
+//   const startX = x + paddingX + borderOffset;
+//   const startY = y + paddingY + borderOffset;
+//
+//   let col = 0;
+//   for (const char of text) {
+//     const offset = (startY * tw + startX + col) * 3;
+//     setCell(offset, char, fg, bg);
+//     col++;
+//   }
+// }
+//
+// function drawCursor(
+//   node: Node,
+//   textLength: number,
+//   fg: number,
+//   bg: number,
+// ): void {
+//   const tw = terminalWidth();
+//   const { x, y } = node.frame;
+//
+//   const padding = node.props.padding?.() ?? 0;
+//   let paddingX: number, paddingY: number;
+//   if (typeof padding === "string") {
+//     [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
+//   } else {
+//     paddingX = paddingY = padding;
+//   }
+//
+//   const border = node.props.border?.();
+//   const borderOffset = border ? 1 : 0;
+//
+//   const cursorX = x + paddingX + borderOffset + textLength;
+//   const cursorY = y + paddingY + borderOffset;
+//
+//   const offset = (cursorY * tw + cursorX) * 3;
+//   setCell(offset, "▌", fg, bg);
+// }
+//
+// function registerHit(node: Node): void {
+//   const tw = terminalWidth();
+//   const { x, y, width, height } = node.frame;
+//
+//   for (let row = y; row < y + height; row++) {
+//     for (let col = x; col < x + width; col++) {
+//       spatialLookup[row * tw + col] = node.id;
+//     }
+//   }
+// }
 
 // =============================================================================
 // PAINT
 // =============================================================================
 
-function paint(node: Node, overrideBg: number): void {
-  // Register in nodeRegistry for hit testing
-  nodeRegistry.set(node.id, node);
-
-  const bg = node.props.background?.() ?? overrideBg;
-  const fg = node.props.foreground?.() ?? COLORS.default.fg;
-  const border = node.props.border?.();
-
-  // Draw background
-  drawBackground(node, bg);
-
-  // Draw border
-  if (border) {
-    const isFocused = node.isFocused();
-    const borderFg = isFocused ? COLORS.default.green : border.color;
-    drawBorder(node, border.style, borderFg, bg);
-  }
-
-  // Type-specific rendering
-  if (node.type === "text") {
-    const text = (node.props as any).text?.() ?? "";
-    drawText(node, text, fg, bg);
-  }
-
-  if (node.type === "input") {
-    const isFocused = node.isFocused();
-    const text = (node.props as any).text?.() ?? "";
-    const placeholder = (node.props as any).placeholder?.() ?? "";
-    const displayText = text || placeholder;
-    const displayFg = text ? fg : COLORS.default.grey;
-
-    drawText(node, displayText, displayFg, bg);
-
-    // Show cursor if focused
-    if (isFocused) {
-      drawCursor(node, text.length, fg, bg);
-    }
-
-    registerHit(node);
-  }
-
-  if (node.type === "button") {
-    const isPressed = pressedNodeId === node.id;
-    const isFocused = node.isFocused();
-    const text = (node.props as any).text?.() ?? "";
-
-    // Invert colors when pressed
-    const drawBg = isPressed ? fg : bg;
-    const drawFg = isPressed ? bg : fg;
-
-    // Redraw background with correct color for pressed state
-    if (isPressed) {
-      drawBackground(node, drawBg);
-    }
-
-    // Redraw border with focus indicator
-    if (border) {
-      const borderFg = isFocused ? COLORS.default.green : border.color;
-      drawBorder(node, border.style, borderFg, drawBg);
-    }
-
-    drawText(node, text, drawFg, drawBg);
-    registerHit(node);
-  }
-
-  // Recurse into children
-  const children = node.children?.() ?? [];
-  for (const child of children) {
-    paint(child, bg);
-  }
-}
+// function paint(node: Node, overrideBg: number): void {
+//   // Register in nodeRegistry for hit testing
+//   nodeRegistry.set(node.id, node);
+//
+//   const bg = node.props.background?.() ?? overrideBg;
+//   const fg = node.props.foreground?.() ?? COLORS.default.fg;
+//   const border = node.props.border?.();
+//
+//   // Draw background
+//   drawBackground(node, bg);
+//
+//   // Draw border
+//   if (border) {
+//     const isFocused = node.isFocused();
+//     const borderFg = isFocused ? COLORS.default.green : border.color;
+//     drawBorder(node, border.style, borderFg, bg);
+//   }
+//
+//   // Type-specific rendering
+//   if (node.type === "text") {
+//     const text = (node.props as any).text?.() ?? "";
+//     drawText(node, text, fg, bg);
+//   }
+//
+//   if (node.type === "input") {
+//     const isFocused = node.isFocused();
+//     const text = (node.props as any).text?.() ?? "";
+//     const placeholder = (node.props as any).placeholder?.() ?? "";
+//     const displayText = text || placeholder;
+//     const displayFg = text ? fg : COLORS.default.grey;
+//
+//     drawText(node, displayText, displayFg, bg);
+//
+//     // Show cursor if focused
+//     if (isFocused) {
+//       drawCursor(node, text.length, fg, bg);
+//     }
+//
+//     registerHit(node);
+//   }
+//
+//   if (node.type === "button") {
+//     const isPressed = pressedNodeId === node.id;
+//     const isFocused = node.isFocused();
+//     const text = (node.props as any).text?.() ?? "";
+//
+//     // Invert colors when pressed
+//     const drawBg = isPressed ? fg : bg;
+//     const drawFg = isPressed ? bg : fg;
+//
+//     // Redraw background with correct color for pressed state
+//     if (isPressed) {
+//       drawBackground(node, drawBg);
+//     }
+//
+//     // Redraw border with focus indicator
+//     if (border) {
+//       const borderFg = isFocused ? COLORS.default.green : border.color;
+//       drawBorder(node, border.style, borderFg, drawBg);
+//     }
+//
+//     drawText(node, text, drawFg, drawBg);
+//     registerHit(node);
+//   }
+//
+//   // Recurse into children
+//   const children = node.children?.() ?? [];
+//   for (const child of children) {
+//     paint(child, bg);
+//   }
+// }
 
 // =============================================================================
 // INPUT HANDLING
@@ -600,15 +584,20 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     const { nodeData, textData } = serialize(root);
     if (options?.debug) endSerialize(serializeStart);
 
-    // Phase 2: Layout (FFI call to Rust/Taffy)
+    // Phase 2: Layout + Paint (single FFI call)
     const layoutStart = options?.debug ? startPhase() : 0;
-    layout(root, nodeData, textData);
+    const safeTextData = textData.length > 0 ? textData : new Uint8Array(1);
+    api.paint(
+      ptr(nodeData),
+      nodeData.length,
+      ptr(safeTextData),
+      textData.length,
+    );
     if (options?.debug) endLayout(layoutStart);
 
-    // Phase 3: Paint (write to staging buffer)
+    // Phase 3: Update node frames from Rust
     const paintStart = options?.debug ? startPhase() : 0;
-    paint(root, COLORS.default.bg);
-    flushStagingBuffer(); // Batch copy staging → BigUint64Array
+    updateNodeFrames(root);
     if (options?.debug) endPaint(paintStart);
 
     // Phase 4: Flush (Rust writes buffer to terminal)

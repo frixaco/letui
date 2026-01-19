@@ -21,6 +21,8 @@ use std::{
 };
 use taffy::{Overflow, Point, prelude::*};
 
+mod colors;
+
 static LAST_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
 static CURRENT_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
 static TERMINAL_SIZE: Mutex<(u16, u16)> = Mutex::new((0, 0));
@@ -305,6 +307,13 @@ struct Node {
     flex_grow: f32,
     text: String,
     children: Vec<Node>,
+    bg: u32,
+    fg: u32,
+    border_color: u32,
+    border_style: BorderStyle,
+    node_id: u32,
+    // TODO: want u32, see TODO below
+    text_len: usize,
 }
 
 const FIELDS_PER_NODE: usize = 13;
@@ -322,11 +331,12 @@ fn parse_node(
     let padding_y = node_data[base + 3];
     let border = node_data[base + 4];
     let child_count = node_data[base + 5] as usize;
-    let _bg = node_data[base + 6] as usize;
-    let _fg = node_data[base + 7] as usize;
-    let _border_color = node_data[base + 8] as usize;
-    let _border_style = BorderStyle::from_f32(node_data[base + 9]);
-    let _node_id = node_data[base + 10] as usize;
+    let bg = node_data[base + 6] as u32;
+    let fg = node_data[base + 7] as u32;
+    let border_color = node_data[base + 8] as u32;
+    let border_style = BorderStyle::from_f32(node_data[base + 9]);
+    let node_id = node_data[base + 10] as u32;
+    // TODO: I need this to be u32, not usize
     let text_len = node_data[base + 11] as usize;
     let flex_grow = node_data[base + 12];
 
@@ -356,6 +366,12 @@ fn parse_node(
         flex_grow,
         text,
         children,
+        bg,
+        fg,
+        border_color,
+        border_style,
+        node_id,
+        text_len,
     }
 }
 
@@ -407,11 +423,37 @@ fn get_styles(node: &Node) -> Style {
 
 fn node_type_to_context(node: &Node) -> NodeContext {
     match node.node_type {
-        NodeType::Column => NodeContext::Column,
-        NodeType::Row => NodeContext::Row,
-        NodeType::Text => NodeContext::Text(node.text.clone()),
-        NodeType::Button => NodeContext::Button(node.text.clone()),
-        NodeType::Input => NodeContext::InputBox(node.text.clone()),
+        NodeType::Column => NodeContext::Column {
+            bg: node.bg,
+            fg: node.fg,
+            border_color: node.border_color,
+            border_style: node.border_style,
+        },
+        NodeType::Row => NodeContext::Row {
+            bg: node.bg,
+            fg: node.fg,
+            border_color: node.border_color,
+            border_style: node.border_style,
+        },
+        NodeType::Text => NodeContext::Text {
+            content: node.text.clone(),
+            fg: node.fg,
+            bg: node.bg,
+        },
+        NodeType::Button => NodeContext::Button {
+            label: node.text.clone(),
+            fg: node.fg,
+            bg: node.bg,
+            border_color: node.border_color,
+            border_style: node.border_style,
+        },
+        NodeType::Input => NodeContext::Input {
+            content: node.text.clone(),
+            fg: node.fg,
+            bg: node.bg,
+            border_color: node.border_color,
+            border_style: node.border_style,
+        },
     }
 }
 
@@ -453,11 +495,37 @@ fn build_frames_array(
 }
 
 enum NodeContext {
-    Text(String),
-    Button(String),
-    Row,
-    Column,
-    InputBox(String),
+    Text {
+        content: String,
+        fg: u32,
+        bg: u32,
+    },
+    Button {
+        label: String,
+        fg: u32,
+        bg: u32,
+        border_color: u32,
+        border_style: BorderStyle,
+    },
+    Input {
+        content: String,
+        fg: u32,
+        bg: u32,
+        border_color: u32,
+        border_style: BorderStyle,
+    },
+    Row {
+        bg: u32,
+        fg: u32,
+        border_color: u32,
+        border_style: BorderStyle,
+    },
+    Column {
+        bg: u32,
+        fg: u32,
+        border_color: u32,
+        border_style: BorderStyle,
+    },
 }
 
 fn measure_function(
@@ -475,65 +543,271 @@ fn measure_function(
         return Size { width, height };
     }
 
-    match node_context {
-        Some(NodeContext::Text(text))
-        | Some(NodeContext::Button(text))
-        | Some(NodeContext::InputBox(text)) => {
-            let text_width = text.chars().count() as f32;
+    let text = match node_context {
+        Some(NodeContext::Text { content, .. }) => content.as_str(),
+        Some(NodeContext::Button { label, .. }) => label.as_str(),
+        Some(NodeContext::Input { content, .. }) => content.as_str(),
+        Some(NodeContext::Row { .. }) | Some(NodeContext::Column { .. }) => return Size::ZERO,
+        None => return Size::ZERO,
+    };
 
-            let max_width = match available_space.width {
-                AvailableSpace::Definite(w) => w,
-                _ => text_width,
-            };
+    let text_width = text.chars().count() as f32;
 
-            if text_width <= max_width {
-                return Size {
-                    width: text_width,
-                    height: 1.0,
-                };
-            }
+    let max_width = match available_space.width {
+        AvailableSpace::Definite(w) => w,
+        _ => text_width,
+    };
 
-            let words: Vec<&str> = text.split_whitespace().collect();
-            let mut lines = 1;
-            let mut current_width: f32 = 0.0;
-            let mut max_line_width: f32 = 0.0;
+    if text_width <= max_width {
+        return Size {
+            width: text_width,
+            height: 1.0,
+        };
+    }
 
-            for word in words {
-                let word_width = word.chars().count() as f32;
-                let needed_width = if current_width == 0.0 {
-                    word_width
-                } else {
-                    current_width + 1.0 + word_width
-                };
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut lines = 1;
+    let mut current_width: f32 = 0.0;
+    let mut max_line_width: f32 = 0.0;
 
-                if needed_width > max_width {
-                    lines += 1;
-                    max_line_width = max_line_width.max(current_width);
-                    current_width = word_width;
-                } else {
-                    current_width = needed_width;
-                }
-            }
+    for word in words {
+        let word_width = word.chars().count() as f32;
+        let needed_width = if current_width == 0.0 {
+            word_width
+        } else {
+            current_width + 1.0 + word_width
+        };
 
-            Size {
-                width: max_line_width.max(max_width),
-                height: lines as f32,
+        if needed_width > max_width {
+            lines += 1;
+            max_line_width = max_line_width.max(current_width);
+            current_width = word_width;
+        } else {
+            current_width = needed_width;
+        }
+    }
+
+    Size {
+        width: max_line_width.max(max_width),
+        height: lines as f32,
+    }
+}
+
+fn draw_background_at(x: f32, y: f32, w: f32, h: f32, bg: u32, tw: u16, th: u16) {
+    let mut cb = CURRENT_BUFFER.lock().unwrap();
+    let Some(ref mut buf) = *cb else { return };
+
+    let x_start = x as u16;
+    let y_start = y as u16;
+    let x_end = (x + w).min(tw as f32) as u16;
+    let y_end = (y + h).min(th as f32) as u16;
+
+    for row in y_start..y_end {
+        for col in x_start..x_end {
+            let idx = (tw * row + col) as usize * 3;
+            if idx + 2 < buf.len() {
+                buf[idx] = ' ' as u64;
+                buf[idx + 2] = bg as u64;
             }
         }
-        Some(NodeContext::Column) | Some(NodeContext::Row) => Size::ZERO,
-        _ => Size::ZERO,
+    }
+}
+
+fn draw_text_at(x: f32, y: f32, text: &str, fg: u32, bg: u32, tw: u16, th: u16) {
+    let mut cb = CURRENT_BUFFER.lock().unwrap();
+    let Some(ref mut buf) = *cb else { return };
+
+    let x_start = x as u16;
+    let y_row = y as u16;
+
+    if y_row >= th {
+        return;
+    }
+
+    for (i, ch) in text.chars().enumerate() {
+        let col = x_start + i as u16;
+        if col >= tw {
+            break;
+        }
+        let idx = (tw * y_row + col) as usize * 3;
+        // if idx + 2 < buf.len() {
+        buf[idx] = ch as u64;
+        buf[idx + 1] = fg as u64;
+        buf[idx + 2] = bg as u64;
+        // }
+    }
+}
+
+fn draw_border_at(
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    color: u32,
+    bg: u32,
+    style: BorderStyle,
+    tw: u16,
+    th: u16,
+) {
+    let mut cb = CURRENT_BUFFER.lock().unwrap();
+    let Some(ref mut buf) = *cb else { return };
+
+    let x_start = x as u16;
+    let y_start = y as u16;
+    let x_end = ((x + w) as u16).saturating_sub(1).min(tw.saturating_sub(1));
+    let y_end = ((y + h) as u16).saturating_sub(1).min(th.saturating_sub(1));
+
+    let (tl, tr, bl, br, h_line, v_line) = match style {
+        BorderStyle::Rounded => ('╭', '╮', '╰', '╯', '─', '│'),
+        BorderStyle::Squared => ('┌', '┐', '└', '┘', '─', '│'),
+        BorderStyle::None => return,
+    };
+
+    let set_cell = |buf: &mut Vec<u64>, col: u16, row: u16, ch: char| {
+        if col < tw && row < th {
+            let idx = (tw * row + col) as usize * 3;
+            // if idx + 2 < buf.len() {
+            buf[idx] = ch as u64;
+            buf[idx + 1] = color as u64;
+            buf[idx + 2] = bg as u64;
+            //
+        }
+    };
+
+    set_cell(buf, x_start, y_start, tl);
+    set_cell(buf, x_end, y_start, tr);
+    set_cell(buf, x_start, y_end, bl);
+    set_cell(buf, x_end, y_end, br);
+
+    for col in (x_start + 1)..x_end {
+        set_cell(buf, col, y_start, h_line);
+        set_cell(buf, col, y_end, h_line);
+    }
+    for row in (y_start + 1)..y_end {
+        set_cell(buf, x_start, row, v_line);
+        set_cell(buf, x_end, row, v_line);
+    }
+}
+
+fn draw_cursor_at(x: f32, y: f32, text_len: f32, fg: u32, bg: u32, tw: u16, th: u16) {
+    let mut cb = CURRENT_BUFFER.lock().unwrap();
+    let Some(ref mut buf) = *cb else { return };
+
+    let col = (x + text_len) as u16;
+    let row = y as u16;
+
+    if col < tw && row < th {
+        let idx = (tw * row + col) as usize * 3;
+        if idx + 2 < buf.len() {
+            buf[idx] = '█' as u64;
+            buf[idx + 1] = fg as u64;
+            buf[idx + 2] = bg as u64;
+        }
+    }
+}
+
+fn paint_taffy_node(
+    taffy: &TaffyTree<NodeContext>,
+    node_id: NodeId,
+    abs_x: f32,
+    abs_y: f32,
+    parent_fg: u32,
+    parent_bg: u32,
+    tw: u16,
+    th: u16,
+) {
+    let layout = taffy.layout(node_id).unwrap();
+    let x = abs_x + layout.location.x;
+    let y = abs_y + layout.location.y;
+    let w = layout.size.width;
+    let h = layout.size.height;
+
+    // Content box position (inside border + padding)
+    let content_x = abs_x + layout.content_box_x();
+    let content_y = abs_y + layout.content_box_y();
+
+    let (fg, bg) = match taffy.get_node_context(node_id) {
+        Some(NodeContext::Text { content, fg, bg }) => {
+            let fg = if *fg != 0 { *fg } else { parent_fg };
+            let bg = if *bg != 0 { *bg } else { parent_bg };
+            draw_background_at(x, y, w, h, bg, tw, th);
+            draw_text_at(content_x, content_y, content, fg, bg, tw, th);
+            (fg, bg)
+        }
+        Some(NodeContext::Button {
+            label,
+            fg,
+            bg,
+            border_color,
+            border_style,
+        }) => {
+            let fg = if *fg != 0 { *fg } else { parent_fg };
+            let bg = if *bg != 0 { *bg } else { parent_bg };
+            draw_background_at(x, y, w, h, bg, tw, th);
+            if *border_style != BorderStyle::None {
+                draw_border_at(x, y, w, h, *border_color, bg, *border_style, tw, th);
+            }
+            draw_text_at(content_x, content_y, label, fg, bg, tw, th);
+            (fg, bg)
+        }
+        Some(NodeContext::Input {
+            content,
+            fg,
+            bg,
+            border_color,
+            border_style,
+        }) => {
+            let fg = if *fg != 0 { *fg } else { parent_fg };
+            let bg = if *bg != 0 { *bg } else { parent_bg };
+            draw_background_at(x, y, w, h, bg, tw, th);
+            if *border_style != BorderStyle::None {
+                draw_border_at(x, y, w, h, *border_color, bg, *border_style, tw, th);
+            }
+            draw_text_at(content_x, content_y, content, fg, bg, tw, th);
+            draw_cursor_at(
+                content_x,
+                content_y,
+                content.chars().count() as f32,
+                fg,
+                bg,
+                tw,
+                th,
+            );
+            (fg, bg)
+        }
+        Some(NodeContext::Row {
+            fg,
+            bg,
+            border_color,
+            border_style,
+        })
+        | Some(NodeContext::Column {
+            fg,
+            bg,
+            border_color,
+            border_style,
+        }) => {
+            let fg = if *fg != 0 { *fg } else { parent_fg };
+            let bg = if *bg != 0 { *bg } else { parent_bg };
+            draw_background_at(x, y, w, h, bg, tw, th);
+            if *border_style != BorderStyle::None {
+                draw_border_at(x, y, w, h, *border_color, bg, *border_style, tw, th);
+            }
+            (fg, bg)
+        }
+        None => (parent_fg, parent_bg),
+    };
+
+    for child in taffy.children(node_id).unwrap() {
+        paint_taffy_node(taffy, child, x, y, fg, bg, tw, th);
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn calculate_layout(
-    pn: *const f32,
-    ln: u32,
-    pt: *const u8,
-    lt: u32,
-    width: f32,
-    height: f32,
-) -> c_int {
+pub extern "C" fn paint(pn: *const f32, ln: u32, pt: *const u8, lt: u32) -> c_int {
+    let term_size = TERMINAL_SIZE.lock().unwrap();
+    let (tw, th) = *term_size;
+
     let node_data = unsafe { slice::from_raw_parts(pn, ln as usize) };
     let text_data = unsafe { slice::from_raw_parts(pt, lt as usize) };
 
@@ -545,8 +819,8 @@ pub extern "C" fn calculate_layout(
 
     let mut root_styles = get_styles(&root_node);
     root_styles.size = Size {
-        width: length(width),
-        height: length(height),
+        width: length(tw),
+        height: length(th),
     };
 
     let context = node_type_to_context(&root_node);
@@ -557,8 +831,8 @@ pub extern "C" fn calculate_layout(
     let _ = taffy.compute_layout_with_measure(
         root,
         Size {
-            width: length(width),
-            height: length(height),
+            width: length(tw),
+            height: length(th),
         },
         |known_dimensions, available_space, node_id, node_context, style| {
             measure_function(
@@ -574,8 +848,13 @@ pub extern "C" fn calculate_layout(
     let mut frame_lock = FRAMES.lock().unwrap();
     let frames_vec = frame_lock.get_or_insert_with(Vec::new);
     frames_vec.clear();
-
     build_frames_array(&mut taffy, root, frames_vec, 0.0, 0.0);
+    drop(frame_lock);
+
+    let parent_fg = colors::DEFAULT.fg;
+    let parent_bg = colors::DEFAULT.bg;
+
+    paint_taffy_node(&taffy, root, 0.0, 0.0, parent_fg, parent_bg, tw, th);
 
     1
 }
