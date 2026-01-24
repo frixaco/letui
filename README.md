@@ -27,6 +27,7 @@ Simple TUI library written using Rust and TypeScript
   - **Expected result**: Paint phase from 1.7ms → ~0.1-0.2ms
 - [ ] Add scrollable containers
 
+- [ ] How to handle serialization of walls of text: https://ampcode.com/threads/T-019bdac3-ba03-745f-a3d3-c9d53bfa0648
 - [ ] Add render caching - skip serialize/layout if signals unchanged (pi-mono pattern)
 - [ ] Incremental tree updates - don't rebuild entire Taffy tree each frame, cache structure and update only changed nodes
 - [ ] Visibility culling - skip `paint()` for off-screen nodes (OpenTUI's `_getVisibleChildren` pattern)
