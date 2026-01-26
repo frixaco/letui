@@ -11,7 +11,70 @@ Simple TUI library written using Rust and TypeScript
 
 **TODO**:
 
-- [ ] Move paint to Rust (currently 81% of frame time @ 1.7ms avg)
+### Priority 0: Text Registry (FFI Optimization)
+
+**Goal**: Stop sending all text on every render. Register text once → get `u8` ID → pass only ID (1 byte) across FFI.
+
+**Rust side** (`lib.rs`):
+
+- Add `TextRegistry` struct: `slots: Vec<Option<String>>` (256 max), `free: Vec<u8>` (freelist)
+- FFI functions:
+  - `text_register(ptr, len) -> u8` — alloc slot, return ID (0 = failure/empty)
+  - `text_update(id, ptr, len) -> i32` — replace text at existing ID
+  - `text_free(id) -> i32` — return slot to freelist
+  - `text_clear() -> i32` — reset all (on quit)
+- In `paint()`: lock registry once at start, pass `&TextRegistry` down
+- Change node parsing: read `text_id` field (u8 stored as f32), resolve via `reg.get(id)`
+
+**TypeScript side** (`ffi.ts`, `runtime.ts`):
+
+- Add FFI symbols for `text_register`, `text_update`, `text_free`, `text_clear`
+- Create `TextIdRegistry` class:
+  - `byNodeId: Map<number, { id: number; last: string }>`
+  - `getOrCreate(nodeId, text)`: register if new, update if changed, return ID
+  - `freeNode(nodeId)`: reclaim ID when node unmounts
+- In serialization: replace `textLength` field with `textId`, remove `textData` concat
+- Track `prevNodeIds` vs `currentNodeIds` each frame → free disappeared nodes
+
+**Key details**:
+
+- `u8` IDs are exactly representable in `f32` (no Float32Array change needed)
+- ID 0 = empty/missing text (reserve slot 0)
+- Must free IDs on node removal (255 usable slots max)
+- Lock registry once per `paint()`, not per-node (perf)
+
+**Expected result**: FFI traffic O(changed texts) instead of O(all texts every frame)
+
+---
+
+### Priority 1: Scrollable Containers
+
+- [ ] Add `overflow: "hidden"` style prop → triggers clipping during paint
+- [ ] Add `scrollX`/`scrollY` signals per scrollable node
+- [ ] Pass scissor rect to Rust paint — skip cells outside bounds
+- [ ] Horizontal scrolling first, then vertical
+
+### Priority 2: Styled Text (Chunks)
+
+- [ ] `TextChunk` type: `{ text: string; fg?: number; bg?: number; bold?: boolean }`
+- [ ] Update `Text` component to accept `TextChunk[]` or plain string
+- [ ] Serialize chunks to Rust for rendering
+
+### Priority 3: Text Input
+
+- [ ] Single-line input improvements (cursor position, selection)
+- [ ] Multi-line text editor (builds on scrollable + input)
+
+### Priority 4: Syntax Highlighting
+
+- [ ] Tree-sitter integration (Rust bindings → FFI)
+- [ ] TextMate-compatible theme loading (like OpenTUI's `SyntaxStyle`)
+
+---
+
+### Performance & Other
+
+- [x] Move paint to Rust (currently 81% of frame time @ 1.7ms avg)
   - **Why**: Eliminates JS per-cell loops, staging buffer, and BigInt conversions
   - **New FFI function**: `paint(node_data, text_data, focused_id, pressed_id, colors...)`
   - **Rust side**:
@@ -32,7 +95,7 @@ Simple TUI library written using Rust and TypeScript
 - [ ] Incremental tree updates - don't rebuild entire Taffy tree each frame, cache structure and update only changed nodes
 - [ ] Visibility culling - skip `paint()` for off-screen nodes (OpenTUI's `_getVisibleChildren` pattern)
 
-- [ ] Neovim as text input
+- [ ] Neovim as text input (use [Bun PTY support](https://bun.com/docs/runtime/child-process#terminal-pty-support))
 - [ ] Will SIMD work if I wanna implement caching for serialization. For example, when comparing trees I used SIMD (idk what i'm talking about)
 - [ ] Refactor flush function with BatchWriter pattern to reduce nesting
   - BatchWriter struct holds stdout ref, char_seq, batch_start_x/y, prev_fg/bg
@@ -41,7 +104,7 @@ Simple TUI library written using Rust and TypeScript
   - `flush_pending()` emits MoveTo + Print for accumulated batch
   - Encapsulates all batching logic, main loop just calls push() for changed cells
 - [ ] Add performance stats overlay that update independently from rest of the app (can i use a separate thread?)
-- [ ] Add `flexGrow` support for dynamic width components (e.g., progress bars)
+- [x] Add `flexGrow` support for dynamic width components (e.g., progress bars)
   - **TypeScript side:**
     - Add `flexGrow?: number` to `StyleProps` in `types.ts`
     - Update `createStyleSignals()` in `components.ts` to include `flexGrow: $(input.flexGrow)`
