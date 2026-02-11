@@ -1,6 +1,6 @@
 {
   "name": "@frixaco/letui",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "module": "index.ts",
   "type": "module",
   "scripts": {
@@ -19,9 +19,9 @@
     "scripts/build-npm.ts"
   ],
   "optionalDependencies": {
-    "@frixaco/letui-darwin-arm64": "0.0.10",
-    "@frixaco/letui-linux-x64": "0.0.10",
-    "@frixaco/letui-win32-x64": "0.0.10"
+    "@frixaco/letui-darwin-arm64": "0.0.11",
+    "@frixaco/letui-linux-x64": "0.0.11",
+    "@frixaco/letui-win32-x64": "0.0.11"
   },
   "dependencies": {
     "bun-ffi-structs": "^0.1.2",
