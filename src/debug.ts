@@ -1,4 +1,4 @@
-const logFile = Bun.file("logs.txt");
+const logFile = Bun.file("dump/logs.txt");
 export const logWriter = logFile.writer();
 
 export function log(txt: string, ...args: string[]) {
