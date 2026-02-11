@@ -1,6 +1,6 @@
 {
   "name": "@frixaco/letui",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "module": "index.ts",
   "type": "module",
   "scripts": {
@@ -15,9 +15,9 @@
   },
   "files": ["index.ts", "src/**/*.ts", "scripts/build-npm.ts"],
   "optionalDependencies": {
-    "@frixaco/letui-darwin-arm64": "0.0.9",
-    "@frixaco/letui-linux-x64": "0.0.9",
-    "@frixaco/letui-win32-x64": "0.0.9"
+    "@frixaco/letui-darwin-arm64": "0.0.10",
+    "@frixaco/letui-linux-x64": "0.0.10",
+    "@frixaco/letui-win32-x64": "0.0.10"
   },
   "dependencies": {
     "@opentui": "github:anomalyco/opentui",
