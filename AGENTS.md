@@ -1,6 +1,6 @@
 # Project information
 
-This is a simple and minimal TUI library written in Rust and TypeScript.
+This is a TUI library written in Rust and TypeScript.
 The core backend for the library is written in Rust for maximum performance.
 The API/wrapper for the library is written in TypeScript for acccess to a wide ecosystem.
 Communication with Rust backend is achieved thanks to Bun's FFI support.

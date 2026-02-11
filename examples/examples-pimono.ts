@@ -19,7 +19,7 @@ import {
   endFrame,
   saveMetrics,
   resetMetrics,
-} from "./metrics";
+} from "@/metrics";
 
 // --- Metrics state ---
 let frameStartTime = 0;
@@ -328,7 +328,7 @@ class TorrentApp implements Component {
       this.ui.requestRender();
     } else if (matchesKey(data, "q") || data === "\x03") {
       // q or Ctrl+C - quit
-      saveMetrics("metrics-pimono.txt");
+      saveMetrics("dump/metrics-pimono.txt");
       this.ui.stop();
       process.exit(0);
     }

@@ -9,7 +9,7 @@ function getLibraryPath(): string {
   const { platform, arch } = process;
 
   const localPath = fileURLToPath(
-    new URL(`./letui-ffi/target/release/${filename}`, import.meta.url),
+    new URL(`../letui-ffi/target/release/${filename}`, import.meta.url),
   );
 
   console.log("Attempting to load local build from:", localPath);

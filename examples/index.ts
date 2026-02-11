@@ -4,11 +4,11 @@
 // - Keyboard navigation (j/k/h/l)
 
 import { existsSync } from "fs";
-import { COLORS } from "./colors";
-import { Button, Column, Input, Row, run, onKey } from "./components";
+import { COLORS } from "@/colors";
+import { Button, Column, Input, Row, run, onKey } from "@/components";
 import { LoadingBar } from "./progress-bar";
-import { $, ff, whenSettled } from "./signals";
-import { saveMetrics } from "./metrics";
+import { $, ff, whenSettled } from "@/signals";
+import { saveMetrics } from "@/metrics";
 
 // --- Types ---
 type ScrapeResultItem = {
@@ -183,7 +183,7 @@ onKey("h", () => selectFirst());
 onKey("\x1b[D", () => selectFirst()); // Arrow Left - jump to start
 
 onKey("q", () => {
-  saveMetrics("metrics-letui.txt");
+  saveMetrics("dump/metrics-letui.txt");
   app.quit();
 });
 

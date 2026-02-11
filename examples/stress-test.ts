@@ -1,13 +1,16 @@
 const args = Bun.argv.slice(2);
-const width = parseInt(args[0], 10) || 32;
-const height = parseInt(args[1], 10) || 32;
-const iterations = parseInt(args[2], 10) || 1000;
+const width = parseInt(args[0]!, 10) || 32;
+const height = parseInt(args[1]!, 10) || 32;
+const iterations = parseInt(args[2]!, 10) || 1000;
 
-const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+";
+const chars =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+";
 
 const randomInt = (max: number) => Math.floor(Math.random() * max);
 
-console.log(`Running test: ${width}x${height} characters for ${iterations} frames...`);
+console.log(
+  `Running test: ${width}x${height} characters for ${iterations} frames...`,
+);
 
 const start = Bun.nanoseconds();
 

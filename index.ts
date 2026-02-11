@@ -1,6 +1,5 @@
-export * from "./components";
-export * from "./colors";
-export * from "./signals";
-export * from "./runtime";
-// We probably don't export ffi directly, or maybe we do if users need low level access
-// But components usually abstract it.
+export * from "./src/components";
+export * from "./src/colors";
+export * from "./src/signals";
+export * from "./src/runtime";
+// TODO: export ffi for low level access?

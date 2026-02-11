@@ -620,7 +620,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     api.deinit_letui();
     if (options?.debug) {
       const stats = formatMetrics();
-      Bun.write("metrics.txt", stats + "\n");
+      Bun.write("dump/metrics.txt", stats + "\n");
       console.log(stats);
       logWriter.flush();
     }

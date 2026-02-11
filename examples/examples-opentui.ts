@@ -15,7 +15,7 @@ import {
   endFrame,
   saveMetrics,
   resetMetrics,
-} from "./metrics";
+} from "@/metrics";
 
 // --- Metrics state ---
 let frameStartTime = 0;
@@ -320,7 +320,7 @@ async function main() {
           selectCurrent();
           break;
         case "q":
-          saveMetrics("metrics-opentui.txt");
+          saveMetrics("dump/metrics-opentui.txt");
           renderer.destroy();
           process.exit(0);
           break;

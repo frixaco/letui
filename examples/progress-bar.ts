@@ -1,7 +1,7 @@
-import { Row, Text } from "./components";
-import { $, ff } from "./signals";
-import type { Node } from "./types";
-import { log } from "./debug";
+import { Row, Text } from "@/components";
+import { $, ff } from "@/signals";
+import type { Node } from "@/types";
+import { log } from "@/debug";
 
 export type LoadingBarProps = {
   dotColor: number;

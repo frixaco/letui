@@ -2,7 +2,7 @@
 
 https://github.com/user-attachments/assets/a84f8b6c-86fd-4f42-9ec8-84edd24c7abd
 
-Simple TUI library written using Rust and TypeScript
+TUI library written using Rust and TypeScript
 
 **Core dependencies**:
 
@@ -15,7 +15,7 @@ Simple TUI library written using Rust and TypeScript
 
 **Goal**: Stop sending all text on every render. Register text once → get `u8` ID → pass only ID (1 byte) across FFI.
 
-**Rust side** (`lib.rs`):
+**Rust side**:
 
 - Add `TextRegistry` struct: `slots: Vec<Option<String>>` (256 max), `free: Vec<u8>` (freelist)
 - FFI functions:
@@ -26,7 +26,7 @@ Simple TUI library written using Rust and TypeScript
 - In `paint()`: lock registry once at start, pass `&TextRegistry` down
 - Change node parsing: read `text_id` field (u8 stored as f32), resolve via `reg.get(id)`
 
-**TypeScript side** (`ffi.ts`, `runtime.ts`):
+**TypeScript side**:
 
 - Add FFI symbols for `text_register`, `text_update`, `text_free`, `text_clear`
 - Create `TextIdRegistry` class:
@@ -106,9 +106,9 @@ Simple TUI library written using Rust and TypeScript
 - [ ] Add performance stats overlay that update independently from rest of the app (can i use a separate thread?)
 - [x] Add `flexGrow` support for dynamic width components (e.g., progress bars)
   - **TypeScript side:**
-    - Add `flexGrow?: number` to `StyleProps` in `types.ts`
-    - Update `createStyleSignals()` in `components.ts` to include `flexGrow: $(input.flexGrow)`
-    - Update serialization in `runtime.ts` to pass `flexGrow` value to Rust (add to `FIELDS_PER_NODE`)
+    - Add `flexGrow?: number` to `StyleProps` in `src/types.ts`
+    - Update `createStyleSignals()` in `src/components.ts` to include `flexGrow: $(input.flexGrow)`
+    - Update serialization in `src/runtime.ts` to pass `flexGrow` value to Rust (add to `FIELDS_PER_NODE`)
   - **Rust side:**
     - Increment `FIELDS_PER_NODE` from 12 to 13 in `lib.rs`
     - Add `flex_grow: f32` field to `Node` struct
