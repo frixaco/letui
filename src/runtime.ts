@@ -3,7 +3,7 @@ import { COLORS } from "./colors";
 import api from "./ffi";
 import { $, ff, type Signal } from "./signals";
 import { getFocusedNode } from "./components";
-import type { Node, BorderStyle } from "./types";
+import type { Node } from "./types";
 import {
   startFrame,
   endFrame,
@@ -16,20 +16,10 @@ import {
 } from "./metrics";
 import { logWriter } from "./debug";
 
-// =============================================================================
-// TYPES
-// =============================================================================
-
 export type RunOptions = {
   debug?: boolean;
 };
 
-// =============================================================================
-// STATE
-// =============================================================================
-
-let buffer: BigUint64Array;
-let stagingBuffer: Uint32Array = null!; // Staging buffer for batched setCell writes
 let terminalWidth: Signal<number>;
 let terminalHeight: Signal<number>;
 let spatialLookup: (number | undefined)[];
@@ -39,24 +29,11 @@ let pressedNodeId: number | null = null;
 let isRunning = false;
 let quitFn: (() => void) | null = null;
 
-// =============================================================================
-// HELPERS
-// =============================================================================
-
-function getBuffer(): BigUint64Array {
-  const bufPtr = api.get_buffer_ptr()!;
-  const bufLen = Number(api.get_buffer_len()!);
-  return new BigUint64Array(toArrayBuffer(bufPtr as Pointer, 0, bufLen * 8));
-}
 
 function getNodeAt(x: number, y: number): Node | undefined {
   const id = spatialLookup[y * terminalWidth() + x];
   return id !== undefined ? nodeRegistry.get(id) : undefined;
 }
-
-// =============================================================================
-// SERIALIZATION
-// =============================================================================
 
 const FIELDS_PER_NODE = 13;
 
@@ -142,7 +119,6 @@ function serialize(root: Node): {
     nodeData[offset++] = textLength;
     nodeData[offset++] = flexGrow;
 
-    // Recurse into children
     for (const child of children) {
       serializeNode(child);
     }
@@ -154,10 +130,6 @@ function serialize(root: Node): {
 
   return { nodeData, textData };
 }
-
-// =============================================================================
-// LAYOUT (reads frames from Rust after paint computes layout)
-// =============================================================================
 
 function updateNodeFrames(root: Node): void {
   const framesPtr = api.get_frames_ptr()!;
@@ -187,216 +159,6 @@ function updateNodeFrames(root: Node): void {
 
   updateFrames(root);
 }
-
-// =============================================================================
-// DRAWING HELPERS
-// =============================================================================
-
-// Write to staging buffer (no BigInt conversion)
-// function setCell(offset: number, char: string, fg: number, bg: number): void {
-//   stagingBuffer[offset] = char.codePointAt(0)!;
-//   stagingBuffer[offset + 1] = fg;
-//   stagingBuffer[offset + 2] = bg;
-// }
-
-// Flush staging buffer to BigUint64Array in one pass
-// function flushStagingBuffer(): void {
-//   const len = stagingBuffer.length;
-//   for (let i = 0; i < len; i++) {
-//     buffer[i] = BigInt(stagingBuffer[i]!);
-//   }
-// }
-
-// function drawBackground(node: Node, bg: number): void {
-//   const tw = terminalWidth();
-//   const { x, y, width, height } = node.frame;
-//
-//   for (let row = y; row < y + height; row++) {
-//     for (let col = x; col < x + width; col++) {
-//       setCell((row * tw + col) * 3, " ", COLORS.default.fg, bg);
-//     }
-//   }
-// }
-//
-// function drawBorder(
-//   node: Node,
-//   style: BorderStyle,
-//   fg: number,
-//   bg: number,
-// ): void {
-//   const tw = terminalWidth();
-//   const { x, y, width, height } = node.frame;
-//
-//   const topLeft = y * tw + x;
-//   const topRight = topLeft + width - 1;
-//   const bottomLeft = topLeft + (height - 1) * tw;
-//   const bottomRight = bottomLeft + width - 1;
-//
-//   // Corners
-//   const [tl, tr, bl, br] =
-//     style === "square" ? ["┌", "┐", "└", "┘"] : ["╭", "╮", "╰", "╯"];
-//
-//   setCell(topLeft * 3, tl, fg, bg);
-//   setCell(topRight * 3, tr, fg, bg);
-//   setCell(bottomLeft * 3, bl, fg, bg);
-//   setCell(bottomRight * 3, br, fg, bg);
-//
-//   // Horizontal edges
-//   for (let i = 1; i < width - 1; i++) {
-//     setCell((topLeft + i) * 3, "─", fg, bg);
-//     setCell((bottomLeft + i) * 3, "─", fg, bg);
-//   }
-//
-//   // Vertical edges
-//   for (let i = 1; i < height - 1; i++) {
-//     setCell((topLeft + i * tw) * 3, "│", fg, bg);
-//     setCell((topRight + i * tw) * 3, "│", fg, bg);
-//   }
-// }
-//
-// function drawText(node: Node, text: string, fg: number, bg: number): void {
-//   const tw = terminalWidth();
-//   const { x, y } = node.frame;
-//
-//   const padding = node.props.padding?.() ?? 0;
-//   let paddingX: number, paddingY: number;
-//   if (typeof padding === "string") {
-//     [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
-//   } else {
-//     paddingX = paddingY = padding;
-//   }
-//
-//   const border = node.props.border?.();
-//   const borderOffset = border ? 1 : 0;
-//
-//   const startX = x + paddingX + borderOffset;
-//   const startY = y + paddingY + borderOffset;
-//
-//   let col = 0;
-//   for (const char of text) {
-//     const offset = (startY * tw + startX + col) * 3;
-//     setCell(offset, char, fg, bg);
-//     col++;
-//   }
-// }
-//
-// function drawCursor(
-//   node: Node,
-//   textLength: number,
-//   fg: number,
-//   bg: number,
-// ): void {
-//   const tw = terminalWidth();
-//   const { x, y } = node.frame;
-//
-//   const padding = node.props.padding?.() ?? 0;
-//   let paddingX: number, paddingY: number;
-//   if (typeof padding === "string") {
-//     [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
-//   } else {
-//     paddingX = paddingY = padding;
-//   }
-//
-//   const border = node.props.border?.();
-//   const borderOffset = border ? 1 : 0;
-//
-//   const cursorX = x + paddingX + borderOffset + textLength;
-//   const cursorY = y + paddingY + borderOffset;
-//
-//   const offset = (cursorY * tw + cursorX) * 3;
-//   setCell(offset, "▌", fg, bg);
-// }
-//
-// function registerHit(node: Node): void {
-//   const tw = terminalWidth();
-//   const { x, y, width, height } = node.frame;
-//
-//   for (let row = y; row < y + height; row++) {
-//     for (let col = x; col < x + width; col++) {
-//       spatialLookup[row * tw + col] = node.id;
-//     }
-//   }
-// }
-
-// =============================================================================
-// PAINT
-// =============================================================================
-
-// function paint(node: Node, overrideBg: number): void {
-//   // Register in nodeRegistry for hit testing
-//   nodeRegistry.set(node.id, node);
-//
-//   const bg = node.props.background?.() ?? overrideBg;
-//   const fg = node.props.foreground?.() ?? COLORS.default.fg;
-//   const border = node.props.border?.();
-//
-//   // Draw background
-//   drawBackground(node, bg);
-//
-//   // Draw border
-//   if (border) {
-//     const isFocused = node.isFocused();
-//     const borderFg = isFocused ? COLORS.default.green : border.color;
-//     drawBorder(node, border.style, borderFg, bg);
-//   }
-//
-//   // Type-specific rendering
-//   if (node.type === "text") {
-//     const text = (node.props as any).text?.() ?? "";
-//     drawText(node, text, fg, bg);
-//   }
-//
-//   if (node.type === "input") {
-//     const isFocused = node.isFocused();
-//     const text = (node.props as any).text?.() ?? "";
-//     const placeholder = (node.props as any).placeholder?.() ?? "";
-//     const displayText = text || placeholder;
-//     const displayFg = text ? fg : COLORS.default.grey;
-//
-//     drawText(node, displayText, displayFg, bg);
-//
-//     // Show cursor if focused
-//     if (isFocused) {
-//       drawCursor(node, text.length, fg, bg);
-//     }
-//
-//     registerHit(node);
-//   }
-//
-//   if (node.type === "button") {
-//     const isPressed = pressedNodeId === node.id;
-//     const isFocused = node.isFocused();
-//     const text = (node.props as any).text?.() ?? "";
-//
-//     // Invert colors when pressed
-//     const drawBg = isPressed ? fg : bg;
-//     const drawFg = isPressed ? bg : fg;
-//
-//     // Redraw background with correct color for pressed state
-//     if (isPressed) {
-//       drawBackground(node, drawBg);
-//     }
-//
-//     // Redraw border with focus indicator
-//     if (border) {
-//       const borderFg = isFocused ? COLORS.default.green : border.color;
-//       drawBorder(node, border.style, borderFg, drawBg);
-//     }
-//
-//     drawText(node, text, drawFg, drawBg);
-//     registerHit(node);
-//   }
-//
-//   // Recurse into children
-//   const children = node.children?.() ?? [];
-//   for (const child of children) {
-//     paint(child, bg);
-//   }
-// }
-
-// =============================================================================
-// INPUT HANDLING
-// =============================================================================
 
 function dispatchToNode(node: Node, data: string): boolean {
   if (node.type === "input") {
@@ -503,20 +265,18 @@ function handleMouseEvent(data: string): void {
   }
 }
 
-function handleInput(data: string, options?: RunOptions): void {
+function handleInput(data: string, _options?: RunOptions): void {
   // Ctrl+Q to quit
   if (data === "\x11") {
     quitFn?.();
     return;
   }
 
-  // Mouse events
   if (data.startsWith("\x1b[<")) {
     handleMouseEvent(data);
     return;
   }
 
-  // Keyboard events
   handleKeyboardEvent(data);
 }
 
@@ -526,18 +286,12 @@ function handleResize(): void {
   // Reallocate buffer BEFORE updating signals (which trigger render)
   api.free_buffer();
   api.init_buffer();
-  buffer = getBuffer();
-  stagingBuffer = new Uint32Array(buffer.length);
 
   // Now update signals - this triggers render with correct buffer
   terminalWidth(api.get_width());
   terminalHeight(api.get_height());
   spatialLookup = new Array(terminalWidth() * terminalHeight());
 }
-
-// =============================================================================
-// PUBLIC API
-// =============================================================================
 
 export function onKey(key: string, callback: () => void): void {
   if (!globalKeyHandlers) {
@@ -550,8 +304,6 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   // 1. Initialize terminal (Rust side) - MUST be first to set TERMINAL_SIZE
   api.init_buffer();
   api.init_letui();
-  buffer = getBuffer();
-  stagingBuffer = new Uint32Array(buffer.length);
 
   // 2. Initialize state (after init_buffer so terminal size is available)
   terminalWidth = $(api.get_width());
@@ -563,8 +315,8 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   isRunning = true;
 
   // 3. Setup stdin for keyboard/mouse input
-  process.stdin.resume();
-  process.stdin.setRawMode(true);
+  // process.stdin.resume();
+  // process.stdin.setRawMode(true);
   process.stdin.on("data", (data) => handleInput(data.toString(), options));
 
   // 4. Setup resize handler
@@ -618,6 +370,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     isRunning = false;
     api.free_buffer();
     api.deinit_letui();
+    // process.stdin.setRawMode(false);
     if (options?.debug) {
       const stats = formatMetrics();
       Bun.write("dump/metrics.txt", stats + "\n");

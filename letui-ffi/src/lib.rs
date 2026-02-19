@@ -9,8 +9,7 @@ use crossterm::{
     execute, queue,
     style::{Color, Print, SetBackgroundColor, SetForegroundColor},
     terminal::{
-        BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate, EnterAlternateScreen,
-        LeaveAlternateScreen, enable_raw_mode, size,
+        BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode, size
     },
 };
 use std::{
@@ -61,6 +60,7 @@ pub extern "C" fn init_letui() -> c_int {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn deinit_letui() -> c_int {
+    disable_raw_mode().unwrap();
     execute!(stdout(), LeaveAlternateScreen).unwrap();
     1
 }
@@ -678,7 +678,16 @@ fn draw_border_at(
     }
 }
 
-fn draw_cursor_at(buf: &mut [u64], x: f32, y: f32, text_len: f32, fg: u32, bg: u32, tw: u16, th: u16) {
+fn draw_cursor_at(
+    buf: &mut [u64],
+    x: f32,
+    y: f32,
+    text_len: f32,
+    fg: u32,
+    bg: u32,
+    tw: u16,
+    th: u16,
+) {
     let col = (x + text_len) as u16;
     let row = y as u16;
 

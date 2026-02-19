@@ -1,5 +1,5 @@
-1687fps | 0.6ms avg (0.2-2.3, p99:2.3) | 40MB | 81 frames
-  serialize: 0.1ms (0-0.5)
-  rust:      0.2ms (0.1-0.5) [layout+paint]
-  sync:      0ms (0-0.2) [frames→JS]
-  flush:     0.2ms (0.1-1.7) [terminal I/O]
+1433fps | 0.7ms avg (0.3-2.9, p99:2.9) | 8MB | 24 frames
+serialize: 0.2ms (0.1-0.5)
+rust:      0.2ms (0.1-0.6) [layout+paint]
+sync:      0.1ms (0-0.3) [frames→JS]
+flush:     0.2ms (0.1-2.2) [terminal I/O]
