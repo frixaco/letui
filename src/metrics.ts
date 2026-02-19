@@ -60,14 +60,30 @@ interface Stats {
   p99: number;
 }
 
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return sorted[0]!;
+
+  const clamped = Math.max(0, Math.min(1, p));
+  const rank = clamped * (sorted.length - 1);
+  const lower = Math.floor(rank);
+  const upper = Math.ceil(rank);
+
+  if (lower === upper) return sorted[lower]!;
+
+  const weight = rank - lower;
+  const lowValue = sorted[lower]!;
+  const highValue = sorted[upper]!;
+  return lowValue + (highValue - lowValue) * weight;
+}
+
 function calculateStats(times: number[]): Stats {
   if (times.length === 0) return { avg: 0, min: 0, max: 0, p99: 0 };
   const sorted = [...times].sort((a, b) => a - b);
   const avg = times.reduce((a, b) => a + b, 0) / times.length;
   const min = sorted[0]!;
   const max = sorted[sorted.length - 1]!;
-  const p99Idx = Math.floor(sorted.length * 0.99);
-  const p99 = sorted[p99Idx] ?? max;
+  const p99 = percentile(sorted, 0.99);
   return { avg, min, max, p99 };
 }
 
