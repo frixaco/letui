@@ -24,11 +24,11 @@ let terminalWidth: Signal<number>;
 let terminalHeight: Signal<number>;
 let spatialLookup: (number | undefined)[];
 let nodeRegistry: Map<number, Node>;
+let textRegistry: Map<number, string>;
 let globalKeyHandlers: Map<string, () => void>;
 let pressedNodeId: number | null = null;
 let isRunning = false;
 let quitFn: (() => void) | null = null;
-
 
 function getNodeAt(x: number, y: number): Node | undefined {
   const id = spatialLookup[y * terminalWidth() + x];
@@ -36,6 +36,18 @@ function getNodeAt(x: number, y: number): Node | undefined {
 }
 
 const FIELDS_PER_NODE = 12;
+const EMPTY_TEXT_PAYLOAD = new Uint8Array(1);
+const textEncoder = new TextEncoder();
+
+function upsertText(nodeId: number, text: string): void {
+  const encoded = textEncoder.encode(text);
+  const payload = encoded.length > 0 ? encoded : EMPTY_TEXT_PAYLOAD;
+  api.upsert_text(nodeId, payload, encoded.length);
+}
+
+function deleteText(nodeId: number): void {
+  api.delete_text(nodeId);
+}
 
 function countNodes(node: Node): number {
   const children = node.children?.() ?? [];
@@ -44,11 +56,10 @@ function countNodes(node: Node): number {
 
 function serialize(root: Node): {
   nodeData: Float32Array;
-  textData: Uint8Array;
 } {
   const nodeCount = countNodes(root);
   const nodeData = new Float32Array(nodeCount * FIELDS_PER_NODE);
-  const texts: string[] = [];
+  const nextTextRegistry = new Map<number, string>();
 
   let offset = 0;
 
@@ -97,11 +108,11 @@ function serialize(root: Node): {
       node.type === "button"
     ) {
       textContent = (node.props as any).text?.() ?? "";
-    }
-    const textLength = new TextEncoder().encode(textContent).length; // Byte length for Rust
+      nextTextRegistry.set(node.id, textContent);
 
-    if (textContent) {
-      texts.push(textContent);
+      if (textRegistry.get(node.id) !== textContent) {
+        upsertText(node.id, textContent);
+      }
     }
 
     // Write 12 fields
@@ -125,9 +136,14 @@ function serialize(root: Node): {
 
   serializeNode(root);
 
-  const textData = new TextEncoder().encode(texts.join(""));
+  for (const id of textRegistry.keys()) {
+    if (!nextTextRegistry.has(id)) {
+      deleteText(id);
+    }
+  }
+  textRegistry = nextTextRegistry;
 
-  return { nodeData, textData };
+  return { nodeData };
 }
 
 function updateNodeFrames(root: Node): void {
@@ -303,12 +319,14 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   // 1. Initialize terminal (Rust side) - MUST be first to set TERMINAL_SIZE
   api.init_buffer();
   api.init_letui();
+  api.clear_text_registry();
 
   // 2. Initialize state (after init_buffer so terminal size is available)
   terminalWidth = $(api.get_width());
   terminalHeight = $(api.get_height());
   globalKeyHandlers = globalKeyHandlers ?? new Map();
   nodeRegistry = new Map();
+  textRegistry = new Map();
   spatialLookup = new Array(terminalWidth() * terminalHeight());
   pressedNodeId = null;
   isRunning = true;
@@ -337,17 +355,16 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
 
     // Phase 1: Serialize node tree to flat arrays
     const serializeStart = options?.debug ? startPhase() : 0;
-    const { nodeData, textData } = serialize(root);
+    const { nodeData } = serialize(root);
     if (options?.debug) endSerialize(serializeStart);
 
     // Phase 2: Rust FFI (taffy layout + buffer paint)
     const rustStart = options?.debug ? startPhase() : 0;
-    const safeTextData = textData.length > 0 ? textData : new Uint8Array(1);
     api.paint(
       ptr(nodeData),
       nodeData.length,
-      ptr(safeTextData),
-      textData.length,
+      ptr(EMPTY_TEXT_PAYLOAD),
+      0,
     );
     if (options?.debug) endRust(rustStart);
 
@@ -367,6 +384,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   // 6. Create and store quit function
   quitFn = () => {
     isRunning = false;
+    api.clear_text_registry();
     api.free_buffer();
     api.deinit_letui();
     // process.stdin.setRawMode(false);

@@ -51,7 +51,18 @@ const { symbols: api } = dlopen(path, {
     args: [],
     returns: "u64",
   },
-
+  upsert_text: {
+    args: ["u32", "buffer", "u32"],
+    returns: "i32",
+  },
+  delete_text: {
+    args: ["u32"],
+    returns: "i32",
+  },
+  clear_text_registry: {
+    args: [],
+    returns: "i32",
+  },
   paint: {
     args: ["pointer", "u32", "pointer", "u32"],
     returns: "i32",

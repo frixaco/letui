@@ -296,6 +296,38 @@ pub extern "C" fn update_terminal_size() -> c_int {
     1
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn upsert_text(node_id: u32, text_ptr: *const u8, text_len: u32) -> c_int {
+    if text_len > 0 && text_ptr.is_null() {
+        return 0;
+    }
+
+    let bytes: &[u8] = if text_len == 0 {
+        &[]
+    } else {
+        unsafe { slice::from_raw_parts(text_ptr, text_len as usize) }
+    };
+    let text = String::from_utf8_lossy(bytes).into_owned();
+
+    let mut registry = TEXT_REGISTRY.lock().unwrap();
+    registry.insert(node_id, text);
+    1
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn delete_text(node_id: u32) -> c_int {
+    let mut registry = TEXT_REGISTRY.lock().unwrap();
+    registry.remove(&node_id);
+    1
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn clear_text_registry() -> c_int {
+    let mut registry = TEXT_REGISTRY.lock().unwrap();
+    registry.clear();
+    1
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum NodeType {
     Row = 1,
@@ -384,7 +416,11 @@ fn parse_node(
         ));
     }
 
-    let text = reg.get(&node_id).cloned().unwrap_or_default();
+    let text = if matches!(node_type, NodeType::Text | NodeType::Button | NodeType::Input) {
+        reg.get(&node_id).cloned().unwrap_or_default()
+    } else {
+        String::new()
+    };
     Node {
         node_type,
         gap,
@@ -827,7 +863,7 @@ fn paint_taffy_node(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn paint(pn: *const f32, ln: u32, pt: *const u8, lt: u32) -> c_int {
+pub extern "C" fn paint(pn: *const f32, ln: u32, _pt: *const u8, _lt: u32) -> c_int {
     let term_size = TERMINAL_SIZE.lock().unwrap();
     let text_registry = TEXT_REGISTRY.lock().unwrap();
     let (tw, th) = *term_size;
