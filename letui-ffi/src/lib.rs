@@ -499,10 +499,18 @@ fn parse_node(
 
     let mut children = Vec::with_capacity(child_count);
     for _ in 0..child_count {
-        children.push(parse_node(node_data, node_offset, text_registry, style_registry)?);
+        children.push(parse_node(
+            node_data,
+            node_offset,
+            text_registry,
+            style_registry,
+        )?);
     }
 
-    let text = if matches!(node_type, NodeType::Text | NodeType::Button | NodeType::Input) {
+    let text = if matches!(
+        node_type,
+        NodeType::Text | NodeType::Button | NodeType::Input
+    ) {
         text_registry.get(&node_id).cloned().unwrap_or_default()
     } else {
         String::new()
@@ -679,6 +687,43 @@ enum NodeContext {
     },
 }
 
+fn measure_wrapped_text(text: &str, max_cols: Option<u16>) -> (u16, u16) {
+    if text.is_empty() {
+        return (0, 1);
+    }
+
+    let mut line_width: u16 = 0;
+    let mut max_line_width: u16 = 0;
+    let mut line_count: u16 = 1;
+    let wrap_cols = max_cols.filter(|cols| *cols > 0);
+
+    for ch in text.chars() {
+        if ch == '\r' {
+            continue;
+        }
+
+        if ch == '\n' {
+            max_line_width = max_line_width.max(line_width);
+            line_count = line_count.saturating_add(1);
+            line_width = 0;
+            continue;
+        }
+
+        if let Some(cols) = wrap_cols {
+            if line_width >= cols {
+                max_line_width = max_line_width.max(line_width);
+                line_count = line_count.saturating_add(1);
+                line_width = 0;
+            }
+        }
+
+        line_width = line_width.saturating_add(1);
+    }
+
+    max_line_width = max_line_width.max(line_width);
+    (max_line_width, line_count)
+}
+
 fn measure_function(
     known_dimensions: Size<Option<f32>>,
     available_space: Size<AvailableSpace>,
@@ -702,45 +747,34 @@ fn measure_function(
         None => return Size::ZERO,
     };
 
-    let text_width = text.chars().count() as f32;
-
     let max_width = match available_space.width {
-        AvailableSpace::Definite(w) => w,
-        _ => text_width,
+        AvailableSpace::Definite(w) => w.max(0.0).floor(),
+        _ => f32::INFINITY,
     };
 
-    if text_width <= max_width {
+    if max_width == 0.0 {
         return Size {
-            width: text_width,
+            width: 0.0,
             height: 1.0,
         };
     }
 
-    let words: Vec<&str> = text.split_whitespace().collect();
-    let mut lines = 1;
-    let mut current_width: f32 = 0.0;
-    let mut max_line_width: f32 = 0.0;
+    let wrap_cols = if max_width.is_finite() {
+        Some(max_width.min(u16::MAX as f32) as u16)
+    } else {
+        None
+    };
 
-    for word in words {
-        let word_width = word.chars().count() as f32;
-        let needed_width = if current_width == 0.0 {
-            word_width
-        } else {
-            current_width + 1.0 + word_width
-        };
-
-        if needed_width > max_width {
-            lines += 1;
-            max_line_width = max_line_width.max(current_width);
-            current_width = word_width;
-        } else {
-            current_width = needed_width;
-        }
-    }
+    let (line_width, line_count) = measure_wrapped_text(text, wrap_cols);
+    let width = if let Some(cols) = wrap_cols {
+        line_width.min(cols) as f32
+    } else {
+        line_width as f32
+    };
 
     Size {
-        width: max_line_width.max(max_width),
-        height: lines as f32,
+        width,
+        height: line_count as f32,
     }
 }
 
@@ -761,23 +795,60 @@ fn draw_background_at(buf: &mut [u64], x: f32, y: f32, w: f32, h: f32, bg: u32, 
     }
 }
 
-fn draw_text_at(buf: &mut [u64], x: f32, y: f32, text: &str, fg: u32, bg: u32, tw: u16, th: u16) {
-    let x_start = x as u16;
-    let y_row = y as u16;
+fn draw_text_at(
+    buf: &mut [u64],
+    x: f32,
+    y: f32,
+    max_w: f32,
+    max_h: f32,
+    text: &str,
+    fg: u32,
+    bg: u32,
+    tw: u16,
+    th: u16,
+) {
+    let x_start = x.max(0.0) as u16;
+    let y_start = y.max(0.0) as u16;
+    let max_cols = max_w.max(0.0).floor().min(u16::MAX as f32) as u16;
+    let max_rows = max_h.max(0.0).floor().min(u16::MAX as f32) as u16;
 
-    if y_row >= th {
+    if x_start >= tw || y_start >= th || max_cols == 0 || max_rows == 0 {
         return;
     }
 
-    for (i, ch) in text.chars().enumerate() {
-        let col = x_start + i as u16;
-        if col >= tw {
+    let x_end = x_start.saturating_add(max_cols).min(tw);
+    let y_end = y_start.saturating_add(max_rows).min(th);
+    let mut col = x_start;
+    let mut row = y_start;
+
+    for ch in text.chars() {
+        if row >= y_end {
             break;
         }
-        let idx = (tw * y_row + col) as usize * 3;
+
+        if ch == '\r' {
+            continue;
+        }
+
+        if ch == '\n' {
+            row = row.saturating_add(1);
+            col = x_start;
+            continue;
+        }
+
+        if col >= x_end {
+            row = row.saturating_add(1);
+            col = x_start;
+            if row >= y_end {
+                break;
+            }
+        }
+
+        let idx = (tw * row + col) as usize * 3;
         buf[idx] = ch as u64;
         buf[idx + 1] = fg as u64;
         buf[idx + 2] = bg as u64;
+        col = col.saturating_add(1);
     }
 }
 
@@ -832,22 +903,64 @@ fn draw_cursor_at(
     buf: &mut [u64],
     x: f32,
     y: f32,
-    text_len: f32,
+    max_w: f32,
+    max_h: f32,
+    text: &str,
     fg: u32,
     bg: u32,
     tw: u16,
     th: u16,
 ) {
-    let col = (x + text_len) as u16;
-    let row = y as u16;
+    let x_start = x.max(0.0) as u16;
+    let y_start = y.max(0.0) as u16;
+    let max_cols = max_w.max(0.0).floor().min(u16::MAX as f32) as u16;
+    let max_rows = max_h.max(0.0).floor().min(u16::MAX as f32) as u16;
 
-    if col < tw && row < th {
-        let idx = (tw * row + col) as usize * 3;
-        if idx + 2 < buf.len() {
-            buf[idx] = '█' as u64;
-            buf[idx + 1] = fg as u64;
-            buf[idx + 2] = bg as u64;
+    if x_start >= tw || y_start >= th || max_cols == 0 || max_rows == 0 {
+        return;
+    }
+
+    let x_end = x_start.saturating_add(max_cols).min(tw);
+    let y_end = y_start.saturating_add(max_rows).min(th);
+    let mut col = x_start;
+    let mut row = y_start;
+
+    for ch in text.chars() {
+        if row >= y_end {
+            return;
         }
+
+        if ch == '\r' {
+            continue;
+        }
+
+        if ch == '\n' {
+            row = row.saturating_add(1);
+            col = x_start;
+            continue;
+        }
+
+        if col >= x_end {
+            row = row.saturating_add(1);
+            col = x_start;
+            if row >= y_end {
+                return;
+            }
+        }
+
+        col = col.saturating_add(1);
+    }
+
+    if col >= x_end {
+        row = row.saturating_add(1);
+        col = x_start;
+    }
+
+    if row < y_end {
+        let idx = (tw * row + col) as usize * 3;
+        buf[idx] = '█' as u64;
+        buf[idx + 1] = fg as u64;
+        buf[idx + 2] = bg as u64;
     }
 }
 
@@ -871,13 +984,17 @@ fn paint_taffy_node(
     // Content box position (inside border + padding)
     let content_x = abs_x + layout.content_box_x();
     let content_y = abs_y + layout.content_box_y();
+    let content_w = layout.content_box_width();
+    let content_h = layout.content_box_height();
 
     let (fg, bg) = match taffy.get_node_context(node_id) {
         Some(NodeContext::Text { content, fg, bg }) => {
             let fg = (*fg).unwrap_or(parent_fg);
             let bg = (*bg).unwrap_or(parent_bg);
             draw_background_at(buf, x, y, w, h, bg, tw, th);
-            draw_text_at(buf, content_x, content_y, content, fg, bg, tw, th);
+            draw_text_at(
+                buf, content_x, content_y, content_w, content_h, content, fg, bg, tw, th,
+            );
             (fg, bg)
         }
         Some(NodeContext::Button {
@@ -895,7 +1012,9 @@ fn paint_taffy_node(
                 let border_color = (*border_color).unwrap_or(fg);
                 draw_border_at(buf, x, y, w, h, border_color, bg, *border_style, tw, th);
             }
-            draw_text_at(buf, content_x, content_y, label, fg, bg, tw, th);
+            draw_text_at(
+                buf, content_x, content_y, content_w, content_h, label, fg, bg, tw, th,
+            );
             (fg, bg)
         }
         Some(NodeContext::Input {
@@ -913,16 +1032,11 @@ fn paint_taffy_node(
                 let border_color = (*border_color).unwrap_or(fg);
                 draw_border_at(buf, x, y, w, h, border_color, bg, *border_style, tw, th);
             }
-            draw_text_at(buf, content_x, content_y, content, fg, bg, tw, th);
+            draw_text_at(
+                buf, content_x, content_y, content_w, content_h, content, fg, bg, tw, th,
+            );
             draw_cursor_at(
-                buf,
-                content_x,
-                content_y,
-                content.chars().count() as f32,
-                fg,
-                bg,
-                tw,
-                th,
+                buf, content_x, content_y, content_w, content_h, content, fg, bg, tw, th,
             );
             (fg, bg)
         }
@@ -972,8 +1086,7 @@ pub extern "C" fn paint(pn: *const f32, ln: u32, _pt: *const u8, _lt: u32) -> c_
     let node_data = unsafe { slice::from_raw_parts(pn, ln as usize) };
 
     let mut node_offset = 0usize;
-    let root_node = match parse_node(node_data, &mut node_offset, &text_registry, &style_registry)
-    {
+    let root_node = match parse_node(node_data, &mut node_offset, &text_registry, &style_registry) {
         Some(node) if node_offset == node_data.len() => node,
         _ => return 0,
     };

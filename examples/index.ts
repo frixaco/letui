@@ -180,6 +180,12 @@ const root = Column({ border: borderStyle, padding: "1 0" }, [
 // --- Keep track of result buttons for focus management ---
 let resultButtons: ReturnType<typeof Button>[] = [];
 let visibleStartIndex = 0;
+let lastResultsSnapshot: ScrapeResultItem[] | null = null;
+const resultHeights = new Map<number, number>();
+
+function resultLabel(item: ScrapeResultItem, isActive: boolean): string {
+  return `${isActive ? "▶ " : "  "}${item.title}`;
+}
 
 // --- Reactive effects ---
 
@@ -187,6 +193,18 @@ let visibleStartIndex = 0;
 ff(() => {
   const all = results();
   const selected = selectedIndex();
+
+  if (all !== lastResultsSnapshot) {
+    resultHeights.clear();
+    lastResultsSnapshot = all;
+  }
+
+  for (let i = 0; i < resultButtons.length; i++) {
+    const measuredHeight = Math.floor(resultButtons[i]?.frameHeight() ?? 0);
+    if (measuredHeight > 0) {
+      resultHeights.set(visibleStartIndex + i, measuredHeight);
+    }
+  }
 
   if (all.length === 0) {
     visibleStartIndex = 0;
@@ -205,16 +223,48 @@ ff(() => {
   }
 
   // Use actual computed frame height from Taffy
-  const availableHeight = resultsList.frameHeight();
+  const availableHeight = Math.max(1, Math.floor(resultsList.frameHeight()));
+  const fallbackHeight = Math.max(
+    1,
+    Math.floor(
+      resultHeights.get(selected) ??
+        resultButtons[0]?.frameHeight() ??
+        searchInput.frameHeight(),
+    ),
+  );
+  const itemHeightAt = (index: number) =>
+    Math.max(1, Math.floor(resultHeights.get(index) ?? fallbackHeight));
 
-  // Each item: border(2) + text(1) = 3
-  const itemHeight = 3;
-  const visibleCount = Math.max(1, Math.floor(availableHeight / itemHeight));
+  let start = selected;
+  let usedHeight = 0;
+  while (start >= 0) {
+    const height = itemHeightAt(start);
+    if (usedHeight + height > availableHeight) {
+      if (usedHeight > 0) {
+        start += 1;
+      }
+      break;
+    }
+    usedHeight += height;
+    if (start === 0) break;
+    start -= 1;
+  }
+  start = Math.max(0, start);
 
-  // Calculate window with selection at bottom (scroll only when needed)
-  let start = selected - visibleCount + 1;
-  start = Math.max(0, Math.min(start, all.length - visibleCount));
-  const end = Math.min(start + visibleCount, all.length);
+  let end = start;
+  let windowHeight = 0;
+  while (end < all.length) {
+    const height = itemHeightAt(end);
+    if (windowHeight + height > availableHeight) {
+      if (end === start) {
+        end += 1;
+      }
+      break;
+    }
+    windowHeight += height;
+    end += 1;
+  }
+
   const visible = all.slice(start, end);
   visibleStartIndex = start;
 
@@ -222,7 +272,7 @@ ff(() => {
     const globalIdx = start + i;
     const isActive = globalIdx === selected;
     return Button({
-      text: `${isActive ? "▶ " : "  "}${item.title}`,
+      text: resultLabel(item, isActive),
       border: isActive ? focusedBorderStyle : borderStyle,
       padding: "1 0",
       onFocus: () => {
