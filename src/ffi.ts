@@ -63,7 +63,15 @@ const { symbols: api } = dlopen(path, {
     args: ["buffer", "u32"],
     returns: "i32",
   },
+  sync_style_ops: {
+    args: ["pointer", "u32"],
+    returns: "i32",
+  },
   clear_text_registry: {
+    args: [],
+    returns: "i32",
+  },
+  clear_style_registry: {
     args: [],
     returns: "i32",
   },

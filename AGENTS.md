@@ -33,18 +33,8 @@ State management primitives, component API, diffing, number of optimizations are
 
 # Testing
 
-Use socket driver for fast/manual and automated checks:
+Manual TUI testing:
 
-- Interactive local testing (stdin enabled, can quit with `q` / `Ctrl+Q`):
-  - `bun run test:socket`
-- Headless automation (stdin disabled; drive only via socket commands):
-  - `bun run test:socket:headless`
-- Send commands to running socket app:
-  - `bun scripts/test-driver-client.ts /tmp/letui.sock '{"cmd":"ping"}'`
-  - `bun scripts/test-driver-client.ts /tmp/letui.sock '{"cmd":"sleep","ms":50}'`
-  - `bun scripts/test-driver-client.ts /tmp/letui.sock '{"cmd":"key","data":"jigokuraku"}'`
-  - `bun scripts/test-driver-client.ts /tmp/letui.sock '{"cmd":"key","data":"\r"}'`
-  - `bun scripts/test-driver-client.ts /tmp/letui.sock '{"cmd":"mouse","kind":"click","x":6,"y":3}'`
-  - `bun scripts/test-driver-client.ts /tmp/letui.sock '{"cmd":"focused"}'`
-  - `bun scripts/test-driver-client.ts /tmp/letui.sock '{"cmd":"snapshot"}'`
-  - `bun scripts/test-driver-client.ts /tmp/letui.sock '{"cmd":"quit"}'`
+- Start app: `bun run dev`
+- Validate behavior interactively in terminal
+- Quit with `q` or `Ctrl+Q`

@@ -123,33 +123,3 @@ Run config:
 | Throughput   | 48.6K ops/s | 3.9K ops/s | letui 12.46x higher |
 | Peak RSS     |     60.4 MB |   128.2 MB |   letui 2.12x lower |
 | PTY bytes    |     43.2 KB |    30.1 KB |  letui 1.43x higher |
-
-## Test Driver (Socket)
-
-To automate input/focus/snapshot checks without manual terminal interaction, run with a Unix socket driver:
-
-```bash
-LETUI_TEST_SOCKET=/tmp/letui.sock LETUI_TEST_MODE=1 bun run examples/index.ts
-```
-
-Then send JSON commands (one per call):
-
-```bash
-bun scripts/test-driver-client.ts /tmp/letui.sock '{"id":1,"cmd":"ping"}'
-bun scripts/test-driver-client.ts /tmp/letui.sock '{"id":2,"cmd":"key","data":"naruto"}'
-bun scripts/test-driver-client.ts /tmp/letui.sock '{"id":3,"cmd":"key","data":"\r"}'
-bun scripts/test-driver-client.ts /tmp/letui.sock '{"id":4,"cmd":"mouse","kind":"click","x":6,"y":3}'
-bun scripts/test-driver-client.ts /tmp/letui.sock '{"id":5,"cmd":"focused"}'
-bun scripts/test-driver-client.ts /tmp/letui.sock '{"id":6,"cmd":"snapshot"}'
-bun scripts/test-driver-client.ts /tmp/letui.sock '{"id":7,"cmd":"quit"}'
-```
-
-Supported commands:
-
-- `ping`
-- `sleep` (`{ "cmd":"sleep", "ms": 50 }`)
-- `key` (`{ "cmd":"key", "data":"\t" }`)
-- `mouse` (`press|release|click`, 1-indexed coordinates)
-- `focused`
-- `snapshot`
-- `quit`

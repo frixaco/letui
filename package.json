@@ -5,12 +5,10 @@
   "type": "module",
   "scripts": {
     "build-ffi": "cd letui-ffi && cargo build --release",
-    "dev": "bun run build-ffi && bun run examples/index.ts",
-    "test:socket": "LETUI_TEST_SOCKET=/tmp/letui.sock bun run examples/index.ts",
-    "test:socket:headless": "LETUI_TEST_SOCKET=/tmp/letui.sock LETUI_TEST_MODE=1 bun run examples/index.ts"
+    "dev": "bun run build-ffi && bun run examples/index.ts"
   },
   "devDependencies": {
-    "@types/bun": "1.3.6"
+    "@types/bun": "^1.3.9"
   },
   "peerDependencies": {
     "typescript": "^5.9.3"
@@ -26,7 +24,6 @@
     "@frixaco/letui-win32-x64": "0.0.11"
   },
   "dependencies": {
-    "bun-ffi-structs": "^0.1.2",
-    "bun-types": "^1.3.6"
+    "bun-ffi-structs": "^0.1.2"
   }
 }

@@ -1,14 +1,8 @@
 import { ptr, toArrayBuffer, type Pointer } from "bun:ffi";
-import { COLORS } from "./colors";
 import api from "./ffi";
 import { $, ff, type Signal } from "./signals";
 import { getFocusedNode } from "./components";
 import type { Node } from "./types";
-import {
-  startTestDriver,
-  type TestDriverCommand,
-  type TestDriverServer,
-} from "./test-driver";
 import {
   startFrame,
   endFrame,
@@ -21,11 +15,17 @@ import {
   formatMetrics,
 } from "./metrics";
 import { logWriter } from "./debug";
+import {
+  buildStyleSnapshot,
+  encodeNodeType,
+  queueStyleDeleteOp,
+  queueStyleUpsertOp,
+  styleSnapshotsEqual,
+} from "./style-sync";
+import { NODE_FIELDS_PER_NODE } from "./style-schema";
 
 export type RunOptions = {
   debug?: boolean;
-  testSocket?: string;
-  testMode?: boolean;
 };
 
 let terminalWidth: Signal<number>;
@@ -33,6 +33,7 @@ let terminalHeight: Signal<number>;
 let spatialLookup: (number | undefined)[];
 let nodeRegistry: Map<number, Node>;
 let textRegistry: Map<number, string>;
+let styleRegistry: Map<number, Float32Array>;
 let globalKeyHandlers: Map<string, () => void>;
 let pressedNodeId: number | null = null;
 let isRunning = false;
@@ -43,7 +44,6 @@ function getNodeAt(x: number, y: number): Node | undefined {
   return id !== undefined ? nodeRegistry.get(id) : undefined;
 }
 
-const FIELDS_PER_NODE = 12;
 const EMPTY_TEXT_PAYLOAD = new Uint8Array(1);
 const textEncoder = new TextEncoder();
 const TEXT_OP_UPSERT = 1;
@@ -96,6 +96,12 @@ function syncTextOperations(
   }
 }
 
+function syncStyleOperations(styleOps: number[]): boolean {
+  if (styleOps.length === 0) return true;
+  const payload = Float32Array.from(styleOps);
+  return Number(api.sync_style_ops(ptr(payload), payload.length)) === 1;
+}
+
 function countNodes(node: Node): number {
   const children = node.children?.() ?? [];
   return 1 + children.reduce((sum, child) => sum + countNodes(child), 0);
@@ -108,45 +114,25 @@ function serialize(
   nodeData: Float32Array;
 } {
   const nodeCount = countNodes(root);
-  const nodeData = new Float32Array(nodeCount * FIELDS_PER_NODE);
+  const nodeData = new Float32Array(nodeCount * NODE_FIELDS_PER_NODE);
   const nextTextRegistry = new Map<number, string>();
+  const nextStyleRegistry = new Map<number, Float32Array>();
   const textOps: number[] = [];
+  const styleOps: number[] = [];
   let textOpCount = 0;
 
   let offset = 0;
 
   function serializeNode(node: Node): void {
-    // Node type: 1=row, 2=column, 3=button, 4=input, 5=text
-    let nodeType: number;
-    if (node.type === "box") {
-      nodeType = node.props.direction?.() === "row" ? 1 : 2;
-    } else if (node.type === "button") {
-      nodeType = 3;
-    } else if (node.type === "input") {
-      nodeType = 4;
-    } else {
-      nodeType = 5; // text
+    const nodeType = encodeNodeType(node);
+    const styleId = node.id;
+    const styleSnapshot = buildStyleSnapshot(node);
+    nextStyleRegistry.set(styleId, styleSnapshot);
+
+    const previousStyle = styleRegistry.get(styleId);
+    if (!previousStyle || !styleSnapshotsEqual(previousStyle, styleSnapshot)) {
+      queueStyleUpsertOp(styleOps, styleId, styleSnapshot);
     }
-
-    // Read props (auto-subscribes render effect)
-    const gap = (node.props as any).gap?.() ?? 0;
-    const padding = node.props.padding?.() ?? 0;
-    let paddingX: number, paddingY: number;
-    if (typeof padding === "string") {
-      [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
-    } else {
-      paddingX = paddingY = padding;
-    }
-
-    const border = node.props.border?.();
-    const hasBorder = border ? 1 : 0;
-    const borderColor = border?.color ?? COLORS.default.bg;
-    const borderStyle =
-      border?.style === "rounded" ? 1 : border?.style === "square" ? 2 : 0;
-
-    const background = node.props.background?.() ?? COLORS.default.bg;
-    const foreground = node.props.foreground?.() ?? COLORS.default.fg;
-    const flexGrow = node.props.flexGrow?.() ?? 0;
 
     // Children count
     const children = node.children?.() ?? [];
@@ -168,19 +154,11 @@ function serialize(
       }
     }
 
-    // Write 12 fields
+    // Write 4 fields (nodeType, childCount, nodeId, styleId)
     nodeData[offset++] = nodeType;
-    nodeData[offset++] = gap;
-    nodeData[offset++] = paddingX;
-    nodeData[offset++] = paddingY;
-    nodeData[offset++] = hasBorder;
     nodeData[offset++] = childCount;
-    nodeData[offset++] = background;
-    nodeData[offset++] = foreground;
-    nodeData[offset++] = borderColor;
-    nodeData[offset++] = borderStyle;
     nodeData[offset++] = node.id;
-    nodeData[offset++] = flexGrow;
+    nodeData[offset++] = styleId;
 
     for (const child of children) {
       serializeNode(child);
@@ -195,9 +173,20 @@ function serialize(
       textOpCount++;
     }
   }
+
+  for (const id of styleRegistry.keys()) {
+    if (!nextStyleRegistry.has(id)) {
+      queueStyleDeleteOp(styleOps, id);
+    }
+  }
+
+  const styleSyncOk = syncStyleOperations(styleOps);
   syncTextOperations(textOps, textOpCount, collectMetrics);
 
   textRegistry = nextTextRegistry;
+  if (styleSyncOk) {
+    styleRegistry = nextStyleRegistry;
+  }
 
   return { nodeData };
 }
@@ -393,113 +382,6 @@ function handleInput(data: string): void {
   handleKeyboardEvent(data);
 }
 
-function buildMouseEscape(
-  kind: "press" | "release",
-  btn: number,
-  x: number,
-  y: number,
-): string {
-  const suffix = kind === "press" ? "M" : "m";
-  return `\x1b[<${btn};${x};${y}${suffix}`;
-}
-
-function getFocusedSnapshot():
-  | {
-      id: number;
-      type: Node["type"];
-      frame: Node["frame"];
-    }
-  | null {
-  const focused = getFocusedNode();
-  if (!focused) return null;
-  return {
-    id: focused.id,
-    type: focused.type,
-    frame: focused.frame,
-  };
-}
-
-function getScreenSnapshot(): {
-  width: number;
-  height: number;
-  text: string;
-} {
-  const width = terminalWidth();
-  const height = terminalHeight();
-
-  if (width === 0 || height === 0) {
-    return { width, height, text: "" };
-  }
-
-  const bufferPtr = api.get_buffer_ptr();
-  const bufferLen = Number(api.get_buffer_len());
-
-  if (!bufferPtr || bufferLen === 0) {
-    return { width, height, text: "" };
-  }
-
-  const buffer = new BigUint64Array(
-    toArrayBuffer(bufferPtr as Pointer, 0, bufferLen * 8),
-  );
-
-  function decodeCellCode(code: bigint): string {
-    const value = Number(code);
-    if (value <= 0) return " ";
-    if (value > 0x10ffff) return " ";
-    return String.fromCodePoint(value);
-  }
-
-  const rows: string[] = [];
-  for (let y = 0; y < height; y++) {
-    let row = "";
-    for (let x = 0; x < width; x++) {
-      const idx = (y * width + x) * 3;
-      row += decodeCellCode(buffer[idx] ?? 32n);
-    }
-    rows.push(row);
-  }
-
-  return {
-    width,
-    height,
-    text: rows.join("\n"),
-  };
-}
-
-async function handleTestCommand(command: TestDriverCommand): Promise<unknown> {
-  switch (command.cmd) {
-    case "ping":
-      return { pong: true };
-    case "sleep":
-      await Bun.sleep(command.ms);
-      return { sleptMs: command.ms };
-    case "key":
-      handleInput(command.data);
-      return { accepted: true };
-    case "mouse": {
-      const btn = command.btn ?? 0;
-      const x = Math.max(1, Math.floor(command.x));
-      const y = Math.max(1, Math.floor(command.y));
-
-      if (command.kind === "click") {
-        handleMouseEvent(buildMouseEscape("press", btn, x, y));
-        handleMouseEvent(buildMouseEscape("release", btn, x, y));
-      } else {
-        handleMouseEvent(buildMouseEscape(command.kind, btn, x, y));
-      }
-
-      return { accepted: true };
-    }
-    case "focused":
-      return getFocusedSnapshot();
-    case "snapshot":
-      return getScreenSnapshot();
-    case "quit":
-      setTimeout(() => quitFn?.(), 0);
-      return { quitting: true };
-  }
-}
-
 function handleResize(): void {
   api.update_terminal_size();
 
@@ -525,6 +407,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   api.init_buffer();
   api.init_letui();
   api.clear_text_registry();
+  api.clear_style_registry();
 
   // 2. Initialize state (after init_buffer so terminal size is available)
   terminalWidth = $(api.get_width());
@@ -532,25 +415,18 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   globalKeyHandlers = globalKeyHandlers ?? new Map();
   nodeRegistry = new Map();
   textRegistry = new Map();
+  styleRegistry = new Map();
   spatialLookup = new Array(terminalWidth() * terminalHeight());
   pressedNodeId = null;
   isRunning = true;
 
   const stdinHandler = (data: Buffer) => handleInput(data.toString());
-  let testDriver: TestDriverServer | null = null;
 
   // 3. Setup stdin for keyboard/mouse input
-  if (!options?.testMode) {
-    process.stdin.on("data", stdinHandler);
-  }
+  process.stdin.on("data", stdinHandler);
 
   // 4. Setup resize handler
   process.stdout.on("resize", handleResize);
-
-  // 4b. Optional socket-based test driver
-  if (options?.testSocket) {
-    testDriver = startTestDriver(options.testSocket, handleTestCommand);
-  }
 
   // 5. Create render effect
   ff(() => {
@@ -597,12 +473,10 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   // 6. Create and store quit function
   quitFn = () => {
     isRunning = false;
-    if (!options?.testMode) {
-      process.stdin.off("data", stdinHandler);
-    }
+    process.stdin.off("data", stdinHandler);
     process.stdout.off("resize", handleResize);
-    testDriver?.stop();
     api.clear_text_registry();
+    api.clear_style_registry();
     api.free_buffer();
     api.deinit_letui();
     if (options?.debug) {

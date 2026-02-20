@@ -18,20 +18,59 @@ export type BorderProps = {
   style: BorderStyle;
 };
 
+export type AxisSpacing = number | `${number} ${number}`;
+export type Overflow = "visible" | "hidden";
+
+export type JustifyContent =
+  | "start"
+  | "end"
+  | "flex-start"
+  | "flex-end"
+  | "center"
+  | "stretch"
+  | "space-between"
+  | "space-around"
+  | "space-evenly";
+
+export type Align =
+  | "start"
+  | "end"
+  | "flex-start"
+  | "flex-end"
+  | "center"
+  | "baseline"
+  | "stretch";
+
 // =============================================================================
 // INTERNAL PROP TYPES (signal-based, used inside nodes)
 // =============================================================================
 
 export type _StyleProps = {
   border: Signal<BorderProps | undefined>;
-  padding: Signal<number | `${number} ${number}` | undefined>;
+  padding: Signal<AxisSpacing | undefined>;
+  margin: Signal<AxisSpacing | undefined>;
+  rowGap: Signal<number | undefined>;
+  columnGap: Signal<number | undefined>;
   background: Signal<number | undefined>;
   foreground: Signal<number | undefined>;
   flexGrow: Signal<number | undefined>;
+  flexShrink: Signal<number | undefined>;
+  flexBasis: Signal<number | "auto" | undefined>;
+  justifyContent: Signal<JustifyContent | undefined>;
+  alignItems: Signal<Align | undefined>;
+  alignSelf: Signal<Align | undefined>;
+  width: Signal<number | undefined>;
+  height: Signal<number | undefined>;
+  minWidth: Signal<number | undefined>;
+  minHeight: Signal<number | undefined>;
+  maxWidth: Signal<number | undefined>;
+  maxHeight: Signal<number | undefined>;
+  overflow: Signal<Overflow | undefined>;
+  overflowX: Signal<Overflow | undefined>;
+  overflowY: Signal<Overflow | undefined>;
 };
 
 export type _BoxProps = _StyleProps & {
-  gap: Signal<number | undefined>;
   direction: Signal<"row" | "column" | undefined>;
 };
 
@@ -54,14 +93,30 @@ export type _ButtonProps = _StyleProps & {
 
 export type StyleProps = {
   border?: BorderProps;
-  padding?: number | `${number} ${number}`;
+  padding?: AxisSpacing;
+  margin?: AxisSpacing;
+  rowGap?: number;
+  columnGap?: number;
   background?: number;
   foreground?: number;
   flexGrow?: number;
+  flexShrink?: number;
+  flexBasis?: number | "auto";
+  justifyContent?: JustifyContent;
+  alignItems?: Align;
+  alignSelf?: Align;
+  width?: number;
+  height?: number;
+  minWidth?: number;
+  minHeight?: number;
+  maxWidth?: number;
+  maxHeight?: number;
+  overflow?: Overflow;
+  overflowX?: Overflow;
+  overflowY?: Overflow;
 };
 
 export type BoxProps = StyleProps & {
-  gap?: number;
   direction?: "row" | "column";
 };
 

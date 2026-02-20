@@ -7,7 +7,7 @@ import { existsSync } from "fs";
 import { COLORS } from "@/colors";
 import { Button, Column, Input, Row, run, onKey } from "@/components";
 import { LoadingBar } from "./progress-bar";
-import { $, ff, whenSettled } from "@/signals";
+import { $, ff } from "@/signals";
 import { saveMetrics } from "@/metrics";
 
 // --- Types ---
@@ -167,13 +167,12 @@ const searchInput = Input({
   },
   onBlur: (self) => self.setStyle({ border: borderStyle }),
 });
-whenSettled(() => focusInput());
 
 const loadingBars = Row({ flexGrow: 1 }, [loadingBar.node]);
 
-const resultsList = Column({ gap: 1, padding: "1 0", flexGrow: 1 }, []);
+const resultsList = Column({ padding: "1 0", flexGrow: 1 }, []);
 
-const root = Column({ border: borderStyle, gap: 1, padding: "1 0" }, [
+const root = Column({ border: borderStyle, padding: "1 0" }, [
   Column({ padding: "1 0" }, [searchInput, loadingBars]),
   resultsList,
 ]);
@@ -208,7 +207,7 @@ ff(() => {
   // Use actual computed frame height from Taffy
   const availableHeight = resultsList.frameHeight();
 
-  // Each item: border(2) + text(1) = 3, plus gap(1) between items
+  // Each item: border(2) + text(1) = 3
   const itemHeight = 3;
   const visibleCount = Math.max(1, Math.floor(availableHeight / itemHeight));
 
@@ -329,6 +328,6 @@ function toggleFocusTarget() {
 // --- Start app ---
 const app = run(root, {
   debug: true,
-  testSocket: process.env.LETUI_TEST_SOCKET,
-  testMode: process.env.LETUI_TEST_MODE === "1",
 });
+
+focusInput();
