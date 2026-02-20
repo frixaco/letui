@@ -170,6 +170,9 @@ fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]
     for y in 0..h {
         let mut char_seq = String::with_capacity(w as usize);
         let mut batch_start_x = 0;
+        // Track terminal cells, not UTF-8 byte length. `String::len()` breaks adjacency
+        // for multibyte glyphs (e.g. box-drawing chars), causing unnecessary batch splits.
+        let mut batch_cells = 0u16;
 
         for x in 0..w {
             let idx = (w * y + x) as usize * 3;
@@ -186,9 +189,10 @@ fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]
 
             let curr_char = char::from_u32(curr_code as u32).unwrap();
 
-            if !char_seq.is_empty() && x != batch_start_x + char_seq.len() as u16 {
+            if !char_seq.is_empty() && x != batch_start_x + batch_cells {
                 queue!(stdout, MoveTo(batch_start_x, y), Print(&char_seq)).unwrap();
                 char_seq.clear();
+                batch_cells = 0;
                 batch_start_x = x;
             }
 
@@ -197,6 +201,7 @@ fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]
                     batch_start_x = x;
                 }
                 char_seq.push(curr_char);
+                batch_cells = batch_cells.saturating_add(1);
                 continue;
             }
             if curr_fg != prev_fg || curr_bg != prev_bg {
@@ -214,6 +219,7 @@ fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]
                 char_seq.clear();
                 char_seq.push(curr_char);
                 batch_start_x = x;
+                batch_cells = 1;
             }
         }
         if !char_seq.is_empty() {

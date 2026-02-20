@@ -18,10 +18,33 @@ For more information, read the Bun API docs in `node_modules/bun-types/docs/**.m
 
 State management primitives, component API, diffing, number of optimizations are DONE.
 
-Currently, following `./OPTIMIZATION_ROADMAP.md` to further optimize the library and
+# Recent architecture updates (post `v0.0.11`)
+
+- Text no longer sent as full payload during `paint()`
+- TypeScript runtime computes text diffs and batches ops
+- Rust applies batched ops via `sync_text_ops` into `TEXT_REGISTRY` keyed by node id
+- Metrics include dedicated `textSync` phase and op/byte counters
 
 # General
 
 - Prefer explaining concepts and helping build mental model for solutions to problems, instead of providing ready-to-copy-paste code
 - Providing pseudo code is OK
 - When explaining, start from first principles
+
+# Testing
+
+Use socket driver for fast/manual and automated checks:
+
+- Interactive local testing (stdin enabled, can quit with `q` / `Ctrl+Q`):
+  - `bun run test:socket`
+- Headless automation (stdin disabled; drive only via socket commands):
+  - `bun run test:socket:headless`
+- Send commands to running socket app:
+  - `bun scripts/test-driver-client.ts /tmp/letui.sock '{"cmd":"ping"}'`
+  - `bun scripts/test-driver-client.ts /tmp/letui.sock '{"cmd":"sleep","ms":50}'`
+  - `bun scripts/test-driver-client.ts /tmp/letui.sock '{"cmd":"key","data":"jigokuraku"}'`
+  - `bun scripts/test-driver-client.ts /tmp/letui.sock '{"cmd":"key","data":"\r"}'`
+  - `bun scripts/test-driver-client.ts /tmp/letui.sock '{"cmd":"mouse","kind":"click","x":6,"y":3}'`
+  - `bun scripts/test-driver-client.ts /tmp/letui.sock '{"cmd":"focused"}'`
+  - `bun scripts/test-driver-client.ts /tmp/letui.sock '{"cmd":"snapshot"}'`
+  - `bun scripts/test-driver-client.ts /tmp/letui.sock '{"cmd":"quit"}'`

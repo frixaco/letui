@@ -1,6 +1,9 @@
 interface MetricsData {
   frameTimes: number[];
   serializeTimes: number[];
+  textSyncTimes: number[];
+  textOpsCounts: number[];
+  textOpsBytes: number[];
   rustTimes: number[]; // FFI call: taffy layout + buffer paint
   syncTimes: number[]; // Reading frames back to JS
   flushTimes: number[];
@@ -10,6 +13,9 @@ interface MetricsData {
 const metrics: MetricsData = {
   frameTimes: [],
   serializeTimes: [],
+  textSyncTimes: [],
+  textOpsCounts: [],
+  textOpsBytes: [],
   rustTimes: [],
   syncTimes: [],
   flushTimes: [],
@@ -26,14 +32,28 @@ export function startPhase(): number {
   return Bun.nanoseconds();
 }
 
+function recordValue(arr: number[], value: number): void {
+  arr.push(value);
+  if (arr.length > MAX_SAMPLES) arr.shift();
+}
+
 function recordTime(arr: number[], startTime: number): void {
   const elapsed = (Bun.nanoseconds() - startTime) / 1_000_000;
-  arr.push(elapsed);
-  if (arr.length > MAX_SAMPLES) arr.shift();
+  recordValue(arr, elapsed);
 }
 
 export function endSerialize(startTime: number): void {
   recordTime(metrics.serializeTimes, startTime);
+}
+
+export function endTextSync(
+  startTime: number,
+  opsCount: number,
+  opsBytes: number,
+): void {
+  recordTime(metrics.textSyncTimes, startTime);
+  recordValue(metrics.textOpsCounts, opsCount);
+  recordValue(metrics.textOpsBytes, opsBytes);
 }
 
 export function endRust(startTime: number): void {
@@ -94,6 +114,9 @@ function fmt(n: number): string {
 export function getMetrics() {
   const frame = calculateStats(metrics.frameTimes);
   const serialize = calculateStats(metrics.serializeTimes);
+  const textSync = calculateStats(metrics.textSyncTimes);
+  const textOpsCount = calculateStats(metrics.textOpsCounts);
+  const textOpsBytes = calculateStats(metrics.textOpsBytes);
   const rust = calculateStats(metrics.rustTimes);
   const sync = calculateStats(metrics.syncTimes);
   const flush = calculateStats(metrics.flushTimes);
@@ -107,6 +130,9 @@ export function getMetrics() {
     frameCount: metrics.frameCount,
     frame,
     serialize,
+    textSync,
+    textOpsCount,
+    textOpsBytes,
     rust,
     sync,
     flush,
@@ -119,6 +145,7 @@ export function formatMetrics(): string {
   return [
     `${m.fps}fps | ${fmt(f.avg)}ms avg (${fmt(f.min)}-${fmt(f.max)}, p99:${fmt(f.p99)}) | ${m.heapMB}MB | ${m.frameCount} frames`,
     `serialize: ${fmt(m.serialize.avg)}ms (${fmt(m.serialize.min)}-${fmt(m.serialize.max)})`,
+    `textSync: ${fmt(m.textSync.avg)}ms (${fmt(m.textSync.min)}-${fmt(m.textSync.max)}, p99:${fmt(m.textSync.p99)}) | ops:${fmt(m.textOpsCount.avg)} avg ${fmt(m.textOpsCount.max)} max | bytes:${fmt(m.textOpsBytes.avg)} avg ${fmt(m.textOpsBytes.max)} max`,
     `rust:      ${fmt(m.rust.avg)}ms (${fmt(m.rust.min)}-${fmt(m.rust.max)}) [layout+paint]`,
     `sync:      ${fmt(m.sync.avg)}ms (${fmt(m.sync.min)}-${fmt(m.sync.max)}) [frames→JS]`,
     `flush:     ${fmt(m.flush.avg)}ms (${fmt(m.flush.min)}-${fmt(m.flush.max)}) [terminal I/O]`,
@@ -128,6 +155,9 @@ export function formatMetrics(): string {
 export function resetMetrics(): void {
   metrics.frameTimes = [];
   metrics.serializeTimes = [];
+  metrics.textSyncTimes = [];
+  metrics.textOpsCounts = [];
+  metrics.textOpsBytes = [];
   metrics.rustTimes = [];
   metrics.syncTimes = [];
   metrics.flushTimes = [];

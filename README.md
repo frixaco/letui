@@ -4,6 +4,15 @@ https://github.com/user-attachments/assets/a84f8b6c-86fd-4f42-9ec8-84edd24c7abd
 
 TUI library written using Rust and TypeScript
 
+## Since `v0.0.11`
+
+- Added socket-based test driver for automated checks (`ping`, `sleep`, `key`, `mouse`, `focused`, `snapshot`, `quit`)
+- Stopped sending full text payload on every `paint()` call
+- Added Rust-side text registry keyed by node id + per-frame text diff sync
+- Batched text upsert/delete operations into single `sync_text_ops` FFI call per frame
+- Improved terminal flush batching to track terminal cells (not UTF-8 byte length) for cleaner multibyte rendering
+- Added stronger quit cleanup path (stop test driver, clear text registry, free buffers, deinit terminal)
+
 **Core dependencies**:
 
 - [`crossterm`](https://github.com/crossterm-rs/crossterm) - cross-platform terminal manipulation library
@@ -11,11 +20,13 @@ TUI library written using Rust and TypeScript
 
 **TODO**:
 
-### Priority 0: Text Registry (FFI Optimization)
+### Priority 0: Text Registry (FFI Optimization) ✅
 
-**Goal**: Stop sending all text on every render. Register text once → get `u8` ID → pass only ID (1 byte) across FFI.
-
-**Expected result**: FFI traffic O(changed texts) instead of O(all texts every frame)
+- [x] Keep text on Rust side in `TEXT_REGISTRY` (keyed by node id)
+- [x] Detect text diffs in TS runtime (`upsert` + `delete`)
+- [x] Encode text diffs as compact ops and send once via `sync_text_ops`
+- [x] Apply all text ops in one Rust pass under one registry lock
+- Result: text traffic scales with changed nodes, not total text nodes
 
 ---
 
@@ -47,19 +58,12 @@ TUI library written using Rust and TypeScript
 ### Performance & Other
 
 - [x] Move paint to Rust (currently 81% of frame time @ 1.7ms avg)
-  - **Why**: Eliminates JS per-cell loops, staging buffer, and BigInt conversions
-  - **New FFI function**: `paint(node_data, text_data, focused_id, pressed_id, colors...)`
-  - **Rust side**:
-    - Reuse parsed node tree from `calculate_layout` (already has frames)
-    - Add `PaintNode` struct with: frame, bg, fg, border_color, border_style, text range, node_type
-    - Implement `draw_background()`, `draw_border()`, `draw_text()`, `draw_cursor()` writing directly to `CURRENT_BUFFER`
-    - Recursive `paint_node()` traversal matching JS logic
-  - **TS side**:
-    - Add `isFocused` and `isPressed` fields to serialization (FIELDS_PER_NODE: 13 → 15)
-    - Replace JS `paint()` call with `api.paint(...)` FFI call
-    - Keep `registerHit()` in JS for mouse hit testing (cheap traversal)
-    - Remove `stagingBuffer` and `flushStagingBuffer()` (no longer needed)
-  - **Expected result**: Paint phase from 1.7ms → ~0.1-0.2ms
+  - **Why**: remove JS per-cell paint work from hot path
+  - **Current flow**:
+    - JS serializes node tree into `nodeData`
+    - Rust does layout + paint into `CURRENT_BUFFER`
+    - JS only syncs frames/event hit areas, then calls `flush()`
+    - Text sync now happens separately via `sync_text_ops`
 - [ ] Add scrollable containers
 
 - [ ] How to handle serialization of walls of text: https://ampcode.com/threads/T-019bdac3-ba03-745f-a3d3-c9d53bfa0648
@@ -100,3 +104,52 @@ TUI library written using Rust and TypeScript
 3. `git tag v0.0.1` - tag a commit
 4. `git push origin v0.0.1` - push the tag
 5. release action will build and deploy it as package
+
+## Benchmark Results (letui vs Rezi) - may not be accurate, just playing around right now
+
+Latest run: `2026-02-20` (`terminal-rerender`, `full` profile, PTY mode)
+
+Run config:
+
+- `warmup=100`
+- `iterations=1000`
+- `replicates=7` (first replicate discarded)
+- command: `bun run bench/run.ts --profile full --scenario terminal-rerender`
+
+| Metric       |       letui |       Rezi |               Delta |
+| ------------ | ----------: | ---------: | ------------------: |
+| Mean latency |       20 us |     259 us | letui 12.69x faster |
+| p95 latency  |       21 us |     260 us |         letui lower |
+| Throughput   | 48.6K ops/s | 3.9K ops/s | letui 12.46x higher |
+| Peak RSS     |     60.4 MB |   128.2 MB |   letui 2.12x lower |
+| PTY bytes    |     43.2 KB |    30.1 KB |  letui 1.43x higher |
+
+## Test Driver (Socket)
+
+To automate input/focus/snapshot checks without manual terminal interaction, run with a Unix socket driver:
+
+```bash
+LETUI_TEST_SOCKET=/tmp/letui.sock LETUI_TEST_MODE=1 bun run examples/index.ts
+```
+
+Then send JSON commands (one per call):
+
+```bash
+bun scripts/test-driver-client.ts /tmp/letui.sock '{"id":1,"cmd":"ping"}'
+bun scripts/test-driver-client.ts /tmp/letui.sock '{"id":2,"cmd":"key","data":"naruto"}'
+bun scripts/test-driver-client.ts /tmp/letui.sock '{"id":3,"cmd":"key","data":"\r"}'
+bun scripts/test-driver-client.ts /tmp/letui.sock '{"id":4,"cmd":"mouse","kind":"click","x":6,"y":3}'
+bun scripts/test-driver-client.ts /tmp/letui.sock '{"id":5,"cmd":"focused"}'
+bun scripts/test-driver-client.ts /tmp/letui.sock '{"id":6,"cmd":"snapshot"}'
+bun scripts/test-driver-client.ts /tmp/letui.sock '{"id":7,"cmd":"quit"}'
+```
+
+Supported commands:
+
+- `ping`
+- `sleep` (`{ "cmd":"sleep", "ms": 50 }`)
+- `key` (`{ "cmd":"key", "data":"\t" }`)
+- `mouse` (`press|release|click`, 1-indexed coordinates)
+- `focused`
+- `snapshot`
+- `quit`

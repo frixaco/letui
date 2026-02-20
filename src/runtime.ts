@@ -5,10 +5,16 @@ import { $, ff, type Signal } from "./signals";
 import { getFocusedNode } from "./components";
 import type { Node } from "./types";
 import {
+  startTestDriver,
+  type TestDriverCommand,
+  type TestDriverServer,
+} from "./test-driver";
+import {
   startFrame,
   endFrame,
   startPhase,
   endSerialize,
+  endTextSync,
   endRust,
   endSync,
   endFlush,
@@ -18,6 +24,8 @@ import { logWriter } from "./debug";
 
 export type RunOptions = {
   debug?: boolean;
+  testSocket?: string;
+  testMode?: boolean;
 };
 
 let terminalWidth: Signal<number>;
@@ -40,6 +48,7 @@ const EMPTY_TEXT_PAYLOAD = new Uint8Array(1);
 const textEncoder = new TextEncoder();
 const TEXT_OP_UPSERT = 1;
 const TEXT_OP_DELETE = 2;
+const MOUSE_EVENT_PATTERN = /\x1b\[<\d+;\d+;\d+[Mm]/g;
 
 function writeU32LE(target: number[], value: number): void {
   target.push(
@@ -66,18 +75,43 @@ function queueDeleteTextOp(target: number[], nodeId: number): void {
   writeU32LE(target, 0);
 }
 
+function syncTextOperations(
+  textOps: number[],
+  textOpCount: number,
+  collectMetrics: boolean,
+): void {
+  if (collectMetrics) {
+    const textSyncStart = startPhase();
+    if (textOps.length > 0) {
+      const payload = Uint8Array.from(textOps);
+      api.sync_text_ops(payload, payload.length);
+    }
+    endTextSync(textSyncStart, textOpCount, textOps.length);
+    return;
+  }
+
+  if (textOps.length > 0) {
+    const payload = Uint8Array.from(textOps);
+    api.sync_text_ops(payload, payload.length);
+  }
+}
+
 function countNodes(node: Node): number {
   const children = node.children?.() ?? [];
   return 1 + children.reduce((sum, child) => sum + countNodes(child), 0);
 }
 
-function serialize(root: Node): {
+function serialize(
+  root: Node,
+  collectMetrics = false,
+): {
   nodeData: Float32Array;
 } {
   const nodeCount = countNodes(root);
   const nodeData = new Float32Array(nodeCount * FIELDS_PER_NODE);
   const nextTextRegistry = new Map<number, string>();
   const textOps: number[] = [];
+  let textOpCount = 0;
 
   let offset = 0;
 
@@ -130,6 +164,7 @@ function serialize(root: Node): {
 
       if (textRegistry.get(node.id) !== textContent) {
         queueUpsertTextOp(textOps, node.id, textContent);
+        textOpCount++;
       }
     }
 
@@ -157,13 +192,10 @@ function serialize(root: Node): {
   for (const id of textRegistry.keys()) {
     if (!nextTextRegistry.has(id)) {
       queueDeleteTextOp(textOps, id);
+      textOpCount++;
     }
   }
-
-  if (textOps.length > 0) {
-    const payload = Uint8Array.from(textOps);
-    api.sync_text_ops(payload, payload.length);
-  }
+  syncTextOperations(textOps, textOpCount, collectMetrics);
 
   textRegistry = nextTextRegistry;
 
@@ -178,6 +210,26 @@ function updateNodeFrames(root: Node): void {
   );
 
   let idx = 0;
+  const width = terminalWidth();
+  const height = terminalHeight();
+
+  function markInteractiveHitArea(node: Node): void {
+    if (node.type !== "input" && node.type !== "button") return;
+
+    const startX = Math.max(0, Math.floor(node.frame.x));
+    const startY = Math.max(0, Math.floor(node.frame.y));
+    const endX = Math.min(width, Math.ceil(node.frame.x + node.frame.width));
+    const endY = Math.min(height, Math.ceil(node.frame.y + node.frame.height));
+
+    if (startX >= endX || startY >= endY) return;
+
+    for (let y = startY; y < endY; y++) {
+      const rowOffset = y * width;
+      for (let x = startX; x < endX; x++) {
+        spatialLookup[rowOffset + x] = node.id;
+      }
+    }
+  }
 
   function updateFrames(node: Node): void {
     nodeRegistry.set(node.id, node);
@@ -189,6 +241,7 @@ function updateNodeFrames(root: Node): void {
 
     node.frameWidth(node.frame.width);
     node.frameHeight(node.frame.height);
+    markInteractiveHitArea(node);
 
     const children = node.children?.() ?? [];
     for (const child of children) {
@@ -271,13 +324,26 @@ function handleMouseEvent(data: string): void {
   // Parse: \x1b[<btn;x;y[Mm]
   const i = data.indexOf("<") + 1;
   const j = data.length - 1;
+  if (i <= 0 || j <= i) return;
   const parts = data.slice(i, j).split(";");
+  if (parts.length !== 3) return;
 
   const isPress = data.endsWith("M");
   const isRelease = data.endsWith("m");
-  const btn = Number(parts[0]) & 0b11;
-  const x = Number(parts[1]) - 1; // 1-indexed -> 0-indexed
-  const y = Number(parts[2]) - 1;
+  const rawBtn = Number(parts[0]);
+  const rawX = Number(parts[1]);
+  const rawY = Number(parts[2]);
+  if (
+    !Number.isFinite(rawBtn) ||
+    !Number.isFinite(rawX) ||
+    !Number.isFinite(rawY)
+  ) {
+    return;
+  }
+
+  const btn = rawBtn & 0b11;
+  const x = rawX - 1; // 1-indexed -> 0-indexed
+  const y = rawY - 1;
 
   const isLeftButton = btn === 0;
   const target = getNodeAt(x, y);
@@ -304,19 +370,134 @@ function handleMouseEvent(data: string): void {
   }
 }
 
-function handleInput(data: string, _options?: RunOptions): void {
+function handleInput(data: string): void {
   // Ctrl+Q to quit
   if (data === "\x11") {
     quitFn?.();
     return;
   }
 
-  if (data.startsWith("\x1b[<")) {
-    handleMouseEvent(data);
+  const mouseEvents = data.match(MOUSE_EVENT_PATTERN);
+  if (mouseEvents && mouseEvents.length > 0) {
+    for (const ev of mouseEvents) {
+      handleMouseEvent(ev);
+    }
+
+    const remaining = data.replace(MOUSE_EVENT_PATTERN, "");
+    if (remaining.length > 0) {
+      handleKeyboardEvent(remaining);
+    }
     return;
   }
 
   handleKeyboardEvent(data);
+}
+
+function buildMouseEscape(
+  kind: "press" | "release",
+  btn: number,
+  x: number,
+  y: number,
+): string {
+  const suffix = kind === "press" ? "M" : "m";
+  return `\x1b[<${btn};${x};${y}${suffix}`;
+}
+
+function getFocusedSnapshot():
+  | {
+      id: number;
+      type: Node["type"];
+      frame: Node["frame"];
+    }
+  | null {
+  const focused = getFocusedNode();
+  if (!focused) return null;
+  return {
+    id: focused.id,
+    type: focused.type,
+    frame: focused.frame,
+  };
+}
+
+function getScreenSnapshot(): {
+  width: number;
+  height: number;
+  text: string;
+} {
+  const width = terminalWidth();
+  const height = terminalHeight();
+
+  if (width === 0 || height === 0) {
+    return { width, height, text: "" };
+  }
+
+  const bufferPtr = api.get_buffer_ptr();
+  const bufferLen = Number(api.get_buffer_len());
+
+  if (!bufferPtr || bufferLen === 0) {
+    return { width, height, text: "" };
+  }
+
+  const buffer = new BigUint64Array(
+    toArrayBuffer(bufferPtr as Pointer, 0, bufferLen * 8),
+  );
+
+  function decodeCellCode(code: bigint): string {
+    const value = Number(code);
+    if (value <= 0) return " ";
+    if (value > 0x10ffff) return " ";
+    return String.fromCodePoint(value);
+  }
+
+  const rows: string[] = [];
+  for (let y = 0; y < height; y++) {
+    let row = "";
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 3;
+      row += decodeCellCode(buffer[idx] ?? 32n);
+    }
+    rows.push(row);
+  }
+
+  return {
+    width,
+    height,
+    text: rows.join("\n"),
+  };
+}
+
+async function handleTestCommand(command: TestDriverCommand): Promise<unknown> {
+  switch (command.cmd) {
+    case "ping":
+      return { pong: true };
+    case "sleep":
+      await Bun.sleep(command.ms);
+      return { sleptMs: command.ms };
+    case "key":
+      handleInput(command.data);
+      return { accepted: true };
+    case "mouse": {
+      const btn = command.btn ?? 0;
+      const x = Math.max(1, Math.floor(command.x));
+      const y = Math.max(1, Math.floor(command.y));
+
+      if (command.kind === "click") {
+        handleMouseEvent(buildMouseEscape("press", btn, x, y));
+        handleMouseEvent(buildMouseEscape("release", btn, x, y));
+      } else {
+        handleMouseEvent(buildMouseEscape(command.kind, btn, x, y));
+      }
+
+      return { accepted: true };
+    }
+    case "focused":
+      return getFocusedSnapshot();
+    case "snapshot":
+      return getScreenSnapshot();
+    case "quit":
+      setTimeout(() => quitFn?.(), 0);
+      return { quitting: true };
+  }
 }
 
 function handleResize(): void {
@@ -355,13 +536,21 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   pressedNodeId = null;
   isRunning = true;
 
+  const stdinHandler = (data: Buffer) => handleInput(data.toString());
+  let testDriver: TestDriverServer | null = null;
+
   // 3. Setup stdin for keyboard/mouse input
-  // process.stdin.resume();
-  // process.stdin.setRawMode(true);
-  process.stdin.on("data", (data) => handleInput(data.toString(), options));
+  if (!options?.testMode) {
+    process.stdin.on("data", stdinHandler);
+  }
 
   // 4. Setup resize handler
   process.stdout.on("resize", handleResize);
+
+  // 4b. Optional socket-based test driver
+  if (options?.testSocket) {
+    testDriver = startTestDriver(options.testSocket, handleTestCommand);
+  }
 
   // 5. Create render effect
   ff(() => {
@@ -379,7 +568,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
 
     // Phase 1: Serialize node tree to flat arrays
     const serializeStart = options?.debug ? startPhase() : 0;
-    const { nodeData } = serialize(root);
+    const { nodeData } = serialize(root, !!options?.debug);
     if (options?.debug) endSerialize(serializeStart);
 
     // Phase 2: Rust FFI (taffy layout + buffer paint)
@@ -408,10 +597,14 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   // 6. Create and store quit function
   quitFn = () => {
     isRunning = false;
+    if (!options?.testMode) {
+      process.stdin.off("data", stdinHandler);
+    }
+    process.stdout.off("resize", handleResize);
+    testDriver?.stop();
     api.clear_text_registry();
     api.free_buffer();
     api.deinit_letui();
-    // process.stdin.setRawMode(false);
     if (options?.debug) {
       const stats = formatMetrics();
       Bun.write("dump/metrics.txt", stats + "\n");
