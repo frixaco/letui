@@ -321,6 +321,69 @@ pub extern "C" fn delete_text(node_id: u32) -> c_int {
     1
 }
 
+const TEXT_OP_UPSERT: u8 = 1;
+const TEXT_OP_DELETE: u8 = 2;
+const TEXT_OP_HEADER_LEN: usize = 9;
+
+#[unsafe(no_mangle)]
+pub extern "C" fn sync_text_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
+    if ops_len == 0 {
+        return 1;
+    }
+    if ops_ptr.is_null() {
+        return 0;
+    }
+
+    let ops = unsafe { slice::from_raw_parts(ops_ptr, ops_len as usize) };
+    let mut offset = 0usize;
+    let mut registry = TEXT_REGISTRY.lock().unwrap();
+
+    while offset < ops.len() {
+        if offset + TEXT_OP_HEADER_LEN > ops.len() {
+            return 0;
+        }
+
+        let op = ops[offset];
+        offset += 1;
+
+        let node_id = u32::from_le_bytes([
+            ops[offset],
+            ops[offset + 1],
+            ops[offset + 2],
+            ops[offset + 3],
+        ]);
+        offset += 4;
+
+        let text_len = u32::from_le_bytes([
+            ops[offset],
+            ops[offset + 1],
+            ops[offset + 2],
+            ops[offset + 3],
+        ]) as usize;
+        offset += 4;
+
+        match op {
+            TEXT_OP_UPSERT => {
+                if offset + text_len > ops.len() {
+                    return 0;
+                }
+                let text = String::from_utf8_lossy(&ops[offset..offset + text_len]).into_owned();
+                offset += text_len;
+                registry.insert(node_id, text);
+            }
+            TEXT_OP_DELETE => {
+                if text_len != 0 {
+                    return 0;
+                }
+                registry.remove(&node_id);
+            }
+            _ => return 0,
+        }
+    }
+
+    1
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn clear_text_registry() -> c_int {
     let mut registry = TEXT_REGISTRY.lock().unwrap();

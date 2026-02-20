@@ -38,15 +38,32 @@ function getNodeAt(x: number, y: number): Node | undefined {
 const FIELDS_PER_NODE = 12;
 const EMPTY_TEXT_PAYLOAD = new Uint8Array(1);
 const textEncoder = new TextEncoder();
+const TEXT_OP_UPSERT = 1;
+const TEXT_OP_DELETE = 2;
 
-function upsertText(nodeId: number, text: string): void {
-  const encoded = textEncoder.encode(text);
-  const payload = encoded.length > 0 ? encoded : EMPTY_TEXT_PAYLOAD;
-  api.upsert_text(nodeId, payload, encoded.length);
+function writeU32LE(target: number[], value: number): void {
+  target.push(
+    value & 0xff,
+    (value >>> 8) & 0xff,
+    (value >>> 16) & 0xff,
+    (value >>> 24) & 0xff,
+  );
 }
 
-function deleteText(nodeId: number): void {
-  api.delete_text(nodeId);
+function queueUpsertTextOp(target: number[], nodeId: number, text: string): void {
+  const encoded = textEncoder.encode(text);
+  target.push(TEXT_OP_UPSERT);
+  writeU32LE(target, nodeId >>> 0);
+  writeU32LE(target, encoded.length >>> 0);
+  for (const byte of encoded) {
+    target.push(byte);
+  }
+}
+
+function queueDeleteTextOp(target: number[], nodeId: number): void {
+  target.push(TEXT_OP_DELETE);
+  writeU32LE(target, nodeId >>> 0);
+  writeU32LE(target, 0);
 }
 
 function countNodes(node: Node): number {
@@ -60,6 +77,7 @@ function serialize(root: Node): {
   const nodeCount = countNodes(root);
   const nodeData = new Float32Array(nodeCount * FIELDS_PER_NODE);
   const nextTextRegistry = new Map<number, string>();
+  const textOps: number[] = [];
 
   let offset = 0;
 
@@ -111,7 +129,7 @@ function serialize(root: Node): {
       nextTextRegistry.set(node.id, textContent);
 
       if (textRegistry.get(node.id) !== textContent) {
-        upsertText(node.id, textContent);
+        queueUpsertTextOp(textOps, node.id, textContent);
       }
     }
 
@@ -138,9 +156,15 @@ function serialize(root: Node): {
 
   for (const id of textRegistry.keys()) {
     if (!nextTextRegistry.has(id)) {
-      deleteText(id);
+      queueDeleteTextOp(textOps, id);
     }
   }
+
+  if (textOps.length > 0) {
+    const payload = Uint8Array.from(textOps);
+    api.sync_text_ops(payload, payload.length);
+  }
+
   textRegistry = nextTextRegistry;
 
   return { nodeData };
