@@ -15,34 +15,6 @@ TUI library written using Rust and TypeScript
 
 **Goal**: Stop sending all text on every render. Register text once → get `u8` ID → pass only ID (1 byte) across FFI.
 
-**Rust side**:
-
-- Add `TextRegistry` struct: `slots: Vec<Option<String>>` (256 max), `free: Vec<u8>` (freelist)
-- FFI functions:
-  - `text_register(ptr, len) -> u8` — alloc slot, return ID (0 = failure/empty)
-  - `text_update(id, ptr, len) -> i32` — replace text at existing ID
-  - `text_free(id) -> i32` — return slot to freelist
-  - `text_clear() -> i32` — reset all (on quit)
-- In `paint()`: lock registry once at start, pass `&TextRegistry` down
-- Change node parsing: read `text_id` field (u8 stored as f32), resolve via `reg.get(id)`
-
-**TypeScript side**:
-
-- Add FFI symbols for `text_register`, `text_update`, `text_free`, `text_clear`
-- Create `TextIdRegistry` class:
-  - `byNodeId: Map<number, { id: number; last: string }>`
-  - `getOrCreate(nodeId, text)`: register if new, update if changed, return ID
-  - `freeNode(nodeId)`: reclaim ID when node unmounts
-- In serialization: replace `textLength` field with `textId`, remove `textData` concat
-- Track `prevNodeIds` vs `currentNodeIds` each frame → free disappeared nodes
-
-**Key details**:
-
-- `u8` IDs are exactly representable in `f32` (no Float32Array change needed)
-- ID 0 = empty/missing text (reserve slot 0)
-- Must free IDs on node removal (255 usable slots max)
-- Lock registry once per `paint()`, not per-node (perf)
-
 **Expected result**: FFI traffic O(changed texts) instead of O(all texts every frame)
 
 ---
