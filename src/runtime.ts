@@ -1,4 +1,5 @@
 import { ptr, toArrayBuffer, type Pointer } from "bun:ffi";
+import { writeFileSync } from "fs";
 import api from "./ffi";
 import { $, ff, type Signal } from "./signals";
 import { getFocusedNode } from "./components";
@@ -13,6 +14,7 @@ import {
   endSync,
   endFlush,
   formatMetrics,
+  DEFAULT_METRICS_PATH,
 } from "./metrics";
 import { logWriter } from "./debug";
 import {
@@ -481,7 +483,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     api.deinit_letui();
     if (options?.debug) {
       const stats = formatMetrics();
-      Bun.write("dump/metrics.txt", stats + "\n");
+      writeFileSync(DEFAULT_METRICS_PATH, stats + "\n", "utf8");
       console.log(stats);
       logWriter.flush();
     }

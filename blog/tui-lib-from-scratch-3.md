@@ -1,8 +1,8 @@
-export const metadata = {
-  title: "Building a TUI Library from scratch: Part 3",
-  description: "Optimization journey - I want 120+fps and sub 8ms frame times",
-  date: "2025-12-13T12:00:00",
-};
+---
+title: "Building a TUI Library from scratch: Part 3"
+description: "Optimization journey - I want 120+fps and sub 8ms frame times"
+date: "2025-12-13T12:00:00"
+---
 
 ## Building a TUI Library from Scratch: Part 3 - Optimization
 

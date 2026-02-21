@@ -1,5 +1,8 @@
 # letui
 
+![](./demo.png)
+![](./demo-2.png)
+
 https://github.com/user-attachments/assets/a84f8b6c-86fd-4f42-9ec8-84edd24c7abd
 
 TUI library written using Rust and TypeScript
@@ -20,82 +23,26 @@ TUI library written using Rust and TypeScript
 
 **TODO**:
 
-### Priority 0: Text Registry (FFI Optimization) ✅
-
-- [x] Keep text on Rust side in `TEXT_REGISTRY` (keyed by node id)
-- [x] Detect text diffs in TS runtime (`upsert` + `delete`)
-- [x] Encode text diffs as compact ops and send once via `sync_text_ops`
-- [x] Apply all text ops in one Rust pass under one registry lock
-- Result: text traffic scales with changed nodes, not total text nodes
-
----
-
-### Priority 1: Scrollable Containers
-
-- [ ] Add `overflow: "hidden"` style prop → triggers clipping during paint
-- [ ] Add `scrollX`/`scrollY` signals per scrollable node
-- [ ] Pass scissor rect to Rust paint — skip cells outside bounds
-- [ ] Horizontal scrolling first, then vertical
-
-### Priority 2: Styled Text (Chunks)
-
-- [ ] `TextChunk` type: `{ text: string; fg?: number; bg?: number; bold?: boolean }`
-- [ ] Update `Text` component to accept `TextChunk[]` or plain string
-- [ ] Serialize chunks to Rust for rendering
-
-### Priority 3: Text Input
-
-- [ ] Single-line input improvements (cursor position, selection)
-- [ ] Multi-line text editor (builds on scrollable + input)
-
-### Priority 4: Syntax Highlighting
-
-- [ ] Tree-sitter integration (Rust bindings → FFI)
-- [ ] TextMate-compatible theme loading (like OpenTUI's `SyntaxStyle`)
-
----
-
-### Performance & Other
-
-- [x] Move paint to Rust (currently 81% of frame time @ 1.7ms avg)
-  - **Why**: remove JS per-cell paint work from hot path
-  - **Current flow**:
-    - JS serializes node tree into `nodeData`
-    - Rust does layout + paint into `CURRENT_BUFFER`
-    - JS only syncs frames/event hit areas, then calls `flush()`
-    - Text sync now happens separately via `sync_text_ops`
-- [ ] Add scrollable containers
-
-- [ ] How to handle serialization of walls of text: https://ampcode.com/threads/T-019bdac3-ba03-745f-a3d3-c9d53bfa0648
-- [ ] Add render caching - skip serialize/layout if signals unchanged (pi-mono pattern)
-- [ ] Incremental tree updates - don't rebuild entire Taffy tree each frame, cache structure and update only changed nodes
-- [ ] Visibility culling - skip `paint()` for off-screen nodes (OpenTUI's `_getVisibleChildren` pattern)
-
-- [ ] Neovim as text input (use [Bun PTY support](https://bun.com/docs/runtime/child-process#terminal-pty-support))
-- [ ] Will SIMD work if I wanna implement caching for serialization. For example, when comparing trees I used SIMD (idk what i'm talking about)
-- [ ] Refactor flush function with BatchWriter pattern to reduce nesting
-  - BatchWriter struct holds stdout ref, char_seq, batch_start_x/y, prev_fg/bg
-  - `new()` initializes with sentinel colors (u64::MAX) to force first color emit
-  - `push(x, y, ch, fg, bg)` handles gap detection, color changes, and accumulates chars
-  - `flush_pending()` emits MoveTo + Print for accumulated batch
-  - Encapsulates all batching logic, main loop just calls push() for changed cells
-- [ ] Add performance stats overlay that update independently from rest of the app (can i use a separate thread?)
-- [x] Add `flexGrow` support for dynamic width components (e.g., progress bars)
-  - **TypeScript side:**
-    - Add `flexGrow?: number` to `StyleProps` in `src/types.ts`
-    - Update `createStyleSignals()` in `src/components.ts` to include `flexGrow: $(input.flexGrow)`
-    - Update serialization in `src/runtime.ts` to pass `flexGrow` value to Rust (add to `FIELDS_PER_NODE`)
-  - **Rust side:**
-    - Increment `FIELDS_PER_NODE` from 12 to 13 in `lib.rs`
-    - Add `flex_grow: f32` field to `Node` struct
-    - Parse `flex_grow` in `parse_node()` function
-    - Apply `style.flex_grow = node.flex_grow` in `get_styles()` for all node types
-  - **Progress bar update:**
-    - Remove fixed `width` prop from `ProgressBar`
-    - Instead of `" ".repeat(n)`, use a single space `" "` for text
-    - Set `flexGrow: progress / 100` on filled node, `flexGrow: (100 - progress) / 100` on unfilled node
-    - Layout engine distributes space proportionally - bar auto-sizes to container
-  - **Benefits:** No fixed width needed, bar fills available space, cleaner API
+- [ ] Scrollable containers: route wheel/touchpad events (`deltaX`/`deltaY`) to nearest scrollable container
+- [ ] Scrollable containers: add `overflow: "hidden"` prop to trigger clipping during paint
+- [ ] Scrollable containers: add `scrollX`/`scrollY` signals per scrollable node
+- [ ] Scrollable containers: pass scissor rect to Rust paint to skip out-of-bounds cells
+- [ ] Scrollable containers: implement horizontal scrolling first, then vertical
+- [ ] Styled text chunks: add `TextChunk` type `{ text: string; fg?: number; bg?: number; bold?: boolean }`
+- [ ] Styled text chunks: update `Text` to accept `TextChunk[]` or plain string
+- [ ] Styled text chunks: serialize chunks to Rust renderer
+- [ ] Text input: improve single-line input (cursor position, selection)
+- [ ] Text input: add multi-line editor (builds on scrollable + input)
+- [ ] Syntax highlighting: integrate Tree-sitter (Rust bindings -> FFI)
+- [ ] Syntax highlighting: load TextMate-compatible themes (like OpenTUI `SyntaxStyle`)
+- [ ] Performance: define wall-of-text serialization strategy ([thread](https://ampcode.com/threads/T-019bdac3-ba03-745f-a3d3-c9d53bfa0648))
+- [ ] Performance: add render caching to skip serialize/layout when signals unchanged (pi-mono pattern)
+- [ ] Performance: implement incremental tree updates instead of rebuilding Taffy tree each frame
+- [ ] Performance: add visibility culling to skip `paint()` for off-screen nodes (OpenTUI `_getVisibleChildren`)
+- [ ] Experiment: explore Neovim as text input (use [Bun PTY support](https://bun.com/docs/runtime/child-process#terminal-pty-support))
+- [ ] Experiment: evaluate SIMD for tree diff / serialization comparisons
+- [ ] Performance: refactor `flush` with `BatchWriter` pattern
+- [ ] Tooling: add performance stats overlay that updates independently from app render
 
 ### NPM publish notes:
 

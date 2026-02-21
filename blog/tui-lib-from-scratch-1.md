@@ -1,11 +1,8 @@
-import Script from "next/script";
-
-export const metadata = {
-  title: "Building a TUI Library from scratch: Part 1",
-  description:
-    "Initial implementation of my terminal user interface library using Bun, Rust and classes",
-  date: "2025-12-12T10:00:00",
-};
+---
+title: "Building a TUI Library from scratch: Part 1"
+description: "Initial implementation of my terminal user interface library using Bun, Rust and classes"
+date: "2025-12-12T10:00:00"
+---
 
 ## Building a TUI Library from Scratch: From Classes to Signals
 
@@ -21,19 +18,11 @@ export const metadata = {
 
 I've been using Neovim for years and enjoyed living inside my terminal. I was also super interested in different CLIs and TUIs. I got even more curious when I started hearing about Claude Code, Codex, Aider and similar AI agents that run in the terminal (about a year ago I think) more and more. I did some quick research and found [`react-ink`](https://github.com/vadimdemedes/ink), then [`opencode`](https://github.com/sst/opencode). Soon after I saw this post:
 
-<blockquote className="twitter-tweet">
-  <p lang="en" dir="ltr">
-    yeah unfortunately the best tooling for TUIs is in go
-    <br />
-    <br />
-    we&#39;ll build OpenTUI one day for js but till then this hack works
-  </p>
-  &mdash; dax (@thdxr){" "}
-  <a href="https://twitter.com/thdxr/status/1928902930419048585?ref_src=twsrc%5Etfw">
-    May 31, 2025
-  </a>
-</blockquote>
-<Script src="https://platform.twitter.com/widgets.js" strategy="lazyOnload" />
+> yeah unfortunately the best tooling for TUIs is in go
+>
+> we'll build OpenTUI one day for js but till then this hack works
+>
+> — dax (@thdxr), [May 31, 2025](https://twitter.com/thdxr/status/1928902930419048585?ref_src=twsrc%5Etfw)
 
 and right then I decided to build my own TUI library someday.
 

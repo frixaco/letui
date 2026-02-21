@@ -540,21 +540,34 @@ fn parse_usize_field(value: f32) -> Option<usize> {
     Some(value as usize)
 }
 
+fn resolve_overflow(node: &Node) -> (Overflow, Overflow) {
+    let mut overflow_x = node.style.overflow_x.unwrap_or(Overflow::Visible);
+    let mut overflow_y = node.style.overflow_y.unwrap_or(Overflow::Visible);
+
+    if matches!(node.node_type, NodeType::Column) {
+        if node.style.overflow_x.is_none() {
+            overflow_x = Overflow::Hidden;
+        }
+        if node.style.overflow_y.is_none() {
+            overflow_y = Overflow::Hidden;
+        }
+    }
+
+    (overflow_x, overflow_y)
+}
+
 fn get_styles(node: &Node) -> Style {
     let mut style = Style::default();
     node.style.apply_to_taffy(&mut style);
+    let (overflow_x, overflow_y) = resolve_overflow(node);
+    style.overflow.x = overflow_x;
+    style.overflow.y = overflow_y;
 
     match node.node_type {
         NodeType::Column => {
             style.flex_direction = FlexDirection::Column;
             if node.style.align_items.is_none() {
                 style.align_items = Some(AlignItems::Stretch);
-            }
-            if node.style.overflow_x.is_none() {
-                style.overflow.x = Overflow::Hidden;
-            }
-            if node.style.overflow_y.is_none() {
-                style.overflow.y = Overflow::Hidden;
             }
         }
         NodeType::Row => {
@@ -573,6 +586,8 @@ fn get_styles(node: &Node) -> Style {
 }
 
 fn node_type_to_context(node: &Node) -> NodeContext {
+    let (overflow_x, overflow_y) = resolve_overflow(node);
+
     match node.node_type {
         NodeType::Column => NodeContext::Column {
             bg: node.style.background,
@@ -580,6 +595,8 @@ fn node_type_to_context(node: &Node) -> NodeContext {
             border_color: node.style.border_color,
             border_style: node.style.border_style,
             border_width: node.style.border_width.unwrap_or(0.0),
+            overflow_x,
+            overflow_y,
         },
         NodeType::Row => NodeContext::Row {
             bg: node.style.background,
@@ -587,11 +604,15 @@ fn node_type_to_context(node: &Node) -> NodeContext {
             border_color: node.style.border_color,
             border_style: node.style.border_style,
             border_width: node.style.border_width.unwrap_or(0.0),
+            overflow_x,
+            overflow_y,
         },
         NodeType::Text => NodeContext::Text {
             content: node.text.clone(),
             fg: node.style.foreground,
             bg: node.style.background,
+            overflow_x,
+            overflow_y,
         },
         NodeType::Button => NodeContext::Button {
             label: node.text.clone(),
@@ -600,6 +621,8 @@ fn node_type_to_context(node: &Node) -> NodeContext {
             border_color: node.style.border_color,
             border_style: node.style.border_style,
             border_width: node.style.border_width.unwrap_or(0.0),
+            overflow_x,
+            overflow_y,
         },
         NodeType::Input => NodeContext::Input {
             content: node.text.clone(),
@@ -608,6 +631,8 @@ fn node_type_to_context(node: &Node) -> NodeContext {
             border_color: node.style.border_color,
             border_style: node.style.border_style,
             border_width: node.style.border_width.unwrap_or(0.0),
+            overflow_x,
+            overflow_y,
         },
     }
 }
@@ -654,6 +679,8 @@ enum NodeContext {
         content: String,
         fg: Option<u32>,
         bg: Option<u32>,
+        overflow_x: Overflow,
+        overflow_y: Overflow,
     },
     Button {
         label: String,
@@ -662,6 +689,8 @@ enum NodeContext {
         border_color: Option<u32>,
         border_style: BorderStyle,
         border_width: f32,
+        overflow_x: Overflow,
+        overflow_y: Overflow,
     },
     Input {
         content: String,
@@ -670,6 +699,8 @@ enum NodeContext {
         border_color: Option<u32>,
         border_style: BorderStyle,
         border_width: f32,
+        overflow_x: Overflow,
+        overflow_y: Overflow,
     },
     Row {
         bg: Option<u32>,
@@ -677,6 +708,8 @@ enum NodeContext {
         border_color: Option<u32>,
         border_style: BorderStyle,
         border_width: f32,
+        overflow_x: Overflow,
+        overflow_y: Overflow,
     },
     Column {
         bg: Option<u32>,
@@ -684,7 +717,116 @@ enum NodeContext {
         border_color: Option<u32>,
         border_style: BorderStyle,
         border_width: f32,
+        overflow_x: Overflow,
+        overflow_y: Overflow,
     },
+}
+
+#[derive(Clone, Copy)]
+struct ClipRect {
+    x_start: u16,
+    y_start: u16,
+    x_end: u16,
+    y_end: u16,
+}
+
+impl ClipRect {
+    fn is_empty(&self) -> bool {
+        self.x_start >= self.x_end || self.y_start >= self.y_end
+    }
+}
+
+fn full_clip_rect(tw: u16, th: u16) -> ClipRect {
+    ClipRect {
+        x_start: 0,
+        y_start: 0,
+        x_end: tw,
+        y_end: th,
+    }
+}
+
+fn clip_rect_from_bounds(x: f32, y: f32, w: f32, h: f32, tw: u16, th: u16) -> Option<ClipRect> {
+    if !w.is_finite() || !h.is_finite() || w <= 0.0 || h <= 0.0 {
+        return None;
+    }
+
+    let x_start = x.floor().max(0.0).min(tw as f32) as u16;
+    let y_start = y.floor().max(0.0).min(th as f32) as u16;
+    let x_end = (x + w).ceil().max(0.0).min(tw as f32) as u16;
+    let y_end = (y + h).ceil().max(0.0).min(th as f32) as u16;
+
+    if x_start >= x_end || y_start >= y_end {
+        return None;
+    }
+
+    Some(ClipRect {
+        x_start,
+        y_start,
+        x_end,
+        y_end,
+    })
+}
+
+fn intersect_clip_rect(a: ClipRect, b: ClipRect) -> Option<ClipRect> {
+    let x_start = a.x_start.max(b.x_start);
+    let y_start = a.y_start.max(b.y_start);
+    let x_end = a.x_end.min(b.x_end);
+    let y_end = a.y_end.min(b.y_end);
+
+    if x_start >= x_end || y_start >= y_end {
+        return None;
+    }
+
+    Some(ClipRect {
+        x_start,
+        y_start,
+        x_end,
+        y_end,
+    })
+}
+
+fn apply_overflow_clip(
+    parent_clip: ClipRect,
+    content_clip: Option<ClipRect>,
+    clip_x: bool,
+    clip_y: bool,
+) -> Option<ClipRect> {
+    if !clip_x && !clip_y {
+        return Some(parent_clip);
+    }
+
+    let content = content_clip?;
+    let x_start = if clip_x {
+        parent_clip.x_start.max(content.x_start)
+    } else {
+        parent_clip.x_start
+    };
+    let y_start = if clip_y {
+        parent_clip.y_start.max(content.y_start)
+    } else {
+        parent_clip.y_start
+    };
+    let x_end = if clip_x {
+        parent_clip.x_end.min(content.x_end)
+    } else {
+        parent_clip.x_end
+    };
+    let y_end = if clip_y {
+        parent_clip.y_end.min(content.y_end)
+    } else {
+        parent_clip.y_end
+    };
+
+    if x_start >= x_end || y_start >= y_end {
+        return None;
+    }
+
+    Some(ClipRect {
+        x_start,
+        y_start,
+        x_end,
+        y_end,
+    })
 }
 
 fn measure_wrapped_text(text: &str, max_cols: Option<u16>) -> (u16, u16) {
@@ -778,11 +920,25 @@ fn measure_function(
     }
 }
 
-fn draw_background_at(buf: &mut [u64], x: f32, y: f32, w: f32, h: f32, bg: u32, tw: u16, th: u16) {
-    let x_start = x as u16;
-    let y_start = y as u16;
-    let x_end = (x + w).min(tw as f32) as u16;
-    let y_end = (y + h).min(th as f32) as u16;
+fn draw_background_at(
+    buf: &mut [u64],
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    bg: u32,
+    tw: u16,
+    th: u16,
+    clip: ClipRect,
+) {
+    let x_start = (x.floor().max(0.0) as u16).max(clip.x_start);
+    let y_start = (y.floor().max(0.0) as u16).max(clip.y_start);
+    let x_end = ((x + w).ceil().min(tw as f32) as u16).min(clip.x_end);
+    let y_end = ((y + h).ceil().min(th as f32) as u16).min(clip.y_end);
+
+    if x_start >= x_end || y_start >= y_end {
+        return;
+    }
 
     for row in y_start..y_end {
         for col in x_start..x_end {
@@ -806,6 +962,7 @@ fn draw_text_at(
     bg: u32,
     tw: u16,
     th: u16,
+    clip: ClipRect,
 ) {
     let x_start = x.max(0.0) as u16;
     let y_start = y.max(0.0) as u16;
@@ -844,10 +1001,12 @@ fn draw_text_at(
             }
         }
 
-        let idx = (tw * row + col) as usize * 3;
-        buf[idx] = ch as u64;
-        buf[idx + 1] = fg as u64;
-        buf[idx + 2] = bg as u64;
+        if col >= clip.x_start && col < clip.x_end && row >= clip.y_start && row < clip.y_end {
+            let idx = (tw * row + col) as usize * 3;
+            buf[idx] = ch as u64;
+            buf[idx + 1] = fg as u64;
+            buf[idx + 2] = bg as u64;
+        }
         col = col.saturating_add(1);
     }
 }
@@ -863,11 +1022,16 @@ fn draw_border_at(
     style: BorderStyle,
     tw: u16,
     th: u16,
+    clip: ClipRect,
 ) {
-    let x_start = x as u16;
-    let y_start = y as u16;
-    let x_end = ((x + w) as u16).saturating_sub(1).min(tw.saturating_sub(1));
-    let y_end = ((y + h) as u16).saturating_sub(1).min(th.saturating_sub(1));
+    let x_start = x.floor().max(0.0).min((tw.saturating_sub(1)) as f32) as u16;
+    let y_start = y.floor().max(0.0).min((th.saturating_sub(1)) as f32) as u16;
+    let x_end = ((x + w).ceil().max(0.0).min(tw as f32) as u16).saturating_sub(1);
+    let y_end = ((y + h).ceil().max(0.0).min(th as f32) as u16).saturating_sub(1);
+
+    if x_start > x_end || y_start > y_end {
+        return;
+    }
 
     let (tl, tr, bl, br, h_line, v_line) = match style {
         BorderStyle::Rounded => ('╭', '╮', '╰', '╯', '─', '│'),
@@ -876,7 +1040,13 @@ fn draw_border_at(
     };
 
     let set_cell = |buf: &mut [u64], col: u16, row: u16, ch: char| {
-        if col < tw && row < th {
+        if col < tw
+            && row < th
+            && col >= clip.x_start
+            && col < clip.x_end
+            && row >= clip.y_start
+            && row < clip.y_end
+        {
             let idx = (tw * row + col) as usize * 3;
             buf[idx] = ch as u64;
             buf[idx + 1] = color as u64;
@@ -910,6 +1080,7 @@ fn draw_cursor_at(
     bg: u32,
     tw: u16,
     th: u16,
+    clip: ClipRect,
 ) {
     let x_start = x.max(0.0) as u16;
     let y_start = y.max(0.0) as u16;
@@ -956,7 +1127,12 @@ fn draw_cursor_at(
         col = x_start;
     }
 
-    if row < y_end {
+    if row < y_end
+        && col >= clip.x_start
+        && col < clip.x_end
+        && row >= clip.y_start
+        && row < clip.y_end
+    {
         let idx = (tw * row + col) as usize * 3;
         buf[idx] = '█' as u64;
         buf[idx + 1] = fg as u64;
@@ -974,12 +1150,25 @@ fn paint_taffy_node(
     parent_bg: u32,
     tw: u16,
     th: u16,
+    clip: ClipRect,
 ) {
+    if clip.is_empty() {
+        return;
+    }
+
     let layout = taffy.layout(node_id).unwrap();
     let x = abs_x + layout.location.x;
     let y = abs_y + layout.location.y;
     let w = layout.size.width;
     let h = layout.size.height;
+    let node_bounds = match clip_rect_from_bounds(x, y, w, h, tw, th) {
+        Some(bounds) => bounds,
+        None => return,
+    };
+    let node_clip = match intersect_clip_rect(clip, node_bounds) {
+        Some(node_clip) => node_clip,
+        None => return,
+    };
 
     // Content box position (inside border + padding)
     let content_x = abs_x + layout.content_box_x();
@@ -987,15 +1176,31 @@ fn paint_taffy_node(
     let content_w = layout.content_box_width();
     let content_h = layout.content_box_height();
 
-    let (fg, bg) = match taffy.get_node_context(node_id) {
-        Some(NodeContext::Text { content, fg, bg }) => {
+    let (fg, bg, overflow_x, overflow_y) = match taffy.get_node_context(node_id) {
+        Some(NodeContext::Text {
+            content,
+            fg,
+            bg,
+            overflow_x,
+            overflow_y,
+        }) => {
             let fg = (*fg).unwrap_or(parent_fg);
             let bg = (*bg).unwrap_or(parent_bg);
-            draw_background_at(buf, x, y, w, h, bg, tw, th);
+            draw_background_at(buf, x, y, w, h, bg, tw, th, node_clip);
             draw_text_at(
-                buf, content_x, content_y, content_w, content_h, content, fg, bg, tw, th,
+                buf,
+                content_x,
+                content_y,
+                content_w,
+                content_h,
+                content,
+                fg,
+                bg,
+                tw,
+                th,
+                node_clip,
             );
-            (fg, bg)
+            (fg, bg, *overflow_x, *overflow_y)
         }
         Some(NodeContext::Button {
             label,
@@ -1004,18 +1209,30 @@ fn paint_taffy_node(
             border_color,
             border_style,
             border_width,
+            overflow_x,
+            overflow_y,
         }) => {
             let fg = (*fg).unwrap_or(parent_fg);
             let bg = (*bg).unwrap_or(parent_bg);
-            draw_background_at(buf, x, y, w, h, bg, tw, th);
+            draw_background_at(buf, x, y, w, h, bg, tw, th, node_clip);
             if *border_style != BorderStyle::None && *border_width > 0.0 {
                 let border_color = (*border_color).unwrap_or(fg);
-                draw_border_at(buf, x, y, w, h, border_color, bg, *border_style, tw, th);
+                draw_border_at(buf, x, y, w, h, border_color, bg, *border_style, tw, th, node_clip);
             }
             draw_text_at(
-                buf, content_x, content_y, content_w, content_h, label, fg, bg, tw, th,
+                buf,
+                content_x,
+                content_y,
+                content_w,
+                content_h,
+                label,
+                fg,
+                bg,
+                tw,
+                th,
+                node_clip,
             );
-            (fg, bg)
+            (fg, bg, *overflow_x, *overflow_y)
         }
         Some(NodeContext::Input {
             content,
@@ -1024,21 +1241,43 @@ fn paint_taffy_node(
             border_color,
             border_style,
             border_width,
+            overflow_x,
+            overflow_y,
         }) => {
             let fg = (*fg).unwrap_or(parent_fg);
             let bg = (*bg).unwrap_or(parent_bg);
-            draw_background_at(buf, x, y, w, h, bg, tw, th);
+            draw_background_at(buf, x, y, w, h, bg, tw, th, node_clip);
             if *border_style != BorderStyle::None && *border_width > 0.0 {
                 let border_color = (*border_color).unwrap_or(fg);
-                draw_border_at(buf, x, y, w, h, border_color, bg, *border_style, tw, th);
+                draw_border_at(buf, x, y, w, h, border_color, bg, *border_style, tw, th, node_clip);
             }
             draw_text_at(
-                buf, content_x, content_y, content_w, content_h, content, fg, bg, tw, th,
+                buf,
+                content_x,
+                content_y,
+                content_w,
+                content_h,
+                content,
+                fg,
+                bg,
+                tw,
+                th,
+                node_clip,
             );
             draw_cursor_at(
-                buf, content_x, content_y, content_w, content_h, content, fg, bg, tw, th,
+                buf,
+                content_x,
+                content_y,
+                content_w,
+                content_h,
+                content,
+                fg,
+                bg,
+                tw,
+                th,
+                node_clip,
             );
-            (fg, bg)
+            (fg, bg, *overflow_x, *overflow_y)
         }
         Some(NodeContext::Row {
             fg,
@@ -1046,6 +1285,8 @@ fn paint_taffy_node(
             border_color,
             border_style,
             border_width,
+            overflow_x,
+            overflow_y,
         })
         | Some(NodeContext::Column {
             fg,
@@ -1053,21 +1294,34 @@ fn paint_taffy_node(
             border_color,
             border_style,
             border_width,
+            overflow_x,
+            overflow_y,
         }) => {
             let fg = (*fg).unwrap_or(parent_fg);
             let bg = (*bg).unwrap_or(parent_bg);
-            draw_background_at(buf, x, y, w, h, bg, tw, th);
+            draw_background_at(buf, x, y, w, h, bg, tw, th, node_clip);
             if *border_style != BorderStyle::None && *border_width > 0.0 {
                 let border_color = (*border_color).unwrap_or(fg);
-                draw_border_at(buf, x, y, w, h, border_color, bg, *border_style, tw, th);
+                draw_border_at(buf, x, y, w, h, border_color, bg, *border_style, tw, th, node_clip);
             }
-            (fg, bg)
+            (fg, bg, *overflow_x, *overflow_y)
         }
-        None => (parent_fg, parent_bg),
+        None => (parent_fg, parent_bg, Overflow::Visible, Overflow::Visible),
+    };
+
+    let content_clip = clip_rect_from_bounds(content_x, content_y, content_w, content_h, tw, th);
+    let child_clip = match apply_overflow_clip(
+        node_clip,
+        content_clip,
+        overflow_x == Overflow::Hidden,
+        overflow_y == Overflow::Hidden,
+    ) {
+        Some(child_clip) => child_clip,
+        None => return,
     };
 
     for child in taffy.children(node_id).unwrap() {
-        paint_taffy_node(taffy, child, buf, x, y, fg, bg, tw, th);
+        paint_taffy_node(taffy, child, buf, x, y, fg, bg, tw, th, child_clip);
     }
 }
 
@@ -1135,7 +1389,18 @@ pub extern "C" fn paint(pn: *const f32, ln: u32, _pt: *const u8, _lt: u32) -> c_
     // Single lock for entire paint phase
     let mut cb = CURRENT_BUFFER.lock().unwrap();
     if let Some(ref mut buf) = *cb {
-        paint_taffy_node(&taffy, root, buf, 0.0, 0.0, parent_fg, parent_bg, tw, th);
+        paint_taffy_node(
+            &taffy,
+            root,
+            buf,
+            0.0,
+            0.0,
+            parent_fg,
+            parent_bg,
+            tw,
+            th,
+            full_clip_rect(tw, th),
+        );
     }
 
     1

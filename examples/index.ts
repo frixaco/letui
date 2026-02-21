@@ -311,7 +311,7 @@ onKey("h", () => selectFirst());
 onKey("\x1b[D", () => selectFirst()); // Arrow Left - jump to start
 
 onKey("q", () => {
-  saveMetrics("dump/metrics-letui.txt");
+  saveMetrics();
   app.quit();
 });
 

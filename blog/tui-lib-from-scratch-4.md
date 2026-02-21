@@ -1,9 +1,8 @@
-export const metadata = {
-  title: "Building a TUI Library from scratch: Part 4",
-  description:
-    "Binary protocols, batched flushing, component API redesign, and facing competition",
-  date: "2026-01-08T10:00:00",
-};
+---
+title: "Building a TUI Library from scratch: Part 4"
+description: "Binary protocols, batched flushing, component API redesign, and facing competition"
+date: "2026-01-08T10:00:00"
+---
 
 ## Building a TUI Library from Scratch: Part 4 - Binary Protocol and Facing Reality
 
@@ -198,4 +197,3 @@ At 2.1ms I'm well under 16.6ms (60fps) and even under 8.3ms (120fps). But there'
 Paint is the bottleneck. All those `setCell()` calls in JavaScript, writing to typed arrays, that's what's eating time. The obvious next step is moving paint to Rust - same as I did with layout.
 
 But for now, I have a working TUI library that can do 500+ fps on a good day. Time to actually build something with it.
-

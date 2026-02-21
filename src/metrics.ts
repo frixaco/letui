@@ -1,3 +1,5 @@
+import { writeFileSync } from "fs";
+
 interface MetricsData {
   frameTimes: number[];
   serializeTimes: number[];
@@ -164,6 +166,8 @@ export function resetMetrics(): void {
   metrics.frameCount = 0;
 }
 
-export function saveMetrics(filename: string): void {
-  Bun.write(filename, formatMetrics() + "\n");
+export const DEFAULT_METRICS_PATH = "dump/metrics.txt";
+
+export function saveMetrics(filename: string = DEFAULT_METRICS_PATH): void {
+  writeFileSync(filename, formatMetrics() + "\n", "utf8");
 }

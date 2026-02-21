@@ -1,9 +1,8 @@
-export const metadata = {
-  title: "Building a TUI Library from scratch: Part 5",
-  description:
-    "Moving paint to Rust and rethinking interaction state",
-  date: "2026-01-19T10:00:00",
-};
+---
+title: "Building a TUI Library from scratch: Part 5"
+description: "Moving paint to Rust and rethinking interaction state"
+date: "2026-01-19T10:00:00"
+---
 
 ## Building a TUI Library from Scratch: Part 5 - Paint in Rust, State in Rust
 

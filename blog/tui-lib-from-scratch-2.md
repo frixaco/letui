@@ -1,9 +1,8 @@
-export const metadata = {
-  title: "Building a TUI Library from scratch using Bun and Rust: Part 2",
-  description:
-    "Rewriting everything with signals-based reactivity, functional components, better API and more",
-  date: "2025-12-13T10:00:00",
-};
+---
+title: "Building a TUI Library from scratch using Bun and Rust: Part 2"
+description: "Rewriting everything with signals-based reactivity, functional components, better API and more"
+date: "2025-12-13T10:00:00"
+---
 
 ## Building a TUI Library from Scratch: Part 2
 
