@@ -20,14 +20,9 @@ use std::{
     slice,
     sync::{LazyLock, Mutex},
 };
-use taffy::{Overflow, prelude::*};
+use taffy::{Overflow, Point, prelude::*};
 
 mod colors;
-mod style_schema;
-use style_schema::{
-    BorderStyle, NODE_FIELDS_PER_NODE, STYLE_OP_DELETE, STYLE_OP_FIELDS_PER_RECORD,
-    STYLE_OP_UPSERT, StyleRecord,
-};
 
 static LAST_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
 static CURRENT_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
@@ -35,8 +30,6 @@ static TERMINAL_SIZE: Mutex<(u16, u16)> = Mutex::new((0, 0));
 static FRAMES: Mutex<Option<Vec<f32>>> = Mutex::new(None);
 static FIRST_DIFF: Mutex<bool> = Mutex::new(true);
 static TEXT_REGISTRY: LazyLock<Mutex<HashMap<u32, String>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
-static STYLE_REGISTRY: LazyLock<Mutex<HashMap<u32, StyleRecord>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[unsafe(no_mangle)]
@@ -404,46 +397,6 @@ pub extern "C" fn clear_text_registry() -> c_int {
     1
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn sync_style_ops(ptr_ops: *const f32, len_ops: u32) -> c_int {
-    if len_ops == 0 {
-        return 1;
-    }
-    if ptr_ops.is_null() {
-        return 0;
-    }
-    let ops = unsafe { slice::from_raw_parts(ptr_ops, len_ops as usize) };
-    if ops.len() % STYLE_OP_FIELDS_PER_RECORD != 0 {
-        return 0;
-    }
-
-    let mut registry = STYLE_REGISTRY.lock().unwrap();
-
-    for chunk in ops.chunks_exact(STYLE_OP_FIELDS_PER_RECORD) {
-        let op = chunk[0] as u32;
-        let style_id = chunk[1] as u32;
-        match op {
-            STYLE_OP_UPSERT => {
-                let style = StyleRecord::from_payload(&chunk[2..]);
-                registry.insert(style_id, style);
-            }
-            STYLE_OP_DELETE => {
-                registry.remove(&style_id);
-            }
-            _ => return 0,
-        }
-    }
-
-    1
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn clear_style_registry() -> c_int {
-    let mut registry = STYLE_REGISTRY.lock().unwrap();
-    registry.clear();
-    1
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum NodeType {
     Row = 1,
@@ -466,116 +419,131 @@ impl NodeType {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BorderStyle {
+    None = 0,
+    Rounded = 1,
+    Squared = 2,
+}
+
+impl BorderStyle {
+    fn from_f32(v: f32) -> Self {
+        match v as u32 {
+            1 => BorderStyle::Rounded,
+            2 => BorderStyle::Squared,
+            _ => BorderStyle::None,
+        }
+    }
+}
+
 #[derive(Debug)]
 struct Node {
     node_type: NodeType,
+    gap: f32,
+    padding_x: f32,
+    padding_y: f32,
+    border: f32,
+    flex_grow: f32,
     text: String,
     children: Vec<Node>,
-    style: StyleRecord,
+    bg: u32,
+    fg: u32,
+    border_color: u32,
+    border_style: BorderStyle,
+    node_id: u32,
 }
+
+const FIELDS_PER_NODE: usize = 12;
 
 fn parse_node(
     node_data: &[f32],
     node_offset: &mut usize,
-    text_registry: &HashMap<u32, String>,
-    style_registry: &HashMap<u32, StyleRecord>,
-) -> Option<Node> {
+    reg: &HashMap<u32, String>,
+) -> Node {
     let base = *node_offset;
-    if base + NODE_FIELDS_PER_NODE > node_data.len() {
-        return None;
-    }
-
     let node_type = NodeType::from_f32(node_data[base]);
-    let child_count = parse_usize_field(node_data[base + 1])?;
-    let node_id = parse_u32_field(node_data[base + 2])?;
-    let style_id = parse_u32_field(node_data[base + 3])?;
-    *node_offset = base + NODE_FIELDS_PER_NODE;
+    let gap = node_data[base + 1];
+    let padding_x = node_data[base + 2];
+    let padding_y = node_data[base + 3];
+    let border = node_data[base + 4];
+    let child_count = node_data[base + 5] as usize;
+    let bg = node_data[base + 6] as u32;
+    let fg = node_data[base + 7] as u32;
+    let border_color = node_data[base + 8] as u32;
+    let border_style = BorderStyle::from_f32(node_data[base + 9]);
+    let node_id = node_data[base + 10] as u32;
+    let flex_grow = node_data[base + 11];
 
-    // Each child consumes at least one node header.
-    let remaining_nodes = (node_data.len().saturating_sub(*node_offset)) / NODE_FIELDS_PER_NODE;
-    if child_count > remaining_nodes {
-        return None;
-    }
+    *node_offset += FIELDS_PER_NODE;
 
     let mut children = Vec::with_capacity(child_count);
     for _ in 0..child_count {
         children.push(parse_node(
             node_data,
             node_offset,
-            text_registry,
-            style_registry,
-        )?);
+            reg,
+        ));
     }
 
-    let text = if matches!(
-        node_type,
-        NodeType::Text | NodeType::Button | NodeType::Input
-    ) {
-        text_registry.get(&node_id).cloned().unwrap_or_default()
+    let text = if matches!(node_type, NodeType::Text | NodeType::Button | NodeType::Input) {
+        reg.get(&node_id).cloned().unwrap_or_default()
     } else {
         String::new()
     };
-
-    let style = style_registry.get(&style_id).cloned().unwrap_or_default();
-
-    Some(Node {
+    Node {
         node_type,
+        gap,
+        padding_x,
+        padding_y,
+        border,
+        flex_grow,
         text,
         children,
-        style,
-    })
-}
-
-fn parse_u32_field(value: f32) -> Option<u32> {
-    if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > u32::MAX as f32 {
-        return None;
+        bg,
+        fg,
+        border_color,
+        border_style,
+        node_id,
     }
-    Some(value as u32)
-}
-
-fn parse_usize_field(value: f32) -> Option<usize> {
-    if !value.is_finite() || value < 0.0 || value.fract() != 0.0 || value > usize::MAX as f32 {
-        return None;
-    }
-    Some(value as usize)
-}
-
-fn resolve_overflow(node: &Node) -> (Overflow, Overflow) {
-    let mut overflow_x = node.style.overflow_x.unwrap_or(Overflow::Visible);
-    let mut overflow_y = node.style.overflow_y.unwrap_or(Overflow::Visible);
-
-    if matches!(node.node_type, NodeType::Column) {
-        if node.style.overflow_x.is_none() {
-            overflow_x = Overflow::Hidden;
-        }
-        if node.style.overflow_y.is_none() {
-            overflow_y = Overflow::Hidden;
-        }
-    }
-
-    (overflow_x, overflow_y)
 }
 
 fn get_styles(node: &Node) -> Style {
-    let mut style = Style::default();
-    node.style.apply_to_taffy(&mut style);
-    let (overflow_x, overflow_y) = resolve_overflow(node);
-    style.overflow.x = overflow_x;
-    style.overflow.y = overflow_y;
+    let mut style = Style {
+        gap: Size {
+            width: length(node.gap),
+            height: zero(),
+        },
+        padding: Rect {
+            left: length(node.padding_x),
+            right: length(node.padding_x),
+            top: length(node.padding_y),
+            bottom: length(node.padding_y),
+        },
+        border: Rect {
+            left: length(node.border),
+            right: length(node.border),
+            top: length(node.border),
+            bottom: length(node.border),
+        },
+        flex_grow: node.flex_grow,
+        ..Default::default()
+    };
 
     match node.node_type {
         NodeType::Column => {
             style.flex_direction = FlexDirection::Column;
-            if node.style.align_items.is_none() {
-                style.align_items = Some(AlignItems::Stretch);
-            }
+            style.align_items = Some(AlignItems::Stretch);
+            style.overflow = Point {
+                x: Overflow::Hidden,
+                y: Overflow::Hidden,
+            };
         }
         NodeType::Row => {
             style.flex_direction = FlexDirection::Row;
         }
         NodeType::Input => {
             style.flex_direction = FlexDirection::Row;
-            if node.style.flex_grow.is_none() {
+            if node.flex_grow == 0.0 {
                 style.flex_grow = 1.0;
             }
         }
@@ -586,53 +554,37 @@ fn get_styles(node: &Node) -> Style {
 }
 
 fn node_type_to_context(node: &Node) -> NodeContext {
-    let (overflow_x, overflow_y) = resolve_overflow(node);
-
     match node.node_type {
         NodeType::Column => NodeContext::Column {
-            bg: node.style.background,
-            fg: node.style.foreground,
-            border_color: node.style.border_color,
-            border_style: node.style.border_style,
-            border_width: node.style.border_width.unwrap_or(0.0),
-            overflow_x,
-            overflow_y,
+            bg: node.bg,
+            fg: node.fg,
+            border_color: node.border_color,
+            border_style: node.border_style,
         },
         NodeType::Row => NodeContext::Row {
-            bg: node.style.background,
-            fg: node.style.foreground,
-            border_color: node.style.border_color,
-            border_style: node.style.border_style,
-            border_width: node.style.border_width.unwrap_or(0.0),
-            overflow_x,
-            overflow_y,
+            bg: node.bg,
+            fg: node.fg,
+            border_color: node.border_color,
+            border_style: node.border_style,
         },
         NodeType::Text => NodeContext::Text {
             content: node.text.clone(),
-            fg: node.style.foreground,
-            bg: node.style.background,
-            overflow_x,
-            overflow_y,
+            fg: node.fg,
+            bg: node.bg,
         },
         NodeType::Button => NodeContext::Button {
             label: node.text.clone(),
-            fg: node.style.foreground,
-            bg: node.style.background,
-            border_color: node.style.border_color,
-            border_style: node.style.border_style,
-            border_width: node.style.border_width.unwrap_or(0.0),
-            overflow_x,
-            overflow_y,
+            fg: node.fg,
+            bg: node.bg,
+            border_color: node.border_color,
+            border_style: node.border_style,
         },
         NodeType::Input => NodeContext::Input {
             content: node.text.clone(),
-            fg: node.style.foreground,
-            bg: node.style.background,
-            border_color: node.style.border_color,
-            border_style: node.style.border_style,
-            border_width: node.style.border_width.unwrap_or(0.0),
-            overflow_x,
-            overflow_y,
+            fg: node.fg,
+            bg: node.bg,
+            border_color: node.border_color,
+            border_style: node.border_style,
         },
     }
 }
@@ -677,193 +629,35 @@ fn build_frames_array(
 enum NodeContext {
     Text {
         content: String,
-        fg: Option<u32>,
-        bg: Option<u32>,
-        overflow_x: Overflow,
-        overflow_y: Overflow,
+        fg: u32,
+        bg: u32,
     },
     Button {
         label: String,
-        fg: Option<u32>,
-        bg: Option<u32>,
-        border_color: Option<u32>,
+        fg: u32,
+        bg: u32,
+        border_color: u32,
         border_style: BorderStyle,
-        border_width: f32,
-        overflow_x: Overflow,
-        overflow_y: Overflow,
     },
     Input {
         content: String,
-        fg: Option<u32>,
-        bg: Option<u32>,
-        border_color: Option<u32>,
+        fg: u32,
+        bg: u32,
+        border_color: u32,
         border_style: BorderStyle,
-        border_width: f32,
-        overflow_x: Overflow,
-        overflow_y: Overflow,
     },
     Row {
-        bg: Option<u32>,
-        fg: Option<u32>,
-        border_color: Option<u32>,
+        bg: u32,
+        fg: u32,
+        border_color: u32,
         border_style: BorderStyle,
-        border_width: f32,
-        overflow_x: Overflow,
-        overflow_y: Overflow,
     },
     Column {
-        bg: Option<u32>,
-        fg: Option<u32>,
-        border_color: Option<u32>,
+        bg: u32,
+        fg: u32,
+        border_color: u32,
         border_style: BorderStyle,
-        border_width: f32,
-        overflow_x: Overflow,
-        overflow_y: Overflow,
     },
-}
-
-#[derive(Clone, Copy)]
-struct ClipRect {
-    x_start: u16,
-    y_start: u16,
-    x_end: u16,
-    y_end: u16,
-}
-
-impl ClipRect {
-    fn is_empty(&self) -> bool {
-        self.x_start >= self.x_end || self.y_start >= self.y_end
-    }
-}
-
-fn full_clip_rect(tw: u16, th: u16) -> ClipRect {
-    ClipRect {
-        x_start: 0,
-        y_start: 0,
-        x_end: tw,
-        y_end: th,
-    }
-}
-
-fn clip_rect_from_bounds(x: f32, y: f32, w: f32, h: f32, tw: u16, th: u16) -> Option<ClipRect> {
-    if !w.is_finite() || !h.is_finite() || w <= 0.0 || h <= 0.0 {
-        return None;
-    }
-
-    let x_start = x.floor().max(0.0).min(tw as f32) as u16;
-    let y_start = y.floor().max(0.0).min(th as f32) as u16;
-    let x_end = (x + w).ceil().max(0.0).min(tw as f32) as u16;
-    let y_end = (y + h).ceil().max(0.0).min(th as f32) as u16;
-
-    if x_start >= x_end || y_start >= y_end {
-        return None;
-    }
-
-    Some(ClipRect {
-        x_start,
-        y_start,
-        x_end,
-        y_end,
-    })
-}
-
-fn intersect_clip_rect(a: ClipRect, b: ClipRect) -> Option<ClipRect> {
-    let x_start = a.x_start.max(b.x_start);
-    let y_start = a.y_start.max(b.y_start);
-    let x_end = a.x_end.min(b.x_end);
-    let y_end = a.y_end.min(b.y_end);
-
-    if x_start >= x_end || y_start >= y_end {
-        return None;
-    }
-
-    Some(ClipRect {
-        x_start,
-        y_start,
-        x_end,
-        y_end,
-    })
-}
-
-fn apply_overflow_clip(
-    parent_clip: ClipRect,
-    content_clip: Option<ClipRect>,
-    clip_x: bool,
-    clip_y: bool,
-) -> Option<ClipRect> {
-    if !clip_x && !clip_y {
-        return Some(parent_clip);
-    }
-
-    let content = content_clip?;
-    let x_start = if clip_x {
-        parent_clip.x_start.max(content.x_start)
-    } else {
-        parent_clip.x_start
-    };
-    let y_start = if clip_y {
-        parent_clip.y_start.max(content.y_start)
-    } else {
-        parent_clip.y_start
-    };
-    let x_end = if clip_x {
-        parent_clip.x_end.min(content.x_end)
-    } else {
-        parent_clip.x_end
-    };
-    let y_end = if clip_y {
-        parent_clip.y_end.min(content.y_end)
-    } else {
-        parent_clip.y_end
-    };
-
-    if x_start >= x_end || y_start >= y_end {
-        return None;
-    }
-
-    Some(ClipRect {
-        x_start,
-        y_start,
-        x_end,
-        y_end,
-    })
-}
-
-fn measure_wrapped_text(text: &str, max_cols: Option<u16>) -> (u16, u16) {
-    if text.is_empty() {
-        return (0, 1);
-    }
-
-    let mut line_width: u16 = 0;
-    let mut max_line_width: u16 = 0;
-    let mut line_count: u16 = 1;
-    let wrap_cols = max_cols.filter(|cols| *cols > 0);
-
-    for ch in text.chars() {
-        if ch == '\r' {
-            continue;
-        }
-
-        if ch == '\n' {
-            max_line_width = max_line_width.max(line_width);
-            line_count = line_count.saturating_add(1);
-            line_width = 0;
-            continue;
-        }
-
-        if let Some(cols) = wrap_cols {
-            if line_width >= cols {
-                max_line_width = max_line_width.max(line_width);
-                line_count = line_count.saturating_add(1);
-                line_width = 0;
-            }
-        }
-
-        line_width = line_width.saturating_add(1);
-    }
-
-    max_line_width = max_line_width.max(line_width);
-    (max_line_width, line_count)
 }
 
 fn measure_function(
@@ -889,56 +683,53 @@ fn measure_function(
         None => return Size::ZERO,
     };
 
+    let text_width = text.chars().count() as f32;
+
     let max_width = match available_space.width {
-        AvailableSpace::Definite(w) => w.max(0.0).floor(),
-        _ => f32::INFINITY,
+        AvailableSpace::Definite(w) => w,
+        _ => text_width,
     };
 
-    if max_width == 0.0 {
+    if text_width <= max_width {
         return Size {
-            width: 0.0,
+            width: text_width,
             height: 1.0,
         };
     }
 
-    let wrap_cols = if max_width.is_finite() {
-        Some(max_width.min(u16::MAX as f32) as u16)
-    } else {
-        None
-    };
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut lines = 1;
+    let mut current_width: f32 = 0.0;
+    let mut max_line_width: f32 = 0.0;
 
-    let (line_width, line_count) = measure_wrapped_text(text, wrap_cols);
-    let width = if let Some(cols) = wrap_cols {
-        line_width.min(cols) as f32
-    } else {
-        line_width as f32
-    };
+    for word in words {
+        let word_width = word.chars().count() as f32;
+        let needed_width = if current_width == 0.0 {
+            word_width
+        } else {
+            current_width + 1.0 + word_width
+        };
+
+        if needed_width > max_width {
+            lines += 1;
+            max_line_width = max_line_width.max(current_width);
+            current_width = word_width;
+        } else {
+            current_width = needed_width;
+        }
+    }
 
     Size {
-        width,
-        height: line_count as f32,
+        width: max_line_width.max(max_width),
+        height: lines as f32,
     }
 }
 
-fn draw_background_at(
-    buf: &mut [u64],
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    bg: u32,
-    tw: u16,
-    th: u16,
-    clip: ClipRect,
-) {
-    let x_start = (x.floor().max(0.0) as u16).max(clip.x_start);
-    let y_start = (y.floor().max(0.0) as u16).max(clip.y_start);
-    let x_end = ((x + w).ceil().min(tw as f32) as u16).min(clip.x_end);
-    let y_end = ((y + h).ceil().min(th as f32) as u16).min(clip.y_end);
-
-    if x_start >= x_end || y_start >= y_end {
-        return;
-    }
+fn draw_background_at(buf: &mut [u64], x: f32, y: f32, w: f32, h: f32, bg: u32, tw: u16, th: u16) {
+    let x_start = x as u16;
+    let y_start = y as u16;
+    let x_end = (x + w).min(tw as f32) as u16;
+    let y_end = (y + h).min(th as f32) as u16;
 
     for row in y_start..y_end {
         for col in x_start..x_end {
@@ -951,63 +742,23 @@ fn draw_background_at(
     }
 }
 
-fn draw_text_at(
-    buf: &mut [u64],
-    x: f32,
-    y: f32,
-    max_w: f32,
-    max_h: f32,
-    text: &str,
-    fg: u32,
-    bg: u32,
-    tw: u16,
-    th: u16,
-    clip: ClipRect,
-) {
-    let x_start = x.max(0.0) as u16;
-    let y_start = y.max(0.0) as u16;
-    let max_cols = max_w.max(0.0).floor().min(u16::MAX as f32) as u16;
-    let max_rows = max_h.max(0.0).floor().min(u16::MAX as f32) as u16;
+fn draw_text_at(buf: &mut [u64], x: f32, y: f32, text: &str, fg: u32, bg: u32, tw: u16, th: u16) {
+    let x_start = x as u16;
+    let y_row = y as u16;
 
-    if x_start >= tw || y_start >= th || max_cols == 0 || max_rows == 0 {
+    if y_row >= th {
         return;
     }
 
-    let x_end = x_start.saturating_add(max_cols).min(tw);
-    let y_end = y_start.saturating_add(max_rows).min(th);
-    let mut col = x_start;
-    let mut row = y_start;
-
-    for ch in text.chars() {
-        if row >= y_end {
+    for (i, ch) in text.chars().enumerate() {
+        let col = x_start + i as u16;
+        if col >= tw {
             break;
         }
-
-        if ch == '\r' {
-            continue;
-        }
-
-        if ch == '\n' {
-            row = row.saturating_add(1);
-            col = x_start;
-            continue;
-        }
-
-        if col >= x_end {
-            row = row.saturating_add(1);
-            col = x_start;
-            if row >= y_end {
-                break;
-            }
-        }
-
-        if col >= clip.x_start && col < clip.x_end && row >= clip.y_start && row < clip.y_end {
-            let idx = (tw * row + col) as usize * 3;
-            buf[idx] = ch as u64;
-            buf[idx + 1] = fg as u64;
-            buf[idx + 2] = bg as u64;
-        }
-        col = col.saturating_add(1);
+        let idx = (tw * y_row + col) as usize * 3;
+        buf[idx] = ch as u64;
+        buf[idx + 1] = fg as u64;
+        buf[idx + 2] = bg as u64;
     }
 }
 
@@ -1022,16 +773,11 @@ fn draw_border_at(
     style: BorderStyle,
     tw: u16,
     th: u16,
-    clip: ClipRect,
 ) {
-    let x_start = x.floor().max(0.0).min((tw.saturating_sub(1)) as f32) as u16;
-    let y_start = y.floor().max(0.0).min((th.saturating_sub(1)) as f32) as u16;
-    let x_end = ((x + w).ceil().max(0.0).min(tw as f32) as u16).saturating_sub(1);
-    let y_end = ((y + h).ceil().max(0.0).min(th as f32) as u16).saturating_sub(1);
-
-    if x_start > x_end || y_start > y_end {
-        return;
-    }
+    let x_start = x as u16;
+    let y_start = y as u16;
+    let x_end = ((x + w) as u16).saturating_sub(1).min(tw.saturating_sub(1));
+    let y_end = ((y + h) as u16).saturating_sub(1).min(th.saturating_sub(1));
 
     let (tl, tr, bl, br, h_line, v_line) = match style {
         BorderStyle::Rounded => ('╭', '╮', '╰', '╯', '─', '│'),
@@ -1040,13 +786,7 @@ fn draw_border_at(
     };
 
     let set_cell = |buf: &mut [u64], col: u16, row: u16, ch: char| {
-        if col < tw
-            && row < th
-            && col >= clip.x_start
-            && col < clip.x_end
-            && row >= clip.y_start
-            && row < clip.y_end
-        {
+        if col < tw && row < th {
             let idx = (tw * row + col) as usize * 3;
             buf[idx] = ch as u64;
             buf[idx + 1] = color as u64;
@@ -1073,70 +813,22 @@ fn draw_cursor_at(
     buf: &mut [u64],
     x: f32,
     y: f32,
-    max_w: f32,
-    max_h: f32,
-    text: &str,
+    text_len: f32,
     fg: u32,
     bg: u32,
     tw: u16,
     th: u16,
-    clip: ClipRect,
 ) {
-    let x_start = x.max(0.0) as u16;
-    let y_start = y.max(0.0) as u16;
-    let max_cols = max_w.max(0.0).floor().min(u16::MAX as f32) as u16;
-    let max_rows = max_h.max(0.0).floor().min(u16::MAX as f32) as u16;
+    let col = (x + text_len) as u16;
+    let row = y as u16;
 
-    if x_start >= tw || y_start >= th || max_cols == 0 || max_rows == 0 {
-        return;
-    }
-
-    let x_end = x_start.saturating_add(max_cols).min(tw);
-    let y_end = y_start.saturating_add(max_rows).min(th);
-    let mut col = x_start;
-    let mut row = y_start;
-
-    for ch in text.chars() {
-        if row >= y_end {
-            return;
-        }
-
-        if ch == '\r' {
-            continue;
-        }
-
-        if ch == '\n' {
-            row = row.saturating_add(1);
-            col = x_start;
-            continue;
-        }
-
-        if col >= x_end {
-            row = row.saturating_add(1);
-            col = x_start;
-            if row >= y_end {
-                return;
-            }
-        }
-
-        col = col.saturating_add(1);
-    }
-
-    if col >= x_end {
-        row = row.saturating_add(1);
-        col = x_start;
-    }
-
-    if row < y_end
-        && col >= clip.x_start
-        && col < clip.x_end
-        && row >= clip.y_start
-        && row < clip.y_end
-    {
+    if col < tw && row < th {
         let idx = (tw * row + col) as usize * 3;
-        buf[idx] = '█' as u64;
-        buf[idx + 1] = fg as u64;
-        buf[idx + 2] = bg as u64;
+        if idx + 2 < buf.len() {
+            buf[idx] = '█' as u64;
+            buf[idx + 1] = fg as u64;
+            buf[idx + 2] = bg as u64;
+        }
     }
 }
 
@@ -1150,57 +842,24 @@ fn paint_taffy_node(
     parent_bg: u32,
     tw: u16,
     th: u16,
-    clip: ClipRect,
 ) {
-    if clip.is_empty() {
-        return;
-    }
-
     let layout = taffy.layout(node_id).unwrap();
     let x = abs_x + layout.location.x;
     let y = abs_y + layout.location.y;
     let w = layout.size.width;
     let h = layout.size.height;
-    let node_bounds = match clip_rect_from_bounds(x, y, w, h, tw, th) {
-        Some(bounds) => bounds,
-        None => return,
-    };
-    let node_clip = match intersect_clip_rect(clip, node_bounds) {
-        Some(node_clip) => node_clip,
-        None => return,
-    };
 
     // Content box position (inside border + padding)
     let content_x = abs_x + layout.content_box_x();
     let content_y = abs_y + layout.content_box_y();
-    let content_w = layout.content_box_width();
-    let content_h = layout.content_box_height();
 
-    let (fg, bg, overflow_x, overflow_y) = match taffy.get_node_context(node_id) {
-        Some(NodeContext::Text {
-            content,
-            fg,
-            bg,
-            overflow_x,
-            overflow_y,
-        }) => {
-            let fg = (*fg).unwrap_or(parent_fg);
-            let bg = (*bg).unwrap_or(parent_bg);
-            draw_background_at(buf, x, y, w, h, bg, tw, th, node_clip);
-            draw_text_at(
-                buf,
-                content_x,
-                content_y,
-                content_w,
-                content_h,
-                content,
-                fg,
-                bg,
-                tw,
-                th,
-                node_clip,
-            );
-            (fg, bg, *overflow_x, *overflow_y)
+    let (fg, bg) = match taffy.get_node_context(node_id) {
+        Some(NodeContext::Text { content, fg, bg }) => {
+            let fg = if *fg != 0 { *fg } else { parent_fg };
+            let bg = if *bg != 0 { *bg } else { parent_bg };
+            draw_background_at(buf, x, y, w, h, bg, tw, th);
+            draw_text_at(buf, content_x, content_y, content, fg, bg, tw, th);
+            (fg, bg)
         }
         Some(NodeContext::Button {
             label,
@@ -1208,31 +867,15 @@ fn paint_taffy_node(
             bg,
             border_color,
             border_style,
-            border_width,
-            overflow_x,
-            overflow_y,
         }) => {
-            let fg = (*fg).unwrap_or(parent_fg);
-            let bg = (*bg).unwrap_or(parent_bg);
-            draw_background_at(buf, x, y, w, h, bg, tw, th, node_clip);
-            if *border_style != BorderStyle::None && *border_width > 0.0 {
-                let border_color = (*border_color).unwrap_or(fg);
-                draw_border_at(buf, x, y, w, h, border_color, bg, *border_style, tw, th, node_clip);
+            let fg = if *fg != 0 { *fg } else { parent_fg };
+            let bg = if *bg != 0 { *bg } else { parent_bg };
+            draw_background_at(buf, x, y, w, h, bg, tw, th);
+            if *border_style != BorderStyle::None {
+                draw_border_at(buf, x, y, w, h, *border_color, bg, *border_style, tw, th);
             }
-            draw_text_at(
-                buf,
-                content_x,
-                content_y,
-                content_w,
-                content_h,
-                label,
-                fg,
-                bg,
-                tw,
-                th,
-                node_clip,
-            );
-            (fg, bg, *overflow_x, *overflow_y)
+            draw_text_at(buf, content_x, content_y, label, fg, bg, tw, th);
+            (fg, bg)
         }
         Some(NodeContext::Input {
             content,
@@ -1240,112 +883,69 @@ fn paint_taffy_node(
             bg,
             border_color,
             border_style,
-            border_width,
-            overflow_x,
-            overflow_y,
         }) => {
-            let fg = (*fg).unwrap_or(parent_fg);
-            let bg = (*bg).unwrap_or(parent_bg);
-            draw_background_at(buf, x, y, w, h, bg, tw, th, node_clip);
-            if *border_style != BorderStyle::None && *border_width > 0.0 {
-                let border_color = (*border_color).unwrap_or(fg);
-                draw_border_at(buf, x, y, w, h, border_color, bg, *border_style, tw, th, node_clip);
+            let fg = if *fg != 0 { *fg } else { parent_fg };
+            let bg = if *bg != 0 { *bg } else { parent_bg };
+            draw_background_at(buf, x, y, w, h, bg, tw, th);
+            if *border_style != BorderStyle::None {
+                draw_border_at(buf, x, y, w, h, *border_color, bg, *border_style, tw, th);
             }
-            draw_text_at(
-                buf,
-                content_x,
-                content_y,
-                content_w,
-                content_h,
-                content,
-                fg,
-                bg,
-                tw,
-                th,
-                node_clip,
-            );
+            draw_text_at(buf, content_x, content_y, content, fg, bg, tw, th);
             draw_cursor_at(
                 buf,
                 content_x,
                 content_y,
-                content_w,
-                content_h,
-                content,
+                content.chars().count() as f32,
                 fg,
                 bg,
                 tw,
                 th,
-                node_clip,
             );
-            (fg, bg, *overflow_x, *overflow_y)
+            (fg, bg)
         }
         Some(NodeContext::Row {
             fg,
             bg,
             border_color,
             border_style,
-            border_width,
-            overflow_x,
-            overflow_y,
         })
         | Some(NodeContext::Column {
             fg,
             bg,
             border_color,
             border_style,
-            border_width,
-            overflow_x,
-            overflow_y,
         }) => {
-            let fg = (*fg).unwrap_or(parent_fg);
-            let bg = (*bg).unwrap_or(parent_bg);
-            draw_background_at(buf, x, y, w, h, bg, tw, th, node_clip);
-            if *border_style != BorderStyle::None && *border_width > 0.0 {
-                let border_color = (*border_color).unwrap_or(fg);
-                draw_border_at(buf, x, y, w, h, border_color, bg, *border_style, tw, th, node_clip);
+            let fg = if *fg != 0 { *fg } else { parent_fg };
+            let bg = if *bg != 0 { *bg } else { parent_bg };
+            draw_background_at(buf, x, y, w, h, bg, tw, th);
+            if *border_style != BorderStyle::None {
+                draw_border_at(buf, x, y, w, h, *border_color, bg, *border_style, tw, th);
             }
-            (fg, bg, *overflow_x, *overflow_y)
+            (fg, bg)
         }
-        None => (parent_fg, parent_bg, Overflow::Visible, Overflow::Visible),
-    };
-
-    let content_clip = clip_rect_from_bounds(content_x, content_y, content_w, content_h, tw, th);
-    let child_clip = match apply_overflow_clip(
-        node_clip,
-        content_clip,
-        overflow_x == Overflow::Hidden,
-        overflow_y == Overflow::Hidden,
-    ) {
-        Some(child_clip) => child_clip,
-        None => return,
+        None => (parent_fg, parent_bg),
     };
 
     for child in taffy.children(node_id).unwrap() {
-        paint_taffy_node(taffy, child, buf, x, y, fg, bg, tw, th, child_clip);
+        paint_taffy_node(taffy, child, buf, x, y, fg, bg, tw, th);
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn paint(pn: *const f32, ln: u32, _pt: *const u8, _lt: u32) -> c_int {
-    if pn.is_null() || ln == 0 || (ln as usize) % NODE_FIELDS_PER_NODE != 0 {
-        return 0;
-    }
-
     let term_size = TERMINAL_SIZE.lock().unwrap();
     let text_registry = TEXT_REGISTRY.lock().unwrap();
-    let style_registry = STYLE_REGISTRY.lock().unwrap();
     let (tw, th) = *term_size;
     drop(term_size); // Release early
 
     let node_data = unsafe { slice::from_raw_parts(pn, ln as usize) };
 
     let mut node_offset = 0usize;
-    let root_node = match parse_node(node_data, &mut node_offset, &text_registry, &style_registry) {
-        Some(node) if node_offset == node_data.len() => node,
-        _ => return 0,
-    };
-    drop(text_registry);
-    drop(style_registry);
+    let root_node = parse_node(
+        node_data,
+        &mut node_offset,
+        &text_registry,
+    );
 
     let mut taffy: TaffyTree<NodeContext> = TaffyTree::new();
 
@@ -1389,18 +989,7 @@ pub extern "C" fn paint(pn: *const f32, ln: u32, _pt: *const u8, _lt: u32) -> c_
     // Single lock for entire paint phase
     let mut cb = CURRENT_BUFFER.lock().unwrap();
     if let Some(ref mut buf) = *cb {
-        paint_taffy_node(
-            &taffy,
-            root,
-            buf,
-            0.0,
-            0.0,
-            parent_fg,
-            parent_bg,
-            tw,
-            th,
-            full_clip_rect(tw, th),
-        );
+        paint_taffy_node(&taffy, root, buf, 0.0, 0.0, parent_fg, parent_bg, tw, th);
     }
 
     1

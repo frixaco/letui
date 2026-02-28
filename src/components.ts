@@ -23,12 +23,8 @@ export type {
   InputProps,
   ButtonProps,
   StyleProps,
-  Align,
-  AxisSpacing,
   BorderStyle,
   BorderProps,
-  JustifyContent,
-  Overflow,
 } from "./types";
 
 // =============================================================================
@@ -50,32 +46,16 @@ function createStyleSignals(input: StyleProps): _StyleProps {
   return {
     border: $(input.border),
     padding: $(input.padding),
-    margin: $(input.margin),
-    rowGap: $(input.rowGap),
-    columnGap: $(input.columnGap),
     background: $(input.background),
     foreground: $(input.foreground),
     flexGrow: $(input.flexGrow),
-    flexShrink: $(input.flexShrink),
-    flexBasis: $(input.flexBasis),
-    justifyContent: $(input.justifyContent),
-    alignItems: $(input.alignItems),
-    alignSelf: $(input.alignSelf),
-    width: $(input.width),
-    height: $(input.height),
-    minWidth: $(input.minWidth),
-    minHeight: $(input.minHeight),
-    maxWidth: $(input.maxWidth),
-    maxHeight: $(input.maxHeight),
-    overflow: $(input.overflow),
-    overflowX: $(input.overflowX),
-    overflowY: $(input.overflowY),
   };
 }
 
 function createBoxSignals(input: BoxProps): _BoxProps {
   return {
     ...createStyleSignals(input),
+    gap: $(input.gap),
     direction: $(input.direction),
   };
 }

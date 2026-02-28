@@ -1,5 +1,6 @@
 import { ptr, toArrayBuffer, type Pointer } from "bun:ffi";
 import { writeFileSync } from "fs";
+import { COLORS } from "./colors";
 import api from "./ffi";
 import { $, ff, type Signal } from "./signals";
 import { getFocusedNode } from "./components";
@@ -17,14 +18,6 @@ import {
   DEFAULT_METRICS_PATH,
 } from "./metrics";
 import { logWriter } from "./debug";
-import {
-  buildStyleSnapshot,
-  encodeNodeType,
-  queueStyleDeleteOp,
-  queueStyleUpsertOp,
-  styleSnapshotsEqual,
-} from "./style-sync";
-import { NODE_FIELDS_PER_NODE } from "./style-schema";
 
 export type RunOptions = {
   debug?: boolean;
@@ -35,7 +28,6 @@ let terminalHeight: Signal<number>;
 let spatialLookup: (number | undefined)[];
 let nodeRegistry: Map<number, Node>;
 let textRegistry: Map<number, string>;
-let styleRegistry: Map<number, Float32Array>;
 let globalKeyHandlers: Map<string, () => void>;
 let pressedNodeId: number | null = null;
 let isRunning = false;
@@ -47,6 +39,7 @@ function getNodeAt(x: number, y: number): Node | undefined {
 }
 
 const EMPTY_TEXT_PAYLOAD = new Uint8Array(1);
+const FIELDS_PER_NODE = 12;
 const textEncoder = new TextEncoder();
 const TEXT_OP_UPSERT = 1;
 const TEXT_OP_DELETE = 2;
@@ -98,12 +91,6 @@ function syncTextOperations(
   }
 }
 
-function syncStyleOperations(styleOps: number[]): boolean {
-  if (styleOps.length === 0) return true;
-  const payload = Float32Array.from(styleOps);
-  return Number(api.sync_style_ops(ptr(payload), payload.length)) === 1;
-}
-
 function countNodes(node: Node): number {
   const children = node.children?.() ?? [];
   return 1 + children.reduce((sum, child) => sum + countNodes(child), 0);
@@ -116,25 +103,45 @@ function serialize(
   nodeData: Float32Array;
 } {
   const nodeCount = countNodes(root);
-  const nodeData = new Float32Array(nodeCount * NODE_FIELDS_PER_NODE);
+  const nodeData = new Float32Array(nodeCount * FIELDS_PER_NODE);
   const nextTextRegistry = new Map<number, string>();
-  const nextStyleRegistry = new Map<number, Float32Array>();
   const textOps: number[] = [];
-  const styleOps: number[] = [];
   let textOpCount = 0;
 
   let offset = 0;
 
   function serializeNode(node: Node): void {
-    const nodeType = encodeNodeType(node);
-    const styleId = node.id;
-    const styleSnapshot = buildStyleSnapshot(node);
-    nextStyleRegistry.set(styleId, styleSnapshot);
-
-    const previousStyle = styleRegistry.get(styleId);
-    if (!previousStyle || !styleSnapshotsEqual(previousStyle, styleSnapshot)) {
-      queueStyleUpsertOp(styleOps, styleId, styleSnapshot);
+    // Node type: 1=row, 2=column, 3=button, 4=input, 5=text
+    let nodeType: number;
+    if (node.type === "box") {
+      nodeType = node.props.direction?.() === "row" ? 1 : 2;
+    } else if (node.type === "button") {
+      nodeType = 3;
+    } else if (node.type === "input") {
+      nodeType = 4;
+    } else {
+      nodeType = 5; // text
     }
+
+    // Read props (auto-subscribes render effect)
+    const gap = (node.props as any).gap?.() ?? 0;
+    const padding = node.props.padding?.() ?? 0;
+    let paddingX: number, paddingY: number;
+    if (typeof padding === "string") {
+      [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
+    } else {
+      paddingX = paddingY = padding;
+    }
+
+    const border = node.props.border?.();
+    const hasBorder = border ? 1 : 0;
+    const borderColor = border?.color ?? COLORS.default.bg;
+    const borderStyle =
+      border?.style === "rounded" ? 1 : border?.style === "square" ? 2 : 0;
+
+    const background = node.props.background?.() ?? COLORS.default.bg;
+    const foreground = node.props.foreground?.() ?? COLORS.default.fg;
+    const flexGrow = node.props.flexGrow?.() ?? 0;
 
     // Children count
     const children = node.children?.() ?? [];
@@ -156,11 +163,19 @@ function serialize(
       }
     }
 
-    // Write 4 fields (nodeType, childCount, nodeId, styleId)
+    // Write 12 fields
     nodeData[offset++] = nodeType;
+    nodeData[offset++] = gap;
+    nodeData[offset++] = paddingX;
+    nodeData[offset++] = paddingY;
+    nodeData[offset++] = hasBorder;
     nodeData[offset++] = childCount;
+    nodeData[offset++] = background;
+    nodeData[offset++] = foreground;
+    nodeData[offset++] = borderColor;
+    nodeData[offset++] = borderStyle;
     nodeData[offset++] = node.id;
-    nodeData[offset++] = styleId;
+    nodeData[offset++] = flexGrow;
 
     for (const child of children) {
       serializeNode(child);
@@ -175,20 +190,9 @@ function serialize(
       textOpCount++;
     }
   }
-
-  for (const id of styleRegistry.keys()) {
-    if (!nextStyleRegistry.has(id)) {
-      queueStyleDeleteOp(styleOps, id);
-    }
-  }
-
-  const styleSyncOk = syncStyleOperations(styleOps);
   syncTextOperations(textOps, textOpCount, collectMetrics);
 
   textRegistry = nextTextRegistry;
-  if (styleSyncOk) {
-    styleRegistry = nextStyleRegistry;
-  }
 
   return { nodeData };
 }
@@ -409,7 +413,6 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   api.init_buffer();
   api.init_letui();
   api.clear_text_registry();
-  api.clear_style_registry();
 
   // 2. Initialize state (after init_buffer so terminal size is available)
   terminalWidth = $(api.get_width());
@@ -417,7 +420,6 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   globalKeyHandlers = globalKeyHandlers ?? new Map();
   nodeRegistry = new Map();
   textRegistry = new Map();
-  styleRegistry = new Map();
   spatialLookup = new Array(terminalWidth() * terminalHeight());
   pressedNodeId = null;
   isRunning = true;
@@ -478,7 +480,6 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     process.stdin.off("data", stdinHandler);
     process.stdout.off("resize", handleResize);
     api.clear_text_registry();
-    api.clear_style_registry();
     api.free_buffer();
     api.deinit_letui();
     if (options?.debug) {
