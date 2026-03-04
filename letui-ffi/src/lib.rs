@@ -14,6 +14,7 @@ use crossterm::{
     },
 };
 use std::{
+    cell::RefCell,
     collections::HashMap,
     io::{Stdout, Write, stdout},
     os::raw::c_int,
@@ -29,6 +30,11 @@ static CURRENT_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
 static TERMINAL_SIZE: Mutex<(u16, u16)> = Mutex::new((0, 0));
 static FRAMES: Mutex<Option<Vec<f32>>> = Mutex::new(None);
 static FIRST_DIFF: Mutex<bool> = Mutex::new(true);
+
+thread_local! {
+    static TREE: RefCell<TaffyTree<NodeContext>> = RefCell::new(TaffyTree::new());
+}
+
 static TEXT_REGISTRY: LazyLock<Mutex<HashMap<u32, String>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -455,11 +461,7 @@ struct Node {
 
 const FIELDS_PER_NODE: usize = 12;
 
-fn parse_node(
-    node_data: &[f32],
-    node_offset: &mut usize,
-    reg: &HashMap<u32, String>,
-) -> Node {
+fn parse_node(node_data: &[f32], node_offset: &mut usize, reg: &HashMap<u32, String>) -> Node {
     let base = *node_offset;
     let node_type = NodeType::from_f32(node_data[base]);
     let gap = node_data[base + 1];
@@ -478,14 +480,13 @@ fn parse_node(
 
     let mut children = Vec::with_capacity(child_count);
     for _ in 0..child_count {
-        children.push(parse_node(
-            node_data,
-            node_offset,
-            reg,
-        ));
+        children.push(parse_node(node_data, node_offset, reg));
     }
 
-    let text = if matches!(node_type, NodeType::Text | NodeType::Button | NodeType::Input) {
+    let text = if matches!(
+        node_type,
+        NodeType::Text | NodeType::Button | NodeType::Input
+    ) {
         reg.get(&node_id).cloned().unwrap_or_default()
     } else {
         String::new()
@@ -933,64 +934,61 @@ fn paint_taffy_node(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn paint(pn: *const f32, ln: u32, _pt: *const u8, _lt: u32) -> c_int {
-    let term_size = TERMINAL_SIZE.lock().unwrap();
-    let text_registry = TEXT_REGISTRY.lock().unwrap();
-    let (tw, th) = *term_size;
-    drop(term_size); // Release early
+    TREE.with_borrow_mut(|taffy| {
+        let term_size = TERMINAL_SIZE.lock().unwrap();
+        let text_registry = TEXT_REGISTRY.lock().unwrap();
+        let (tw, th) = *term_size;
+        drop(term_size); // Release early
 
-    let node_data = unsafe { slice::from_raw_parts(pn, ln as usize) };
+        let node_data = unsafe { slice::from_raw_parts(pn, ln as usize) };
 
-    let mut node_offset = 0usize;
-    let root_node = parse_node(
-        node_data,
-        &mut node_offset,
-        &text_registry,
-    );
+        let mut node_offset = 0usize;
+        let root_node = parse_node(node_data, &mut node_offset, &text_registry);
 
-    let mut taffy: TaffyTree<NodeContext> = TaffyTree::new();
-
-    let mut root_styles = get_styles(&root_node);
-    root_styles.size = Size {
-        width: length(tw),
-        height: length(th),
-    };
-
-    let context = node_type_to_context(&root_node);
-    let root = taffy.new_leaf_with_context(root_styles, context).unwrap();
-
-    build_taffy_tree(&mut taffy, &root, &root_node);
-
-    let _ = taffy.compute_layout_with_measure(
-        root,
-        Size {
+        let mut root_styles = get_styles(&root_node);
+        root_styles.size = Size {
             width: length(tw),
             height: length(th),
-        },
-        |known_dimensions, available_space, node_id, node_context, style| {
-            measure_function(
-                known_dimensions,
-                available_space,
-                node_id,
-                node_context,
-                style,
-            )
-        },
-    );
+        };
 
-    let mut frame_lock = FRAMES.lock().unwrap();
-    let frames_vec = frame_lock.get_or_insert_with(Vec::new);
-    frames_vec.clear();
-    build_frames_array(&mut taffy, root, frames_vec, 0.0, 0.0);
-    drop(frame_lock);
+        let context = node_type_to_context(&root_node);
 
-    let parent_fg = colors::DEFAULT.fg;
-    let parent_bg = colors::DEFAULT.bg;
+        let root = taffy.new_leaf_with_context(root_styles, context).unwrap();
 
-    // Single lock for entire paint phase
-    let mut cb = CURRENT_BUFFER.lock().unwrap();
-    if let Some(ref mut buf) = *cb {
-        paint_taffy_node(&taffy, root, buf, 0.0, 0.0, parent_fg, parent_bg, tw, th);
-    }
+        build_taffy_tree(taffy, &root, &root_node);
+
+        let _ = taffy.compute_layout_with_measure(
+            root,
+            Size {
+                width: length(tw),
+                height: length(th),
+            },
+            |known_dimensions, available_space, node_id, node_context, style| {
+                measure_function(
+                    known_dimensions,
+                    available_space,
+                    node_id,
+                    node_context,
+                    style,
+                )
+            },
+        );
+
+        let mut frame_lock = FRAMES.lock().unwrap();
+        let frames_vec = frame_lock.get_or_insert_with(Vec::new);
+        frames_vec.clear();
+        build_frames_array(taffy, root, frames_vec, 0.0, 0.0);
+        drop(frame_lock);
+
+        let parent_fg = colors::DEFAULT.fg;
+        let parent_bg = colors::DEFAULT.bg;
+
+        // Single lock for entire paint phase
+        let mut cb = CURRENT_BUFFER.lock().unwrap();
+        if let Some(ref mut buf) = *cb {
+            paint_taffy_node(&taffy, root, buf, 0.0, 0.0, parent_fg, parent_bg, tw, th);
+        }
+    });
 
     1
 }

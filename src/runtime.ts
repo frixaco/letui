@@ -33,6 +33,9 @@ let pressedNodeId: number | null = null;
 let isRunning = false;
 let quitFn: (() => void) | null = null;
 
+type TreeCmd = [number, ];
+let treeCmds: TreeCmd[] = [];
+
 function getNodeAt(x: number, y: number): Node | undefined {
   const id = spatialLookup[y * terminalWidth() + x];
   return id !== undefined ? nodeRegistry.get(id) : undefined;
