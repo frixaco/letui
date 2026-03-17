@@ -11,7 +11,9 @@ enum CommandEnum {
 class OpQueue {
   buffer: Uint8Array = new Uint8Array();
 
-  setText(node: Node, text: string) {}
+  setText(node: Node, text: string) {
+
+  }
 
   deleteTextRange(node: Node, start: number, end: number) {}
 
@@ -21,9 +23,12 @@ class OpQueue {
 
   updateStyle(node: Node, styles: Record<string, string | number>) {}
 
-  reset() {}
-
   get() {
     return this.buffer;
   }
+
+  reset() {}
 }
+
+const q = new OpQueue()
+

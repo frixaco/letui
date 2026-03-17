@@ -1,8 +1,8 @@
 # Full Rust Authority Spec
 
-Status: Draft v1
+Status: Draft
 Owner: letui runtime/ffi
-Last updated: 2026-03-01
+Last updated: 2026-03-17
 
 ## 1) Problem
 
@@ -26,20 +26,32 @@ Target:
 - Remove full tree snapshot path from hot loop
 - Remove text registry path (`sync_text_ops`, `TEXT_REGISTRY`)
 - Keep TS user-facing API ergonomic (`Box`, `Text`, `setStyle`, `setText`)
+- Support inline rich text in text leaves without giving up plain-string ergonomics
 - Preserve current performance target (<8ms practical, 120hz aspirational)
 - Keep protocol deterministic, batch-atomic, debuggable
 
-## 3) Non-Goals (v1)
+## 3) Non-Goals
 
-- Rich-text diff protocol
+- Rich-text incremental diff protocol
+- Block-level markdown/document AST inside text nodes
 - Cross-thread/concurrent mutation model
 - Network protocol compatibility
 - Multi-root renderer
 
+Rich text model:
+- keep user-facing text model string-first where possible
+- support rich text as plain UTF-8 text + ordered inline style spans
+- plain text is the zero-span case
+- prefer spans/ranges over exposing chunks as the primary API
+- TS wrapper may expose helpers/builders for spans, but wire/state model stays text + spans
+- renderer may still normalize spans into runs/chunks internally for wrapping/paint
+- this keeps editing/simple `setText` ergonomics while still supporting markdown/syntax highlighting
+- block markdown structure likely belongs in normal tree nodes; spans handle inline styling inside text leaves
+
 ## 4) Architecture
 
 Single source of truth:
-- Rust: canonical tree + style + text + dirty state
+- Rust: canonical tree + style + text/spans + dirty state
 - TS: app logic + closures/handlers + op producer
 
 High-level flow:
@@ -68,7 +80,7 @@ struct NodeState {
     parent: Option<u32>,
     children: Vec<u32>,
     style: StyleState,
-    text: String,
+    text: TextState,
 
     // dirty flags
     layout_dirty: bool,
@@ -88,6 +100,26 @@ struct StyleState {
     flex_grow: f32,
     direction: Direction,
 }
+
+struct TextState {
+    content: String,
+    spans: Vec<TextSpan>,
+}
+
+struct TextSpan {
+    start_byte: u32,
+    end_byte: u32,
+    style: InlineTextStyleState,
+}
+
+struct InlineTextStyleState {
+    fg: Option<u32>,
+    bg: Option<u32>,
+    weight: FontWeight,
+    italic: bool,
+    underline: bool,
+    strikethrough: bool,
+}
 ```
 
 Invariants:
@@ -96,8 +128,11 @@ Invariants:
 - no cycles
 - child list order stable
 - root id points to existing node
+- text spans sorted by `start_byte`
+- text spans non-overlapping
+- text span boundaries must align to UTF-8 code point boundaries
 
-## 6) FFI Surface (v1)
+## 6) FFI Surface
 
 Add:
 - `apply_ops(ptr: *const u8, len: u32) -> c_int`
@@ -121,7 +156,7 @@ Little-endian.
 
 Batch header:
 - `u32 magic` (e.g. `0x4C545549` = "LTUI")
-- `u16 version` (v1 = 1)
+- `u16 version` (`1` for this protocol; reject mismatch)
 - `u16 op_count`
 
 Record layout:
@@ -136,7 +171,7 @@ Rules:
 - parser bounds-check every field before read
 - reject unknown op/version
 
-## 8) Ops (v1)
+## 8) Ops
 
 Core lifecycle:
 - `CREATE_NODE(node_id, kind)`
@@ -150,13 +185,35 @@ Hierarchy:
 
 State:
 - `SET_STYLE_PATCH(node_id, mask, values...)`
-- `SET_TEXT(node_id, utf8_bytes)`
+- `SET_TEXT(node_id, utf8_bytes)` replaces content, clears spans
+- `SET_RICH_TEXT(node_id, utf8_bytes, spans...)`
 - `CLEAR_TEXT(node_id)`
 - `SET_FOCUS(node_id)`
 
-Optional later:
-- `INSERT_TEXT(node_id, at, utf8_bytes)`
-- `DELETE_TEXT_RANGE(node_id, at, len)`
+Rich text payload:
+- `u32 text_len`
+- `u32 span_count`
+- `u8 text[text_len]`
+- `span_count` records:
+  - `u32 start_byte`
+  - `u32 end_byte`
+  - `u32 style_mask`
+  - packed style values in ascending bit order
+
+Inline text style bit layout:
+- bit0: `fg` (u32)
+- bit1: `bg` (u32)
+- bit2: `weight` (u32 enum)
+- bit3: `italic` (u8 bool)
+- bit4: `underline` (u8 bool)
+- bit5: `strikethrough` (u8 bool)
+
+Rich text rules:
+- spans sorted ascending by `start_byte`
+- spans may touch but not overlap
+- zero-length spans rejected
+- boundaries must land on UTF-8 code point boundaries
+- invalid span payload rejects the full batch
 
 ## 9) Style Patch Encoding
 
@@ -164,7 +221,7 @@ Payload:
 - `u32 mask`
 - packed values in ascending bit order
 
-Bit layout (v1):
+Bit layout:
 - bit0: `gap` (f32)
 - bit1: `padding_x` (f32)
 - bit2: `padding_y` (f32)
@@ -192,6 +249,9 @@ Design notes:
 - `layout_dirty=true`
 - `paint_dirty=true`
 
+`SET_RICH_TEXT`:
+- same invalidation as `SET_TEXT`
+
 Hierarchy ops:
 - parent chain `layout_dirty=true`
 - affected subtrees `paint_dirty=true`
@@ -213,8 +273,8 @@ Dirty propagation:
 - if no dirty flags: no-op success
 - if layout dirty: run taffy compute from root
 - repaint path:
-  - v1 simple: repaint full buffer
-  - v2: dirty-rect paint
+  - full buffer repaint baseline
+  - dirty-rect paint is internal optimization; no protocol change
 - update frame array for JS reads
 - clear dirty flags
 
@@ -225,14 +285,14 @@ Dirty propagation:
 
 TS keeps:
 - node handles and event handlers
-- keyboard/mouse dispatch logic (v1)
+- keyboard/mouse dispatch logic
 - op queue + commit loop
 
 TS no longer does:
 - full tree-to-float snapshot serialization per frame
 - text registry sync calls
 
-Frame loop (v1):
+Frame loop:
 1. collect queued ops
 2. `apply_ops(batch)`
 3. `render_frame()`
@@ -244,6 +304,7 @@ Frame loop (v1):
 Failure classes:
 - malformed buffer / bounds overflow
 - invalid UTF-8
+- invalid rich text span payload
 - missing node id
 - duplicate node id on create
 - cycle creation attempt
@@ -265,6 +326,7 @@ Example enum:
 - `6 TREE_CYCLE`
 - `7 INVALID_UTF8`
 - `8 INVALID_PARENT_CHILD`
+- `9 INVALID_TEXT_SPAN`
 
 ## 14) Example: TS Side
 
@@ -274,7 +336,8 @@ enum Op {
   AppendChild = 2,
   SetStylePatch = 3,
   SetText = 4,
-  SetRoot = 5,
+  SetRichText = 5,
+  SetRoot = 6,
 }
 
 const q: number[] = [];
@@ -289,6 +352,16 @@ function queueSetText(nodeId: number, text: string) {
   writeHeader(Op.SetText, nodeId, 4 + b.length);
   writeU32LE(q, b.length);
   for (const byte of b) q.push(byte);
+}
+
+function queueSetRichText(nodeId: number, text: string, spans: Span[]) {
+  const b = new TextEncoder().encode(text);
+  const payloadLen = 8 + b.length + encodeSpanRecords(spans).length;
+  writeHeader(Op.SetRichText, nodeId, payloadLen);
+  writeU32LE(q, b.length);
+  writeU32LE(q, spans.length);
+  for (const byte of b) q.push(byte);
+  writeSpanRecords(q, spans);
 }
 
 function queueSetStyleBgFg(nodeId: number, bg?: number, fg?: number) {
@@ -349,7 +422,8 @@ Phase 1: create/delete/hierarchy ops
 - still keep old snapshot render as fallback
 
 Phase 2: text ownership move
-- route `setText` => `SET_TEXT`
+- route plain text => `SET_TEXT`
+- route rich text leaves => `SET_RICH_TEXT`
 - remove `sync_text_ops` + `TEXT_REGISTRY`
 
 Phase 3: style ownership move
@@ -362,7 +436,6 @@ Phase 4: remove legacy path
 
 Phase 5: optimize
 - dirty rect paint
-- optional text range ops
 - optional Rust-side input/hit-testing ownership
 
 ## 17) Verification Plan
@@ -374,7 +447,7 @@ Correctness:
   - style patch decode order
   - dirty propagation
 - TS unit tests:
-  - op emission from `setStyle`, `setText`, `setChildren`
+  - op emission from `setStyle`, `setText`, rich text API, `setChildren`
   - batch encoding correctness
 
 Integration:
@@ -400,7 +473,7 @@ Performance acceptance:
 
 - keep TS-side hit testing long-term or move to Rust?
 - need transactional rollback-by-log instead of clone-on-apply?
-- keep full repaint v1 or build dirty-rect immediately?
+- start with full repaint baseline or build dirty-rect immediately?
 - add class/token layer now or defer?
 
 ## 19) Recommended First Small Task
