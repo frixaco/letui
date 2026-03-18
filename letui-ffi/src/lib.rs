@@ -4,8 +4,8 @@
 */
 
 use crossterm::{
-    cursor::{Hide, MoveTo},
-    event::EnableMouseCapture,
+    cursor::{Hide, MoveTo, Show},
+    event::{DisableMouseCapture, EnableMouseCapture},
     execute, queue,
     style::{Color, Print, SetBackgroundColor, SetForegroundColor},
     terminal::{
@@ -56,22 +56,44 @@ pub extern "C" fn init_buffer() -> c_int {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn init_letui() -> c_int {
-    execute!(
+    if enable_raw_mode().is_err() {
+        return 0;
+    }
+
+    if execute!(
         stdout(),
         EnterAlternateScreen,
         EnableMouseCapture,
         Clear(ClearType::All),
         Hide
     )
-    .unwrap();
-    enable_raw_mode().unwrap();
+    .is_err()
+    {
+        let _ = disable_raw_mode();
+        return 0;
+    }
+
     1
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn deinit_letui() -> c_int {
-    disable_raw_mode().unwrap();
-    execute!(stdout(), LeaveAlternateScreen).unwrap();
+    let _ = disable_raw_mode();
+
+    if execute!(
+        stdout(),
+        EndSynchronizedUpdate,
+        Show,
+        DisableMouseCapture,
+        SetBackgroundColor(Color::Reset),
+        SetForegroundColor(Color::Reset),
+        LeaveAlternateScreen
+    )
+    .is_err()
+    {
+        return 0;
+    }
+
     1
 }
 

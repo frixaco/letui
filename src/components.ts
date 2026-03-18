@@ -2,9 +2,13 @@ import { $, type Signal } from "./signals";
 import type {
   Frame,
   Node,
+  BoxNode,
   BoxProps,
+  TextNode,
   TextProps,
+  InputNode,
   InputProps,
+  ButtonNode,
   ButtonProps,
   StyleProps,
   _StyleProps,
@@ -140,13 +144,13 @@ function blurNode(node: Node): void {
 // CONSTRUCTORS
 // =============================================================================
 
-export function Box(input: BoxProps, children: Node[]): Node {
+export function Box(input: BoxProps, children: Node[]): BoxNode {
   const props = createBoxSignals(input);
   const childrenSignal = $(children);
   const frameWidth = $(0);
   const frameHeight = $(0);
 
-  const node: Node = {
+  const node: BoxNode = {
     type: "box",
     id: generateId(),
     props,
@@ -168,23 +172,23 @@ export function Box(input: BoxProps, children: Node[]): Node {
 export function Column(
   props: Omit<BoxProps, "direction">,
   children: Node[],
-): Node {
+): BoxNode {
   return Box({ ...props, direction: "column" }, children);
 }
 
 export function Row(
   props: Omit<BoxProps, "direction">,
   children: Node[],
-): Node {
+): BoxNode {
   return Box({ ...props, direction: "row" }, children);
 }
 
-export function Text(input: TextProps): Node {
+export function Text(input: TextProps): TextNode {
   const props = createTextSignals(input);
   const frameWidth = $(0);
   const frameHeight = $(0);
 
-  const node: Node = {
+  const node: TextNode = {
     type: "text",
     id: generateId(),
     props,
@@ -204,13 +208,13 @@ export function Text(input: TextProps): Node {
   return node;
 }
 
-export function Input(input: InputProps): Node {
+export function Input(input: InputProps): InputNode {
   const { onChange, onSubmit, onFocus, onBlur, ...styleInput } = input;
   const props = createInputSignals(styleInput);
   const frameWidth = $(0);
   const frameHeight = $(0);
 
-  const node: Node = {
+  const node: InputNode = {
     type: "input",
     id: generateId(),
     props,
@@ -230,14 +234,14 @@ export function Input(input: InputProps): Node {
   return node;
 }
 
-export function Button(input: ButtonProps, children: Node[] = []): Node {
+export function Button(input: ButtonProps, children: Node[] = []): ButtonNode {
   const { onClick, onKeyDown, onFocus, onBlur, ...styleInput } = input;
   const props = createButtonSignals(styleInput);
   const childrenSignal = $(children);
   const frameWidth = $(0);
   const frameHeight = $(0);
 
-  const node: Node = {
+  const node: ButtonNode = {
     type: "button",
     id: generateId(),
     props,

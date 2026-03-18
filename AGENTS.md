@@ -38,3 +38,9 @@ Manual TUI testing:
 - Start app: `bun run dev`
 - Validate behavior interactively in terminal
 - Quit with `q` or `Ctrl+Q`
+
+# Dump directory
+
+- `dump/` is for dump logs, metrics, screenshots, screen captures, and similar debug artifacts
+- `dump/` is tracked; it may be used for debugging and verification
+- If a task does not explicitly involve `dump/`, ignore it rather than cleaning it up

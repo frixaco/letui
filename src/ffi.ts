@@ -1,9 +1,14 @@
 import { dlopen, suffix } from "bun:ffi";
+import { fileURLToPath } from "url";
 
 const prefix = process.platform === "win32" ? "" : "lib";
 const filename = `${prefix}letui_ffi.${suffix}`;
 
-import { fileURLToPath } from "url";
+function debugLog(...args: unknown[]): void {
+  if (process.env.LETUI_DEBUG_FFI === "1") {
+    console.error("[letui:ffi]", ...args);
+  }
+}
 
 function getLibraryPath(): string {
   const { platform, arch } = process;
@@ -12,20 +17,26 @@ function getLibraryPath(): string {
     new URL(`../letui-ffi/target/release/${filename}`, import.meta.url),
   );
 
-  console.log("Attempting to load local build from:", localPath);
-
   try {
     if (Bun.file(localPath).size > 0) {
-      console.log("Found local build!");
+      debugLog("using local build", localPath);
       return localPath;
     }
-  } catch (e) {
-    console.log("Local build check failed:", e);
+  } catch (error) {
+    debugLog("local build probe failed", error);
   }
 
   const pkgName = `@frixaco/letui-${platform}-${arch}`;
-  console.log("Falling back to package:", pkgName);
-  return Bun.resolveSync(`${pkgName}/${filename}`, import.meta.dir);
+
+  try {
+    const resolved = Bun.resolveSync(`${pkgName}/${filename}`, import.meta.dir);
+    debugLog("using packaged binary", resolved);
+    return resolved;
+  } catch {
+    throw new Error(
+      `Failed to load letui native library. Tried local build at ${localPath} and optional package ${pkgName}. Run bun run build-ffi or install the matching optional package.`,
+    );
+  }
 }
 
 const path = getLibraryPath();

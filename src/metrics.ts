@@ -168,6 +168,10 @@ export function resetMetrics(): void {
 
 export const DEFAULT_METRICS_PATH = "dump/metrics.txt";
 
+export function resolveMetricsPath(): string {
+  return process.env.LETUI_METRICS_PATH || DEFAULT_METRICS_PATH;
+}
+
 export function saveMetrics(filename: string = DEFAULT_METRICS_PATH): void {
   writeFileSync(filename, formatMetrics() + "\n", "utf8");
 }

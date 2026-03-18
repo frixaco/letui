@@ -20,38 +20,38 @@ What this does: compiles `letui-ffi` with `cargo build --release`.
 Create `examples/hello-world.ts`:
 
 ```ts
-import { Box, Column, Text, COLORS, run, onKey, $, ff } from "../index.ts";
+import { COLORS, Column, Text, $, ff, onKey, run } from "../index.ts";
 
 const count = $(0);
-const countText = Text({ text: "count: 0", foreground: COLORS.default.green });
+const countText = Text({
+  text: "count: 0",
+  foreground: COLORS.default.green,
+});
 
 ff(() => {
   countText.setText(`count: ${count()}`);
 });
 
-const panel = Column(
+const root = Column(
   {
-    padding: "1 3",
-    rowGap: 1,
-    alignItems: "center",
-    background: COLORS.default.bg_alt,
+    flexGrow: 1,
+    padding: "1 1",
+    gap: 1,
+    background: COLORS.default.bg,
     border: { color: COLORS.default.bg_highlight, style: "rounded" },
   },
   [
     Text({ text: "letui demo", foreground: COLORS.default.fg }),
     countText,
-    Text({ text: "+/- update, r reset, q quit", foreground: COLORS.default.grey }),
+    Text({
+      text: "+/- update, r reset, q quit",
+      foreground: COLORS.default.grey,
+    }),
+    Text({
+      text: "supported layout props today: gap, padding, flexGrow",
+      foreground: COLORS.default.grey,
+    }),
   ],
-);
-
-const root = Box(
-  {
-    flexGrow: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    background: COLORS.default.bg,
-  },
-  [panel],
 );
 
 const app = run(root);
@@ -84,6 +84,8 @@ bun run examples/hello-world.ts
 
 ## Notes
 
-- `bun run dev` runs `examples/index.ts` after building FFI
+- `bun run dev` runs `examples/hello-world.ts` after building FFI
 - In `examples/`, relative import from `../index.ts` is simplest starter path
 - Existing examples also use `@/...` alias for modules inside `src/`
+- The starter snippet above matches [examples/hello-world.ts](/Users/frixa/Documents/letui/examples/hello-world.ts)
+- Current layout/styling API is intentionally small: `gap`, `padding`, `flexGrow`, `border`, `background`, `foreground`

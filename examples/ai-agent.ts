@@ -7,7 +7,6 @@ import {
   ff,
   onKey,
   run,
-  type Node,
 } from "../index.ts";
 
 type PromptThread = {
@@ -16,140 +15,99 @@ type PromptThread = {
   aiLines: string[];
 };
 
-const BASE_THREADS: PromptThread[] = [
+const THREADS: PromptThread[] = [
   {
-    title: "Rollout Plan With Guardrails",
-    userPrompt:
-      "Design rollout for AI autocomplete in terminal editor with strict latency and rollback rules.",
+    title: "Rollout Plan",
+    userPrompt: "Design rollout for terminal autocomplete with strict latency guardrails.",
     aiLines: [
-      "Ship behind a feature flag and limit the first cohort to internal developers.",
-      "Track p50 and p95 completion latency and compare acceptance and undo rates.",
-      "Use deterministic fallback when model calls exceed timeout or return malformed output.",
-      "Promote cohorts only when error budget and latency budget stay stable for a full day.",
-      "Prepare rollback trigger and operator runbook before opening to broader users.",
+      "Ship behind a flag and limit first cohort to internal users.",
+      "Track p50 and p95 completion latency plus acceptance and undo rates.",
+      "Keep deterministic fallback when model call times out or returns malformed data.",
+      "Promote gradually only after one stable day inside the latency budget.",
     ],
   },
   {
-    title: "Render Spike Incident Triage",
-    userPrompt:
-      "Frame time jumps every few seconds during idle view. Give me a debugging sequence that is fast.",
+    title: "Render Incident",
+    userPrompt: "Frame time jumps every few seconds during idle view. Give a fast triage path.",
     aiLines: [
-      "Split timing into serialize, text sync, rust paint, and terminal flush phases.",
-      "Check for timer-driven setText bursts and hidden nodes still receiving updates.",
-      "Confirm no full subtree rebuilds happen during idle periods.",
-      "Batch related text updates in one microtask and re-measure p95 frame time.",
-      "Keep one baseline capture to prevent placebo fixes during tuning.",
+      "Split timing into serialize, text sync, rust paint, sync, and flush.",
+      "Check timer-driven setText bursts and hidden nodes still receiving updates.",
+      "Capture one baseline before tuning so the comparison stays honest.",
     ],
   },
   {
     title: "Prompt History UX",
-    userPrompt:
-      "I need prompt history that stays useful under long sessions and works entirely from keyboard.",
+    userPrompt: "Prompt history should stay dense and fully keyboard driven under long sessions.",
     aiLines: [
-      "Show intent-rich labels with short context preview rather than raw prompt blobs.",
-      "Keep active thread obvious with border and color changes, not just a tiny cursor.",
-      "Use j/k and arrow keys consistently in every list-like section.",
-      "Preserve draft input when switching prompt threads so users never lose context.",
-      "Avoid noisy decoration and preserve high information density.",
+      "Show intent-rich labels instead of raw prompt blobs.",
+      "Keep active item obvious with border and color changes.",
+      "Use j/k and arrows consistently across list-like surfaces.",
     ],
   },
   {
-    title: "Backend Degradation Strategy",
-    userPrompt:
-      "Model endpoint throws intermittent 502 and timeout bursts. Define graceful degradation behavior.",
+    title: "Degradation Strategy",
+    userPrompt: "Model endpoint throws intermittent 502 and timeout bursts. Define graceful degradation.",
     aiLines: [
-      "Retry once with bounded backoff and then switch to a local fallback summarizer.",
-      "Tag output as degraded mode so users understand confidence and scope boundaries.",
-      "Log structured failure events with route key and trace identifier.",
+      "Retry once with bounded backoff then switch to a local fallback summarizer.",
+      "Label output as degraded mode so confidence stays legible.",
       "Alert only on sustained threshold breaches, not isolated spikes.",
-      "Add synthetic probe for this failure mode after incident closure.",
     ],
   },
   {
-    title: "Release Gate Checklist",
-    userPrompt:
-      "Provide final pre-merge checklist for this TUI demo before sharing with the team.",
+    title: "Release Gate",
+    userPrompt: "Provide final pre-merge checklist for this TUI demo before sharing it.",
     aiLines: [
-      "Run typecheck and smoke test in the same terminal emulator used by reviewers.",
-      "Verify all keyboard paths, including quit path, without relying on mouse interactions.",
-      "Validate layout at 80x24, 120x35, and widescreen dimensions.",
-      "Confirm no unrelated files changed in diff and no stale debug output remains.",
-      "Add one short run instruction so teammates can launch immediately.",
+      "Run typecheck and smoke test in the same terminal used by reviewers.",
+      "Verify all keyboard paths including quit path without relying on mouse input.",
+      "Validate layout at narrow and wide terminal sizes.",
     ],
   },
   {
-    title: "Context Compression Rules",
-    userPrompt:
-      "How should long chat context be compacted before next model call while preserving decisions?",
+    title: "Context Compression",
+    userPrompt: "How should long chat context be compacted before the next model call?",
     aiLines: [
-      "Keep facts, decisions, constraints, and unresolved questions; drop social filler.",
-      "Preserve identifiers such as versions, IDs, paths, and owners exactly.",
-      "Store a short timeline to keep sequence and recency unambiguous.",
-      "Apply hard section token budgets and reject over-budget summaries.",
-      "Recompute summary only when meaningful state changes occur.",
+      "Keep facts, decisions, constraints, and unresolved questions.",
+      "Preserve exact identifiers such as paths, ids, versions, and owners.",
+      "Store a short timeline so recency and sequence remain unambiguous.",
     ],
   },
 ];
 
-const PROMPT_THREADS: PromptThread[] = Array.from({ length: 160 }, (_, index) => {
-  const seed = BASE_THREADS[index % BASE_THREADS.length];
-  const batch = Math.floor(index / BASE_THREADS.length) + 1;
-  if (!seed) {
-    return {
-      title: `Queue ${index + 1}`,
-      userPrompt: "Fallback prompt payload.",
-      aiLines: ["Fallback assistant payload."],
-    };
-  }
+const idleBorder = {
+  color: COLORS.default.bg_highlight,
+  style: "square" as const,
+};
 
-  return {
-    title: `${seed.title} [H${batch}]`,
-    userPrompt: seed.userPrompt,
-    aiLines: seed.aiLines,
-  };
-});
+const focusBorder = {
+  color: COLORS.default.green,
+  style: "square" as const,
+};
 
 const sidebarHeader = Text({
   text: "PROMPT HISTORY",
-  foreground: COLORS.default.fg,
+  foreground: COLORS.default.green,
 });
 
 const sidebarHint = Text({
-  text: "navigate: up/down or j/k",
+  text: "j/k or arrows navigate    Tab focuses composer",
   foreground: COLORS.default.grey,
 });
 
-const INPUT_BORDER_IDLE = { color: COLORS.default.bg_highlight, style: "square" as const };
-const INPUT_BORDER_FOCUSED = { color: COLORS.default.green, style: "square" as const };
-
-const promptSlots: Node[] = Array.from({ length: 80 }, () =>
+const promptSlots = Array.from({ length: 8 }, () =>
   Text({
     text: "",
     foreground: COLORS.default.fg,
   }),
 );
 
-const promptViewport = Column(
-  {
-    flexGrow: 1,
-    minHeight: 0,
-    overflow: "hidden",
-    rowGap: 0,
-  },
-  promptSlots,
-);
+const promptViewport = Column({ flexGrow: 1, gap: 0 }, promptSlots);
 
 const sidebar = Column(
   {
-    width: 66,
-    minWidth: 40,
-    maxWidth: 72,
-    flexGrow: 0,
-    flexShrink: 0,
-    border: { color: COLORS.default.bg_highlight, style: "square" },
-    padding: "1 0",
-    rowGap: 0,
-    overflow: "hidden",
+    border: idleBorder,
+    padding: "1 1",
+    gap: 1,
+    flexGrow: 2,
   },
   [sidebarHeader, sidebarHint, promptViewport],
 );
@@ -160,65 +118,46 @@ const transcriptHeader = Text({
 });
 
 const transcriptHint = Text({
-  text: "demo mode: hardcoded response stream",
+  text: "static demo payload // keyboard-first flow",
   foreground: COLORS.default.grey,
 });
 
-const transcriptLines: Node[] = Array.from({ length: 120 }, () =>
+const transcriptLines = Array.from({ length: 14 }, () =>
   Text({
     text: "",
     foreground: COLORS.default.fg,
   }),
 );
 
-const transcriptViewport = Column(
-  {
-    flexGrow: 1,
-    minHeight: 0,
-    overflow: "hidden",
-    rowGap: 0,
-  },
-  transcriptLines,
-);
+const transcriptViewport = Column({ flexGrow: 1, gap: 0 }, transcriptLines);
 
 const transcriptPanel = Column(
   {
+    border: idleBorder,
+    padding: "1 1",
+    gap: 1,
     flexGrow: 1,
-    minHeight: 0,
-    border: { color: COLORS.default.bg_highlight, style: "square" },
-    padding: "1 0",
-    rowGap: 0,
-    overflow: "hidden",
   },
   [transcriptHeader, transcriptHint, transcriptViewport],
 );
 
 const composer = Input({
   placeholder: "Type follow-up...",
-  border: INPUT_BORDER_IDLE,
+  border: idleBorder,
   padding: "1 0",
-  height: 9,
-  minHeight: 9,
-  maxHeight: 9,
   onSubmit: () => {},
-  onFocus: (self) => {
-    self.setStyle({ border: INPUT_BORDER_FOCUSED });
-  },
-  onBlur: (self) => {
-    self.setStyle({ border: INPUT_BORDER_IDLE });
-  },
+  onFocus: (self) => self.setStyle({ border: focusBorder }),
+  onBlur: (self) => self.setStyle({ border: idleBorder }),
 });
 
 if (composer.type === "input") {
-  composer.setText("Summarize risk + rollback criteria before merge.");
+  composer.setText("Summarize rollout risk and rollback criteria.");
 }
 
 const rightPane = Column(
   {
-    flexGrow: 1,
-    minHeight: 0,
-    rowGap: 0,
-    overflow: "hidden",
+    flexGrow: 5,
+    gap: 1,
   },
   [transcriptPanel, composer],
 );
@@ -226,8 +165,9 @@ const rightPane = Column(
 const root = Row(
   {
     flexGrow: 1,
-    columnGap: 1,
-    overflow: "hidden",
+    gap: 1,
+    padding: "1 1",
+    background: COLORS.default.bg,
   },
   [sidebar, rightPane],
 );
@@ -240,10 +180,9 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function wrapIndex(next: number): number {
-  const total = PROMPT_THREADS.length;
-  if (total === 0) return 0;
-  if (next < 0) return total - 1;
-  if (next >= total) return 0;
+  if (THREADS.length === 0) return 0;
+  if (next < 0) return THREADS.length - 1;
+  if (next >= THREADS.length) return 0;
   return next;
 }
 
@@ -255,12 +194,12 @@ function truncate(text: string, width: number): string {
 }
 
 function wrapWords(text: string, width: number): string[] {
-  const trimmed = text.trim();
-  if (trimmed.length === 0) return [""];
-  if (width <= 2) return [truncate(trimmed, width)];
+  if (width <= 2) return [truncate(text.trim(), width)];
 
-  const words = trimmed.split(/\s+/);
-  const rows: string[] = [];
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [""];
+
+  const lines: string[] = [];
   let current = "";
 
   for (const word of words) {
@@ -275,204 +214,118 @@ function wrapWords(text: string, width: number): string[] {
       continue;
     }
 
-    rows.push(current);
+    lines.push(current);
     current = truncate(word, width);
   }
 
-  rows.push(current);
-  return rows;
-}
-
-function promptViewportRows(): number {
-  const h = Math.floor(promptViewport.frameHeight());
-  if (h <= 0) return Math.min(12, promptSlots.length);
-  return clamp(h, 1, promptSlots.length);
+  lines.push(current);
+  return lines;
 }
 
 function promptTextWidth(): number {
-  const w = Math.floor(promptViewport.frameWidth());
-  if (w <= 0) return 48;
-  return Math.max(12, w - 6);
+  const width = Math.floor(promptViewport.frameWidth()) - 2;
+  return Math.max(16, width);
+}
+
+function transcriptTextWidth(): number {
+  const width = Math.floor(transcriptViewport.frameWidth()) - 2;
+  return Math.max(24, width);
 }
 
 function syncPromptWindow(): void {
-  const rows = promptViewportRows();
-  if (selectedIndex < promptWindowStart) {
-    promptWindowStart = selectedIndex;
-  }
-  if (selectedIndex >= promptWindowStart + rows) {
-    promptWindowStart = selectedIndex - rows + 1;
-  }
-
-  const maxStart = Math.max(0, PROMPT_THREADS.length - rows);
-  promptWindowStart = clamp(promptWindowStart, 0, maxStart);
+  const visibleCount = promptSlots.length;
+  promptWindowStart = clamp(
+    selectedIndex - Math.floor(visibleCount / 2),
+    0,
+    Math.max(0, THREADS.length - visibleCount),
+  );
 }
 
-function promptLabel(thread: PromptThread, index: number, width: number): string {
-  const ordinal = String(index + 1).padStart(2, "0");
-  const raw = `${ordinal} ${thread.title} :: ${thread.userPrompt}`;
-  return truncate(raw, width);
-}
-
-function renderSidebar(): void {
+function renderPromptSlots(): void {
   syncPromptWindow();
   const width = promptTextWidth();
 
   for (let slotIndex = 0; slotIndex < promptSlots.length; slotIndex++) {
-    const node = promptSlots[slotIndex];
-    if (!node || node.type !== "text") continue;
-
     const threadIndex = promptWindowStart + slotIndex;
-    const thread = PROMPT_THREADS[threadIndex];
+    const thread = THREADS[threadIndex];
+    const slot = promptSlots[slotIndex];
+    if (!slot) continue;
+
     if (!thread) {
-      node.setText("");
-      node.setStyle({ foreground: COLORS.default.fg });
+      slot.setText?.("");
+      slot.setStyle?.({ foreground: COLORS.default.grey });
       continue;
     }
 
-    const isActive = threadIndex === selectedIndex;
-    const marker = isActive ? ">" : " ";
-    const framed = `[ ${promptLabel(thread, threadIndex, width)} ]`;
-    node.setText(`${marker} ${framed}`);
-    node.setStyle({
-      foreground: isActive ? COLORS.default.green : COLORS.default.fg,
+    const prefix = threadIndex === selectedIndex ? ">" : " ";
+    const label = truncate(`${prefix} ${thread.title}`, width);
+    slot.setText?.(label);
+    slot.setStyle?.({
+      foreground:
+        threadIndex === selectedIndex
+          ? COLORS.default.green
+          : COLORS.default.fg,
     });
   }
 }
 
-function transcriptWidth(): number {
-  const w = Math.floor(transcriptViewport.frameWidth());
-  if (w <= 0) return 80;
-  return Math.max(20, w - 2);
-}
+function buildTranscriptLines(thread: PromptThread): string[] {
+  const width = transcriptTextWidth();
+  const lines: string[] = [];
 
-function transcriptRows(): number {
-  const h = Math.floor(transcriptViewport.frameHeight());
-  if (h <= 0) return 30;
-  return clamp(h, 1, transcriptLines.length);
-}
+  lines.push(...wrapWords(`USER> ${thread.userPrompt}`, width));
+  lines.push("");
 
-function buildTranscriptLines(thread: PromptThread, width: number): string[] {
-  const out: string[] = [];
-  out.push(...wrapWords(`USER> ${thread.userPrompt}`, width));
-  out.push("");
-  out.push("ASSISTANT>");
-  for (const line of thread.aiLines) {
-    out.push(...wrapWords(`- ${line}`, width));
-  }
-  out.push("");
-  out.push("SYSTEM CONTEXT>");
-  out.push(...wrapWords("- runtime: bun + rust ffi renderer", width));
-  out.push(...wrapWords("- mode: static demo payload with keyboard navigation", width));
-  out.push(...wrapWords("- constraint: parent clipping must hide overflow text", width));
-  out.push(...wrapWords("- input submit intentionally disabled for this demo", width));
-  out.push("");
-  out.push("OPERATOR NOTES>");
-  out.push(...wrapWords("- keep p95 frame time under visual jitter threshold", width));
-  out.push(...wrapWords("- inspect borders after every resize at narrow widths", width));
-  out.push(...wrapWords("- ensure prompt list and transcript never paint over parent borders", width));
-  out.push(...wrapWords("- keyboard path: j/k and arrows should remain deterministic", width));
-  out.push("");
-
-  let filler = 1;
-  while (out.length < transcriptLines.length) {
-    out.push(
-      truncate(
-        `context-buffer ${String(filler).padStart(2, "0")}: deterministic snapshot for dense viewport rendering`,
-        width,
-      ),
-    );
-    filler += 1;
+  for (const aiLine of thread.aiLines) {
+    lines.push(...wrapWords(`- ${aiLine}`, width));
   }
 
-  return out;
-}
-
-function lineColor(text: string): number {
-  if (text.startsWith("USER>")) return COLORS.default.blue;
-  if (text.startsWith("ASSISTANT>")) return COLORS.default.green;
-  if (text.startsWith("SYSTEM CONTEXT>")) return COLORS.default.cyan;
-  if (text.startsWith("OPERATOR NOTES>")) return COLORS.default.cyan;
-  if (text.startsWith("- ")) return COLORS.default.fg;
-  if (text.startsWith("context-buffer")) return COLORS.default.grey;
-  return COLORS.default.fg;
+  lines.push("");
+  lines.push(...wrapWords("- runtime: bun + rust ffi renderer", width));
+  lines.push(...wrapWords("- mode: static demo payload with keyboard navigation", width));
+  lines.push(...wrapWords("- goal: dense context without layout collisions", width));
+  return lines;
 }
 
 function renderTranscript(): void {
-  const active = PROMPT_THREADS[selectedIndex];
-  if (!active) return;
+  const thread = THREADS[selectedIndex];
+  if (!thread) return;
 
-  if (transcriptHeader.type === "text") {
-    transcriptHeader.setText(`THREAD ${selectedIndex + 1}/${PROMPT_THREADS.length} :: ${active.title}`);
-  }
+  transcriptHeader.setText(`THREAD // ${thread.title}`);
 
-  const lines = buildTranscriptLines(active, transcriptWidth());
-  const rowBudget = transcriptRows();
-
+  const lines = buildTranscriptLines(thread);
   for (let i = 0; i < transcriptLines.length; i++) {
-    const node = transcriptLines[i];
-    if (!node || node.type !== "text") continue;
-
-    if (i >= rowBudget) {
-      node.setText("");
-      continue;
-    }
-
-    const text = lines[i] ?? "";
-    node.setText(text);
-    node.setStyle({ foreground: lineColor(text) });
+    transcriptLines[i]?.setText?.(lines[i] ?? "");
   }
 }
 
-function render(): void {
-  renderSidebar();
+function refreshView(): void {
+  renderPromptSlots();
   renderTranscript();
 }
 
 function moveSelection(delta: number): void {
-  if (PROMPT_THREADS.length === 0) return;
   selectedIndex = wrapIndex(selectedIndex + delta);
-  render();
+  refreshView();
 }
-
-function toggleFocus(): void {
-  if (composer.isFocused()) {
-    composer.blur();
-    return;
-  }
-  composer.focus();
-}
-
-function navigateHistory(delta: number): void {
-  if (composer.isFocused()) return;
-  moveSelection(delta);
-}
-
-const app = run(root, {
-  debug: true,
-});
-let stopped = false;
-composer.blur();
 
 ff(() => {
-  promptViewport.frameHeight();
   promptViewport.frameWidth();
-  transcriptViewport.frameHeight();
   transcriptViewport.frameWidth();
-  render();
+  refreshView();
 });
 
+const app = run(root);
+
 function quit(): void {
-  if (stopped) return;
-  stopped = true;
   app.quit();
 }
 
 onKey("q", quit);
-onKey("\t", toggleFocus);
-onKey("j", () => navigateHistory(1));
-onKey("k", () => navigateHistory(-1));
-onKey("\x1b[B", () => navigateHistory(1));
-onKey("\x1b[A", () => navigateHistory(-1));
+onKey("\t", () => composer.focus());
+onKey("j", () => moveSelection(1));
+onKey("k", () => moveSelection(-1));
+onKey("\x1b[B", () => moveSelection(1));
+onKey("\x1b[A", () => moveSelection(-1));
 
-render();
+composer.focus();

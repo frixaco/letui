@@ -57,8 +57,8 @@ Symptom:
 Checks:
 
 1. use numeric colors (`0xRRGGBB`), not `"#RRGGBB"`
-2. use valid enums only for justify/align/overflow/border style
-3. use `rowGap`/`columnGap` (no generic `gap` field)
+2. current public layout API is small: `gap`, `padding`, `flexGrow`, `border`, `background`, `foreground`
+3. use valid border styles only: `"square"` or `"rounded"`
 
 ## Demo is slow
 

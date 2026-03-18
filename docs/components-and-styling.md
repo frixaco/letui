@@ -33,14 +33,20 @@ Button(input: ButtonProps, children?: Node[]): Node
 ## Shared style fields (`StyleProps`)
 
 - `border`: `{ color: number; style: "square" | "rounded" }`
-- `padding`, `margin`: number or string pair (`"topBottom leftRight"`)
-- `rowGap`, `columnGap`
+- `padding`: number or string pair (`"horizontal vertical"`)
 - `background`, `foreground` (number colors)
-- `flexGrow`, `flexShrink`, `flexBasis` (`number | "auto"`)
-- `justifyContent`: `"start" | "end" | "flex-start" | "flex-end" | "center" | "stretch" | "space-between" | "space-around" | "space-evenly"`
-- `alignItems`, `alignSelf`: `"start" | "end" | "flex-start" | "flex-end" | "center" | "baseline" | "stretch"`
-- `width`, `height`, `minWidth`, `maxWidth`, `minHeight`, `maxHeight`
-- `overflow`, `overflowX`, `overflowY`: `"visible" | "hidden"`
+- `flexGrow`
+
+## Box layout fields (`BoxProps`)
+
+- `gap`
+- `direction`: `"row" | "column"`
+
+## Current scope
+
+- The public API is intentionally narrow right now.
+- If you need fixed sizing, alignment, overflow, or min/max constraints, treat those as not yet supported.
+- Prefer composing `Row` / `Column`, `gap`, `padding`, borders, colors, and `flexGrow`.
 
 ## Colors
 

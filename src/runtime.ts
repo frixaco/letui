@@ -1,5 +1,6 @@
 import { ptr, toArrayBuffer, type Pointer } from "bun:ffi";
-import { writeFileSync } from "fs";
+import { mkdirSync, writeFileSync } from "fs";
+import { dirname } from "path";
 import { COLORS } from "./colors";
 import api from "./ffi";
 import { $, ff, type Signal } from "./signals";
@@ -15,7 +16,7 @@ import {
   endSync,
   endFlush,
   formatMetrics,
-  DEFAULT_METRICS_PATH,
+  resolveMetricsPath,
 } from "./metrics";
 import { logWriter } from "./debug";
 
@@ -32,6 +33,13 @@ let globalKeyHandlers: Map<string, () => void>;
 let pressedNodeId: number | null = null;
 let isRunning = false;
 let quitFn: (() => void) | null = null;
+
+function ensureParentDir(path: string): void {
+  const parent = dirname(path);
+  if (parent !== "." && parent.length > 0) {
+    mkdirSync(parent, { recursive: true });
+  }
+}
 
 function getNodeAt(x: number, y: number): Node | undefined {
   const id = spatialLookup[y * terminalWidth() + x];
@@ -410,8 +418,13 @@ export function onKey(key: string, callback: () => void): void {
 
 export function run(root: Node, options?: RunOptions): { quit: () => void } {
   // 1. Initialize terminal (Rust side) - MUST be first to set TERMINAL_SIZE
-  api.init_buffer();
-  api.init_letui();
+  if (api.init_buffer() !== 1) {
+    throw new Error("Failed to initialize letui buffer");
+  }
+  if (api.init_letui() !== 1) {
+    api.free_buffer();
+    throw new Error("Failed to initialize letui terminal");
+  }
   api.clear_text_registry();
 
   // 2. Initialize state (after init_buffer so terminal size is available)
@@ -423,14 +436,64 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   spatialLookup = new Array(terminalWidth() * terminalHeight());
   pressedNodeId = null;
   isRunning = true;
+  let cleanedUp = false;
 
   const stdinHandler = (data: Buffer) => handleInput(data.toString());
+  const writeDebugMetrics = () => {
+    if (!options?.debug) return;
+    const metricsPath = resolveMetricsPath();
+    ensureParentDir(metricsPath);
+    const stats = formatMetrics();
+    writeFileSync(metricsPath, stats + "\n", "utf8");
+    console.log(stats);
+    logWriter.flush();
+  };
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    isRunning = false;
+    process.stdin.off("data", stdinHandler);
+    process.stdout.off("resize", handleResize);
+    process.off("SIGINT", handleSigint);
+    process.off("SIGTERM", handleSigterm);
+    process.off("uncaughtException", handleUncaughtException);
+    process.off("unhandledRejection", handleUnhandledRejection);
+
+    try {
+      api.clear_text_registry();
+    } catch {}
+
+    try {
+      api.free_buffer();
+    } catch {}
+
+    try {
+      api.deinit_letui();
+    } catch {}
+
+    writeDebugMetrics();
+  };
+  const exitWith = (code: number, error?: unknown) => {
+    cleanup();
+    if (error) {
+      console.error(error);
+    }
+    process.exit(code);
+  };
+  const handleSigint = () => exitWith(130);
+  const handleSigterm = () => exitWith(143);
+  const handleUncaughtException = (error: unknown) => exitWith(1, error);
+  const handleUnhandledRejection = (reason: unknown) => exitWith(1, reason);
 
   // 3. Setup stdin for keyboard/mouse input
   process.stdin.on("data", stdinHandler);
 
   // 4. Setup resize handler
   process.stdout.on("resize", handleResize);
+  process.on("SIGINT", handleSigint);
+  process.on("SIGTERM", handleSigterm);
+  process.on("uncaughtException", handleUncaughtException);
+  process.on("unhandledRejection", handleUnhandledRejection);
 
   // 5. Create render effect
   ff(() => {
@@ -476,18 +539,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
 
   // 6. Create and store quit function
   quitFn = () => {
-    isRunning = false;
-    process.stdin.off("data", stdinHandler);
-    process.stdout.off("resize", handleResize);
-    api.clear_text_registry();
-    api.free_buffer();
-    api.deinit_letui();
-    if (options?.debug) {
-      const stats = formatMetrics();
-      writeFileSync(DEFAULT_METRICS_PATH, stats + "\n", "utf8");
-      console.log(stats);
-      logWriter.flush();
-    }
+    cleanup();
     process.exit(0);
   };
 

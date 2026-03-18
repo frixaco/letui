@@ -12,16 +12,8 @@ const THEME = {
   info: 0x66b3ff,
 } as const;
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-function asciiBar(value: number, width = 20): string {
-  const bounded = clamp(value, 0, 100);
-  const filled = Math.round((bounded / 100) * width);
-  const empty = Math.max(0, width - filled);
-  return `${"#".repeat(filled)}${"-".repeat(empty)}`;
-}
+const idleBorder = { color: THEME.border, style: "square" as const };
+const focusBorder = { color: THEME.accent, style: "square" as const };
 
 function statusPill(label: string, color: number): Node {
   return Text({
@@ -33,137 +25,68 @@ function statusPill(label: string, color: number): Node {
 
 function panel(
   title: string,
+  subtitle: string,
   children: Node[],
-  options: {
-    subtitle?: string;
-    flexGrow?: number;
-    borderStyle?: "square" | "rounded";
-    borderColor?: number;
-  } = {},
+  flexGrow = 1,
 ): Node {
   return Column(
     {
-      border: {
-        color: options.borderColor ?? THEME.border,
-        style: options.borderStyle ?? "rounded",
-      },
-      overflow: "hidden",
-      flexGrow: options.flexGrow,
+      border: idleBorder,
+      padding: "1 1",
+      gap: 1,
+      flexGrow,
+      background: THEME.bg0,
     },
     [
-      Row(
-        {
-          justifyContent: "space-between",
-          padding: "0 1",
-        },
-        [
-          Text({
-            text: title.toUpperCase(),
-            foreground: THEME.accent,
-          }),
-          Text({
-            text: options.subtitle ?? "",
-            foreground: THEME.fg1,
-          }),
-        ],
-      ),
-      Column(
-        {
-          padding: "0 1",
-          rowGap: 0,
-          flexGrow: 1,
-          justifyContent: "center",
-        },
-        children,
-      ),
+      Text({
+        text: `${title.toUpperCase()} // ${subtitle}`,
+        foreground: THEME.accent,
+      }),
+      ...children,
     ],
   );
 }
 
-function subsystemRow(
+function statusLine(
   status: "OK" | "WARN" | "CRIT",
-  name: string,
+  label: string,
   value: string,
 ): Node {
   const color =
     status === "OK" ? THEME.ok : status === "WARN" ? THEME.warn : THEME.crit;
 
-  return Row({ justifyContent: "space-between" }, [
-    Row({ columnGap: 1 }, [statusPill(status, color), Text({ text: name, foreground: THEME.fg0 })]),
-    Text({ text: value, foreground: THEME.fg1 }),
+  return Row({ gap: 1 }, [
+    statusPill(status, color),
+    Text({
+      text: `${label}: ${value}`,
+      foreground: THEME.fg0,
+    }),
   ]);
 }
 
-function telemetryCard(
-  label: string,
-  value: string,
-  trend: string,
-  color: number,
-): Node {
-  return Column(
-    {
-      padding: "0 1",
-      flexGrow: 1,
-    },
-    [
-      Text({ text: `${label}: ${value} (${trend})`, foreground: color }),
-    ],
-  );
-}
-
-function barRow(label: string, value: number, color: number): Node {
-  const pct = Math.round(clamp(value, 0, 100));
-  return Row({ justifyContent: "space-between" }, [
-    Text({ text: label, foreground: THEME.fg0 }),
-    Text({ text: `[${asciiBar(pct, 16)}] ${pct}%`, foreground: color }),
-  ]);
-}
-
-function eventRow(
-  ts: string,
-  severity: "OK" | "WARN" | "CRIT" | "INFO",
-  message: string,
-): Node {
-  const color =
-    severity === "OK"
-      ? THEME.ok
-      : severity === "WARN"
-        ? THEME.warn
-        : severity === "CRIT"
-          ? THEME.crit
-          : THEME.info;
-
-  return Row({ columnGap: 1 }, [
-    Text({ text: ts, foreground: THEME.fg1 }),
-    statusPill(severity, color),
-    Text({ text: message, foreground: THEME.fg0 }),
-  ]);
-}
-
-function commsRow(direction: "TX>" | "RX<", text: string): Node {
-  const color = direction === "TX>" ? THEME.accent : THEME.info;
-  return Row({ columnGap: 1 }, [
-    Text({ text: direction, foreground: color }),
-    Text({ text, foreground: THEME.fg0 }),
-  ]);
+function bulletLine(prefix: string, text: string, color: number = THEME.fg0): Node {
+  return Text({
+    text: `${prefix} ${text}`,
+    foreground: color,
+  });
 }
 
 function commandButton(label: string): Node {
   return Button({
     text: ` ${label} `,
-    border: { color: THEME.border, style: "square" },
+    border: idleBorder,
     foreground: THEME.fg0,
     onClick: () => {},
     onFocus: (self) => {
       self.setStyle({
         foreground: THEME.accent,
-        border: { color: THEME.accent, style: "square" },
+        border: focusBorder,
       });
     },
     onBlur: (self) => {
       self.setStyle({
         foreground: THEME.fg0,
-        border: { color: THEME.border, style: "square" },
+        border: idleBorder,
       });
     },
   });
@@ -173,15 +96,12 @@ const commandButtons = ["ARM", "PING", "SYNC", "SAFE", "BURN"].map(commandButton
 
 const commandInput = Input({
   placeholder: "uplink command...",
+  border: idleBorder,
+  padding: "1 0",
   foreground: THEME.fg0,
-  flexGrow: 1,
   onSubmit: () => {},
-  onFocus: (self) => {
-    self.setStyle({ foreground: THEME.accent });
-  },
-  onBlur: (self) => {
-    self.setStyle({ foreground: THEME.fg0 });
-  },
+  onFocus: (self) => self.setStyle({ border: focusBorder }),
+  onBlur: (self) => self.setStyle({ border: idleBorder }),
 });
 
 if (commandInput.type === "input") {
@@ -190,95 +110,70 @@ if (commandInput.type === "input") {
 
 const header = Column(
   {
-    padding: "0 1",
-    rowGap: 0,
+    border: idleBorder,
+    padding: "1 1",
+    gap: 1,
+    background: THEME.bg0,
   },
   [
-    Row({ justifyContent: "space-between", alignItems: "center" }, [
-      Text({
-        text: "MISSION CONTROL // DEEP SPACE PROBE   Phase: ORBIT INSERTION WINDOW",
-        foreground: THEME.accent,
-      }),
-      Row({ columnGap: 1 }, [
-        statusPill("COMMS LOCK", THEME.ok),
-        statusPill("DSN TRACK", THEME.info),
-        statusPill("THERMAL WATCH", THEME.warn),
-      ]),
+    Text({
+      text: "MISSION CONTROL // AURORA-7 // ORBIT INSERTION WINDOW",
+      foreground: THEME.accent,
+    }),
+    Row({ gap: 1 }, [
+      statusPill("COMMS LOCK", THEME.ok),
+      statusPill("DSN TRACK", THEME.info),
+      statusPill("THERMAL WATCH", THEME.warn),
     ]),
-    Row({ justifyContent: "space-between" }, [
-      Text({
-        text: "AURORA-7  T+185d 04h 22m  ETA burn: 00:12:48",
-        foreground: THEME.fg0,
-      }),
-      Text({
-        text: "UTC 2042-11-04 13:54:22  120Hz  3.4ms",
-        foreground: THEME.fg1,
-      }),
-    ]),
+    Text({
+      text: "UTC 2042-11-04 13:54:22   T+185d 04h 22m   frame target: 120Hz",
+      foreground: THEME.fg1,
+    }),
   ],
 );
 
-const leftColumn = Column({ flexGrow: 3, rowGap: 0, overflow: "hidden" }, [
+const leftColumn = Column({ flexGrow: 3, gap: 1 }, [
   panel(
     "Subsystems",
+    "health map",
     [
-      subsystemRow("OK", "Power", "99.2%"),
-      subsystemRow("WARN", "Thermal", "+12C drift"),
-      subsystemRow("OK", "Nav", "0.4m/s err"),
-      subsystemRow("OK", "Comms", "0.2% loss"),
-      subsystemRow("CRIT", "Payload", "shutter jam"),
-      subsystemRow("OK", "ADCS", "locked"),
-      subsystemRow("OK", "Propulsion", "nominal"),
+      statusLine("OK", "Power", "99.2%"),
+      statusLine("WARN", "Thermal", "+12C drift"),
+      statusLine("OK", "Navigation", "0.4m/s error"),
+      statusLine("OK", "Comms", "0.2% packet loss"),
+      statusLine("CRIT", "Payload", "shutter jam"),
     ],
-    { subtitle: "health map", flexGrow: 1 },
+    2,
   ),
   panel(
     "Checklist",
+    "pre-burn gates",
     [
-      Text({ text: "[x] Pre-burn alignment", foreground: THEME.ok }),
-      Text({ text: "[x] Antenna lock verified", foreground: THEME.ok }),
-      Text({ text: "[x] Fuel reserves confirmed", foreground: THEME.ok }),
-      Text({ text: "[ ] Safe-mode gate review", foreground: THEME.warn }),
-      Text({ text: "[ ] Final go/no-go poll", foreground: THEME.fg1 }),
-      Text({ text: "[ ] Commit burn sequence", foreground: THEME.fg1 }),
+      bulletLine("[x]", "Pre-burn alignment", THEME.ok),
+      bulletLine("[x]", "Antenna lock verified", THEME.ok),
+      bulletLine("[x]", "Fuel reserves confirmed", THEME.ok),
+      bulletLine("[ ]", "Safe-mode gate review", THEME.warn),
+      bulletLine("[ ]", "Final go / no-go poll", THEME.fg1),
     ],
-    { subtitle: "procedural gates", flexGrow: 1, borderStyle: "square" },
+    2,
   ),
   panel(
     "Command Queue",
+    "operator actions",
     [
-      Text({ text: "queue depth: 5  active lane: uplink-A", foreground: THEME.fg1 }),
-      Row({ columnGap: 1 }, commandButtons),
+      Text({
+        text: "queue depth: 5   active lane: uplink-A",
+        foreground: THEME.fg1,
+      }),
+      Row({ gap: 1 }, commandButtons),
     ],
-    { subtitle: "operator actions", flexGrow: 1 },
   ),
 ]);
 
-const telemetryGrid = Column({ rowGap: 0 }, [
-  Row({ columnGap: 1 }, [
-    telemetryCard("Velocity", "34,884 m/s", "+0.18%", THEME.info),
-    telemetryCard("Altitude", "418,201 km", "-0.04%", THEME.fg0),
-    telemetryCard("Fuel", "62.7%", "-0.12%", THEME.warn),
-  ]),
-  Row({ columnGap: 1 }, [
-    telemetryCard("Battery", "84.3%", "-0.03%", THEME.ok),
-    telemetryCard("Core Temp", "71.4 C", "+1.7 C", THEME.warn),
-    telemetryCard("Radiation", "2.4 mSv", "+0.2", THEME.crit),
-  ]),
-]);
-
-const radarLines = [
-  "  .      .          .        .      .  ",
-  "       .        /|                    ",
-  "    .         --O--       .           ",
-  "              \\|                     .",
-  " .     .            .         .       ",
-  "scan arc: 247 deg   contacts: 4",
-];
-
-const centerColumn = Column({ flexGrow: 6, rowGap: 0, overflow: "hidden" }, [
+const centerColumn = Column({ flexGrow: 5, gap: 1 }, [
   panel(
     "Trajectory",
+    "orbital path",
     [
       Text({
         text: "EARTH ----*-----------*-------------O PROBE",
@@ -293,91 +188,77 @@ const centerColumn = Column({ flexGrow: 6, rowGap: 0, overflow: "hidden" }, [
         foreground: THEME.accent,
       }),
     ],
-    { subtitle: "orbital path", flexGrow: 1 },
   ),
-  panel("Telemetry Grid", [telemetryGrid], {
-    subtitle: "2x3 critical metrics",
-    flexGrow: 1,
-    borderStyle: "square",
-  }),
   panel(
-    "Thrust + Power",
+    "Telemetry",
+    "critical metrics",
     [
-      barRow("Main reactor load", 63, THEME.info),
-      barRow("Engine thrust reserve", 48, THEME.warn),
-      barRow("Signal integrity", 92, THEME.ok),
+      Text({
+        text: "velocity 34,884 m/s   altitude 418,201 km   battery 84.3%",
+        foreground: THEME.fg0,
+      }),
+      Text({
+        text: "fuel 62.7%            core temp 71.4 C      radiation 2.4 mSv",
+        foreground: THEME.fg1,
+      }),
+      Text({
+        text: "signal integrity 92%  packet quality 94%    reactor load 63%",
+        foreground: THEME.info,
+      }),
     ],
-    { subtitle: "bar monitors", flexGrow: 1 },
+    2,
   ),
   panel(
     "Radar",
-    radarLines.map((line, idx) =>
-      Text({
-        text: line,
-        foreground: idx === 2 ? THEME.accent : THEME.fg1,
-      }),
-    ),
-    { subtitle: "local contact sweep", flexGrow: 1, borderStyle: "square" },
+    "local contact sweep",
+    [
+      Text({ text: "  .      .          .        .      .  ", foreground: THEME.fg1 }),
+      Text({ text: "       .        /|                    ", foreground: THEME.fg1 }),
+      Text({ text: "    .         --O--       .           ", foreground: THEME.accent }),
+      Text({ text: "              \\|                     .", foreground: THEME.fg1 }),
+      Text({ text: "scan arc: 247 deg   contacts: 4", foreground: THEME.info }),
+    ],
+    2,
   ),
 ]);
 
-const rightColumn = Column({ flexGrow: 4, rowGap: 0, overflow: "hidden" }, [
+const rightColumn = Column({ flexGrow: 4, gap: 1 }, [
   panel(
-    "Event Timeline",
+    "Timeline",
+    "newest first",
     [
-      eventRow("13:54:20", "INFO", "window check complete"),
-      eventRow("13:54:16", "WARN", "thermal spike near ring B"),
-      eventRow("13:54:08", "OK", "antenna slew stabilized"),
-      eventRow("13:53:49", "CRIT", "payload shutter timeout"),
-      eventRow("13:53:22", "INFO", "uplink channel swapped"),
-      eventRow("13:52:58", "OK", "nav solution converged"),
-      eventRow("13:52:31", "INFO", "DSN handover complete"),
-      eventRow("13:52:04", "WARN", "reaction wheel desaturation"),
+      bulletLine("13:54:20", "window check complete", THEME.info),
+      bulletLine("13:54:16", "thermal spike near ring B", THEME.warn),
+      bulletLine("13:54:08", "antenna slew stabilized", THEME.ok),
+      bulletLine("13:53:49", "payload shutter timeout", THEME.crit),
+      bulletLine("13:52:31", "DSN handover complete", THEME.info),
     ],
-    { subtitle: "newest first", flexGrow: 1 },
+    2,
   ),
   panel(
-    "Anomaly Feed",
+    "Anomalies",
+    "incident queue",
     [
-      Row({ justifyContent: "space-between" }, [
-        Text({ text: "A-17 shutter jam", foreground: THEME.crit }),
-        Text({ text: "owner: payload", foreground: THEME.fg1 }),
-      ]),
-      Row({ justifyContent: "space-between" }, [
-        Text({ text: "A-14 gyro bias", foreground: THEME.warn }),
-        Text({ text: "ack: investigating", foreground: THEME.warn }),
-      ]),
-      Row({ justifyContent: "space-between" }, [
-        Text({ text: "A-09 thermal drift", foreground: THEME.warn }),
-        Text({ text: "ack: pending", foreground: THEME.warn }),
-      ]),
-      Row({ justifyContent: "space-between" }, [
-        Text({ text: "A-05 clock skew", foreground: THEME.info }),
-        Text({ text: "ack: resolved", foreground: THEME.ok }),
-      ]),
-      Row({ justifyContent: "space-between" }, [
-        Text({ text: "A-02 nav jitter", foreground: THEME.info }),
-        Text({ text: "ack: complete", foreground: THEME.ok }),
-      ]),
+      Text({ text: "A-17 shutter jam        owner: payload", foreground: THEME.crit }),
+      Text({ text: "A-14 gyro bias          ack: investigating", foreground: THEME.warn }),
+      Text({ text: "A-09 thermal drift      ack: pending", foreground: THEME.warn }),
+      Text({ text: "A-05 clock skew         ack: resolved", foreground: THEME.info }),
     ],
-    { subtitle: "incident queue", flexGrow: 1, borderStyle: "square" },
   ),
   panel(
     "Comms",
+    "uplink / downlink",
     [
-      commsRow("TX>", "cmd uplink sync --priority high"),
-      commsRow("RX<", "ack uplink queue accepted"),
-      commsRow("TX>", "cmd telemetry stream resume"),
-      commsRow("RX<", "telemetry packet 228443 ok"),
-      commsRow("RX<", "heartbeat seq 41902 nominal"),
-      barRow("Packet quality", 94, THEME.ok),
-      barRow("Signal strength", 87, THEME.info),
+      bulletLine("TX>", "cmd uplink sync --priority high", THEME.accent),
+      bulletLine("RX<", "ack uplink queue accepted", THEME.info),
+      bulletLine("TX>", "cmd telemetry stream resume", THEME.accent),
+      bulletLine("RX<", "telemetry packet 228443 ok", THEME.ok),
+      bulletLine("RX<", "heartbeat seq 41902 nominal", THEME.ok),
     ],
-    { subtitle: "uplink / downlink", flexGrow: 1 },
   ),
 ]);
 
-const main = Row({ flexGrow: 1, columnGap: 0, overflow: "hidden" }, [
+const main = Row({ flexGrow: 1, gap: 1 }, [
   leftColumn,
   centerColumn,
   rightColumn,
@@ -385,33 +266,29 @@ const main = Row({ flexGrow: 1, columnGap: 0, overflow: "hidden" }, [
 
 const footer = Column(
   {
-    padding: "0 1",
-    rowGap: 0,
+    border: idleBorder,
+    padding: "1 1",
+    gap: 1,
+    background: THEME.bg0,
   },
   [
-    Row({ alignItems: "center", columnGap: 1 }, [
+    Row({ gap: 1 }, [
       Text({ text: ":", foreground: THEME.accent }),
       commandInput,
     ]),
-    Row({ justifyContent: "space-between" }, [
-      Text({
-        text: "Tab:focus  Enter:exec  A:ack  P:pause  Q:quit",
-        foreground: THEME.fg1,
-      }),
-      Text({
-        text: "COMMAND ACCEPTED / ORBIT INSERTION WINDOW ACTIVE",
-        foreground: THEME.ok,
-      }),
-    ]),
+    Text({
+      text: "Tab focus cycle   Enter execute   keyboard-only demo   q quit",
+      foreground: THEME.fg1,
+    }),
   ],
 );
 
 const root = Column(
   {
     flexGrow: 1,
-    padding: "0 0",
-    rowGap: 0,
-    overflow: "hidden",
+    padding: "1 1",
+    gap: 1,
+    background: THEME.bg0,
   },
   [header, main, footer],
 );
