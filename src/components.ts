@@ -13,6 +13,7 @@ import type {
   ButtonProps,
   StyleProps,
   BoxKind,
+  Direction,
   _StyleProps,
   _BoxProps,
   _TextProps,
@@ -29,6 +30,11 @@ export type {
   InputProps,
   ButtonProps,
   StyleProps,
+  AxisPair,
+  Direction,
+  AlignItems,
+  JustifyContent,
+  FlexWrap,
   BorderStyle,
   BorderProps,
 } from "./types";
@@ -53,9 +59,26 @@ function createStyleSignals(input: StyleProps): _StyleProps {
   return {
     border: $(input.border),
     padding: $(input.padding),
+    paddingX: $(input.paddingX),
+    paddingY: $(input.paddingY),
     background: $(input.background),
     foreground: $(input.foreground),
     flexGrow: $(input.flexGrow),
+    width: $(input.width),
+    height: $(input.height),
+    minWidth: $(input.minWidth),
+    minHeight: $(input.minHeight),
+    maxWidth: $(input.maxWidth),
+    maxHeight: $(input.maxHeight),
+    margin: $(input.margin),
+    marginX: $(input.marginX),
+    marginY: $(input.marginY),
+    alignItems: $(input.alignItems),
+    justifyContent: $(input.justifyContent),
+    alignSelf: $(input.alignSelf),
+    flexShrink: $(input.flexShrink),
+    flexBasis: $(input.flexBasis),
+    flexWrap: $(input.flexWrap),
   };
 }
 
@@ -111,6 +134,10 @@ function makeSetStyle<T extends Record<string, Signal<any>>>(
   };
 }
 
+function directionToBoxKind(direction: Direction | undefined): BoxKind {
+  return direction?.startsWith("row") ? NODE_TYPE.Row : NODE_TYPE.Column;
+}
+
 // =============================================================================
 // FOCUS MANAGEMENT
 // =============================================================================
@@ -152,8 +179,7 @@ export function Box(input: BoxProps, children: Node[]): BoxNode {
   const childrenSignal = $(children);
   const frameWidth = $(0);
   const frameHeight = $(0);
-  const initialType: BoxKind =
-    input.direction === "row" ? NODE_TYPE.Row : NODE_TYPE.Column;
+  const initialType = directionToBoxKind(input.direction);
   const setStyleSignals = makeSetStyle(props);
 
   const node: BoxNode = {
@@ -168,8 +194,7 @@ export function Box(input: BoxProps, children: Node[]): BoxNode {
     setChildren: (nodes) => childrenSignal(nodes),
     setStyle: (newProps) => {
       if (newProps.direction !== undefined) {
-        node.type =
-          newProps.direction === "row" ? NODE_TYPE.Row : NODE_TYPE.Column;
+        node.type = directionToBoxKind(newProps.direction);
       }
       setStyleSignals(newProps);
     },

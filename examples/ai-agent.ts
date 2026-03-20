@@ -1,5 +1,4 @@
 import {
-  COLORS,
   Column,
   Input,
   NODE_TYPE,
@@ -74,78 +73,120 @@ const THREADS: PromptThread[] = [
   },
 ];
 
-const idleBorder = {
-  color: COLORS.default.bg_highlight,
-  style: "square" as const,
-};
+const THEME = {
+  bg: 0x09111b,
+  panel: 0x0f1825,
+  panelAlt: 0x152132,
+  border: 0x26415e,
+  text: 0xdbe7ff,
+  muted: 0x88a0c0,
+  accent: 0x57e2cc,
+  blue: 0x73b8ff,
+  lime: 0xcce66c,
+  amber: 0xffc870,
+} as const;
 
-const focusBorder = {
-  color: COLORS.default.green,
-  style: "square" as const,
-};
+const idleBorder = { color: THEME.border, style: "rounded" as const };
+const focusBorder = { color: THEME.accent, style: "rounded" as const };
 
-const sidebarHeader = Text({
-  text: "PROMPT HISTORY",
-  foreground: COLORS.default.green,
-});
-
-const sidebarHint = Text({
-  text: "j/k or arrows navigate    Tab focuses composer",
-  foreground: COLORS.default.grey,
-});
-
-const promptSlots = Array.from({ length: 8 }, () =>
+const promptSlots = Array.from({ length: 7 }, () =>
   Text({
     text: "",
-    foreground: COLORS.default.fg,
+    foreground: THEME.text,
+    background: THEME.panelAlt,
+    paddingX: 1,
   }),
 );
 
-const promptViewport = Column({ flexGrow: 1, gap: 0 }, promptSlots);
+const transcriptLines = Array.from({ length: 15 }, () =>
+  Text({
+    text: "",
+    foreground: THEME.text,
+  }),
+);
+
+const headerTitle = Text({
+  text: "AI AGENT // KEYBOARD-FIRST CONTROL ROOM",
+  foreground: THEME.accent,
+});
+
+const headerMeta = Text({
+  text: "",
+  foreground: THEME.muted,
+});
+
+const threadBadge = Text({
+  text: "",
+  foreground: THEME.bg,
+  background: THEME.accent,
+  paddingX: 1,
+});
+
+const modeBadge = Text({
+  text: " static payload ",
+  foreground: THEME.bg,
+  background: THEME.lime,
+  paddingX: 1,
+});
+
+const sidebarHint = Text({
+  text: "j/k or arrows navigate   Tab focuses composer",
+  foreground: THEME.muted,
+});
+
+const promptViewport = Column({ gap: 1, flexGrow: 1 }, promptSlots);
 
 const sidebar = Column(
   {
-    border: idleBorder,
-    padding: "1 1",
     gap: 1,
-    flexGrow: 2,
+    padding: "1 1",
+    border: idleBorder,
+    background: THEME.panel,
+    flexGrow: 1,
+    flexBasis: 30,
+    minWidth: 28,
   },
-  [sidebarHeader, sidebarHint, promptViewport],
+  [
+    Text({ text: "PROMPT HISTORY", foreground: THEME.blue }),
+    sidebarHint,
+    promptViewport,
+  ],
 );
 
 const transcriptHeader = Text({
   text: "",
-  foreground: COLORS.default.cyan,
+  foreground: THEME.accent,
 });
 
-const transcriptHint = Text({
-  text: "static demo payload // keyboard-first flow",
-  foreground: COLORS.default.grey,
+const transcriptSubhead = Text({
+  text: "dense transcript view with stable node identity and wrapped panes",
+  foreground: THEME.muted,
 });
 
-const transcriptLines = Array.from({ length: 14 }, () =>
-  Text({
-    text: "",
-    foreground: COLORS.default.fg,
-  }),
-);
-
-const transcriptViewport = Column({ flexGrow: 1, gap: 0 }, transcriptLines);
+const transcriptViewport = Column({ gap: 0, flexGrow: 1 }, transcriptLines);
 
 const transcriptPanel = Column(
   {
-    border: idleBorder,
-    padding: "1 1",
     gap: 1,
+    padding: "1 1",
+    border: idleBorder,
+    background: THEME.panel,
     flexGrow: 1,
   },
-  [transcriptHeader, transcriptHint, transcriptViewport],
+  [transcriptHeader, transcriptSubhead, transcriptViewport],
 );
+
+const composerHint = Text({
+  text: "Enter does nothing here; demo is about layout, focus, and dense context",
+  foreground: THEME.muted,
+});
 
 const composer = Input({
   placeholder: "Type follow-up...",
   border: idleBorder,
   padding: "1 0",
+  background: THEME.panelAlt,
+  foreground: THEME.text,
   onSubmit: () => {},
   onFocus: (self) => self.setStyle({ border: focusBorder }),
   onBlur: (self) => self.setStyle({ border: idleBorder }),
@@ -155,22 +196,72 @@ if (composer.type === NODE_TYPE.Input) {
   composer.setText("Summarize rollout risk and rollback criteria.");
 }
 
-const rightPane = Column(
+const composerPanel = Column(
   {
-    flexGrow: 5,
     gap: 1,
+    padding: "1 1",
+    border: idleBorder,
+    background: THEME.panel,
   },
-  [transcriptPanel, composer],
+  [Text({ text: "COMPOSER", foreground: THEME.blue }), composer, composerHint],
 );
 
-const root = Row(
+const rightPane = Column(
+  {
+    flexGrow: 2,
+    flexBasis: 54,
+    minWidth: 42,
+    gap: 1,
+  },
+  [transcriptPanel, composerPanel],
+);
+
+const footer = Text({
+  text: "",
+  foreground: THEME.muted,
+});
+
+const root = Column(
   {
     flexGrow: 1,
     gap: 1,
     padding: "1 1",
-    background: COLORS.default.bg,
+    background: THEME.bg,
   },
-  [sidebar, rightPane],
+  [
+    Column(
+      {
+        gap: 1,
+        padding: "1 1",
+        border: idleBorder,
+        background: THEME.panel,
+      },
+      [
+        Row(
+          {
+            justifyContent: "spaceBetween",
+            alignItems: "center",
+            gap: 1,
+            flexWrap: "wrap",
+          },
+          [
+            Column({ gap: 0 }, [headerTitle, headerMeta]),
+            Row({ gap: 1, flexWrap: "wrap" }, [threadBadge, modeBadge]),
+          ],
+        ),
+      ],
+    ),
+    Row(
+      {
+        flexGrow: 1,
+        gap: 1,
+        flexWrap: "wrap",
+        alignItems: "stretch",
+      },
+      [sidebar, rightPane],
+    ),
+    footer,
+  ],
 );
 
 let selectedIndex = 0;
@@ -224,13 +315,11 @@ function wrapWords(text: string, width: number): string[] {
 }
 
 function promptTextWidth(): number {
-  const width = Math.floor(promptViewport.frameWidth()) - 2;
-  return Math.max(16, width);
+  return Math.max(18, Math.floor(promptViewport.frameWidth()) - 4);
 }
 
 function transcriptTextWidth(): number {
-  const width = Math.floor(transcriptViewport.frameWidth()) - 2;
-  return Math.max(24, width);
+  return Math.max(28, Math.floor(transcriptViewport.frameWidth()) - 2);
 }
 
 function syncPromptWindow(): void {
@@ -253,19 +342,20 @@ function renderPromptSlots(): void {
     if (!slot) continue;
 
     if (!thread) {
-      slot.setText?.("");
-      slot.setStyle?.({ foreground: COLORS.default.grey });
+      slot.setText("");
+      slot.setStyle({
+        foreground: THEME.muted,
+        background: THEME.panelAlt,
+      });
       continue;
     }
 
-    const prefix = threadIndex === selectedIndex ? ">" : " ";
-    const label = truncate(`${prefix} ${thread.title}`, width);
-    slot.setText?.(label);
-    slot.setStyle?.({
-      foreground:
-        threadIndex === selectedIndex
-          ? COLORS.default.green
-          : COLORS.default.fg,
+    const active = threadIndex === selectedIndex;
+    slot.setText(truncate(`${active ? ">" : " "} ${thread.title}`, width));
+    slot.setStyle({
+      foreground: active ? THEME.bg : THEME.text,
+      background: active ? THEME.accent : THEME.panelAlt,
+      paddingX: 1,
     });
   }
 }
@@ -283,8 +373,8 @@ function buildTranscriptLines(thread: PromptThread): string[] {
 
   lines.push("");
   lines.push(...wrapWords("- runtime: bun + rust ffi renderer", width));
-  lines.push(...wrapWords("- mode: static demo payload with keyboard navigation", width));
-  lines.push(...wrapWords("- goal: dense context without layout collisions", width));
+  lines.push(...wrapWords("- layout: wrapped panes with minWidth / flexBasis", width));
+  lines.push(...wrapWords("- focus: composer can take over without losing sidebar context", width));
   return lines;
 }
 
@@ -293,16 +383,23 @@ function renderTranscript(): void {
   if (!thread) return;
 
   transcriptHeader.setText(`THREAD // ${thread.title}`);
+  headerMeta.setText(
+    `active thread ${selectedIndex + 1}/${THREADS.length}   prompt viewport ${Math.floor(promptViewport.frameWidth())}w   transcript viewport ${Math.floor(transcriptViewport.frameWidth())}w`,
+  );
+  threadBadge.setText(` thread ${selectedIndex + 1}/${THREADS.length} `);
 
   const lines = buildTranscriptLines(thread);
   for (let i = 0; i < transcriptLines.length; i++) {
-    transcriptLines[i]?.setText?.(lines[i] ?? "");
+    transcriptLines[i]?.setText(lines[i] ?? "");
   }
 }
 
 function refreshView(): void {
   renderPromptSlots();
   renderTranscript();
+  footer.setText(
+    "responsive behavior: sidebar minWidth 28, transcript stack minWidth 42   q quit",
+  );
 }
 
 function moveSelection(delta: number): void {
@@ -318,11 +415,7 @@ ff(() => {
 
 const app = run(root);
 
-function quit(): void {
-  app.quit();
-}
-
-onKey("q", quit);
+onKey("q", () => app.quit());
 onKey("\t", () => composer.focus());
 onKey("j", () => moveSelection(1));
 onKey("k", () => moveSelection(-1));

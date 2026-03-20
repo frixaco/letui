@@ -74,37 +74,134 @@ const MOUSE_EVENT_PATTERN = /\x1b\[<\d+;\d+;\d+[Mm]/g;
 
 function readSentStyleState(node: Node): SentStyleState {
   const style: SentStyleState = {};
+  const props = node.props as any;
 
-  const gap = (node.props as any).gap?.();
+  const gap = props.gap?.();
   if (gap !== undefined && gap !== 0) {
     style.gap = gap;
   }
 
-  const padding = node.props.padding?.();
+  const padding = props.padding?.();
   if (padding !== undefined && padding !== 0) {
     style.padding = padding;
   }
 
-  const border = node.props.border?.();
+  const paddingX = props.paddingX?.();
+  if (paddingX !== undefined && paddingX !== 0) {
+    style.paddingX = paddingX;
+  }
+
+  const paddingY = props.paddingY?.();
+  if (paddingY !== undefined && paddingY !== 0) {
+    style.paddingY = paddingY;
+  }
+
+  const border = props.border?.();
   if (border) {
     style.borderWidth = 1;
     style.borderColor = border.color;
     style.borderStyle = border.style === "rounded" ? "rounded" : "square";
   }
 
-  const background = node.props.background?.();
+  const background = props.background?.();
   if (background !== undefined) {
     style.background = background;
   }
 
-  const foreground = node.props.foreground?.();
+  const foreground = props.foreground?.();
   if (foreground !== undefined) {
     style.foreground = foreground;
   }
 
-  const flexGrow = node.props.flexGrow?.();
+  const flexGrow = props.flexGrow?.();
   if (flexGrow !== undefined && flexGrow !== 0) {
     style.flexGrow = flexGrow;
+  }
+
+  const direction = props.direction?.();
+  if (
+    direction !== undefined &&
+    !(
+      (node.type === NODE_TYPE.Row && direction === "row") ||
+      (node.type === NODE_TYPE.Column && direction === "column")
+    )
+  ) {
+    style.direction = direction;
+  }
+
+  const width = props.width?.();
+  if (width !== undefined) {
+    style.width = width;
+  }
+
+  const height = props.height?.();
+  if (height !== undefined) {
+    style.height = height;
+  }
+
+  const minWidth = props.minWidth?.();
+  if (minWidth !== undefined) {
+    style.minWidth = minWidth;
+  }
+
+  const minHeight = props.minHeight?.();
+  if (minHeight !== undefined) {
+    style.minHeight = minHeight;
+  }
+
+  const maxWidth = props.maxWidth?.();
+  if (maxWidth !== undefined) {
+    style.maxWidth = maxWidth;
+  }
+
+  const maxHeight = props.maxHeight?.();
+  if (maxHeight !== undefined) {
+    style.maxHeight = maxHeight;
+  }
+
+  const margin = props.margin?.();
+  if (margin !== undefined && margin !== 0) {
+    style.margin = margin;
+  }
+
+  const marginX = props.marginX?.();
+  if (marginX !== undefined && marginX !== 0) {
+    style.marginX = marginX;
+  }
+
+  const marginY = props.marginY?.();
+  if (marginY !== undefined && marginY !== 0) {
+    style.marginY = marginY;
+  }
+
+  const alignItems = props.alignItems?.();
+  if (alignItems !== undefined) {
+    style.alignItems = alignItems;
+  }
+
+  const justifyContent = props.justifyContent?.();
+  if (justifyContent !== undefined) {
+    style.justifyContent = justifyContent;
+  }
+
+  const alignSelf = props.alignSelf?.();
+  if (alignSelf !== undefined) {
+    style.alignSelf = alignSelf;
+  }
+
+  const flexShrink = props.flexShrink?.();
+  if (flexShrink !== undefined && flexShrink !== 1) {
+    style.flexShrink = flexShrink;
+  }
+
+  const flexBasis = props.flexBasis?.();
+  if (flexBasis !== undefined) {
+    style.flexBasis = flexBasis;
+  }
+
+  const flexWrap = props.flexWrap?.();
+  if (flexWrap !== undefined && flexWrap !== "noWrap") {
+    style.flexWrap = flexWrap;
   }
 
   return style;
@@ -216,34 +313,23 @@ function syncNodeText(
     prefixLength++;
   }
 
-  let suffixLength = 0;
-  while (
-    suffixLength < previousChars.length - prefixLength &&
-    suffixLength < currentChars.length - prefixLength &&
-    previousChars[previousChars.length - 1 - suffixLength] ===
-      currentChars[currentChars.length - 1 - suffixLength]
-  ) {
-    suffixLength++;
-  }
-
   const sharedPrefix = previousChars.slice(0, prefixLength).join("");
-  const previousMiddle = previousChars
-    .slice(prefixLength, previousChars.length - suffixLength)
-    .join("");
-  const currentMiddle = currentChars
-    .slice(prefixLength, currentChars.length - suffixLength)
-    .join("");
+  const previousTail = previousChars.slice(prefixLength).join("");
+  const currentTail = currentChars.slice(prefixLength).join("");
 
-  if (previousMiddle.length > 0) {
+  // Rust text ops only support deleting a byte range and appending new text.
+  // Use a prefix-only diff so every replacement can be expressed as:
+  // keep prefix -> delete old tail -> append new tail.
+  if (previousTail.length > 0) {
     const startByte = textEncoder.encode(sharedPrefix).length;
-    const endByte = startByte + textEncoder.encode(previousMiddle).length;
+    const endByte = startByte + textEncoder.encode(previousTail).length;
     ops.deleteTextRange(id, startByte, endByte);
     recordTextDelete(textStats);
   }
 
-  if (currentMiddle.length > 0) {
-    ops.setText(id, currentMiddle);
-    recordTextSet(textStats, currentMiddle);
+  if (currentTail.length > 0) {
+    ops.setText(id, currentTail);
+    recordTextSet(textStats, currentTail);
   }
 }
 

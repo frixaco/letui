@@ -18,21 +18,60 @@ export type BorderProps = {
   style: BorderStyle;
 };
 
+export type AxisPair = number | `${number} ${number}`;
+export type Direction = "row" | "column" | "rowReverse" | "columnReverse";
+export type AlignItems =
+  | "start"
+  | "end"
+  | "flexStart"
+  | "flexEnd"
+  | "center"
+  | "baseline"
+  | "stretch";
+export type JustifyContent =
+  | "start"
+  | "end"
+  | "flexStart"
+  | "flexEnd"
+  | "center"
+  | "stretch"
+  | "spaceBetween"
+  | "spaceEvenly"
+  | "spaceAround";
+export type FlexWrap = "noWrap" | "wrap" | "wrapReverse";
+
 // =============================================================================
 // INTERNAL PROP TYPES (signal-based, used inside nodes)
 // =============================================================================
 
 export type _StyleProps = {
   border: Signal<BorderProps | undefined>;
-  padding: Signal<number | `${number} ${number}` | undefined>;
+  padding: Signal<AxisPair | undefined>;
+  paddingX: Signal<number | undefined>;
+  paddingY: Signal<number | undefined>;
   background: Signal<number | undefined>;
   foreground: Signal<number | undefined>;
   flexGrow: Signal<number | undefined>;
+  width: Signal<number | undefined>;
+  height: Signal<number | undefined>;
+  minWidth: Signal<number | undefined>;
+  minHeight: Signal<number | undefined>;
+  maxWidth: Signal<number | undefined>;
+  maxHeight: Signal<number | undefined>;
+  margin: Signal<AxisPair | undefined>;
+  marginX: Signal<number | undefined>;
+  marginY: Signal<number | undefined>;
+  alignItems: Signal<AlignItems | undefined>;
+  justifyContent: Signal<JustifyContent | undefined>;
+  alignSelf: Signal<AlignItems | undefined>;
+  flexShrink: Signal<number | undefined>;
+  flexBasis: Signal<number | undefined>;
+  flexWrap: Signal<FlexWrap | undefined>;
 };
 
 export type _BoxProps = _StyleProps & {
   gap: Signal<number | undefined>;
-  direction: Signal<"row" | "column" | undefined>;
+  direction: Signal<Direction | undefined>;
 };
 
 export type _TextProps = _StyleProps & {
@@ -54,15 +93,32 @@ export type _ButtonProps = _StyleProps & {
 
 export type StyleProps = {
   border?: BorderProps;
-  padding?: number | `${number} ${number}`;
+  padding?: AxisPair;
+  paddingX?: number;
+  paddingY?: number;
   background?: number;
   foreground?: number;
   flexGrow?: number;
+  width?: number;
+  height?: number;
+  minWidth?: number;
+  minHeight?: number;
+  maxWidth?: number;
+  maxHeight?: number;
+  margin?: AxisPair;
+  marginX?: number;
+  marginY?: number;
+  alignItems?: AlignItems;
+  justifyContent?: JustifyContent;
+  alignSelf?: AlignItems;
+  flexShrink?: number;
+  flexBasis?: number;
+  flexWrap?: FlexWrap;
 };
 
 export type BoxProps = StyleProps & {
   gap?: number;
-  direction?: "row" | "column";
+  direction?: Direction;
 };
 
 export type TextProps = StyleProps & {

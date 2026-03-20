@@ -5,7 +5,7 @@
 
 import { existsSync } from "fs";
 import { COLORS } from "@/colors";
-import { Button, Column, Input, Row, run, onKey } from "@/components";
+import { Button, Column, Input, Row, Text, run, onKey } from "@/components";
 import { LoadingBar } from "./progress-bar";
 import { $, ff } from "@/signals";
 import { saveMetrics } from "@/metrics";
@@ -27,8 +27,8 @@ const MPV_SOCKET_WAIT_MS = 5000;
 
 // --- Loading Bars ---
 const loadingBar = LoadingBar({
-  dotColor: COLORS.default.green,
-  trackColor: COLORS.default.bg_alt,
+  dotColor: COLORS.default.cyan,
+  trackColor: COLORS.default.bg_highlight,
 });
 
 function toScrapeResults(payload: unknown): ScrapeResultItem[] {
@@ -144,15 +144,42 @@ const borderStyle = {
 
 const focusedBorderStyle = {
   color: COLORS.default.green,
-  style: "square" as const,
+  style: "rounded" as const,
 };
+
+const titleLine = Text({
+  text: "ANITRACK // TORRENT SEARCH + STREAM STAGING",
+  foreground: COLORS.default.cyan,
+});
+
+const subtitleLine = Text({
+  text: "keyboard-first flow with wrapped panels and live result status",
+  foreground: COLORS.default.grey,
+});
+
+const searchStatusLine = Text({
+  text: "",
+  foreground: COLORS.default.fg,
+});
+
+const resultsSummaryLine = Text({
+  text: "",
+  foreground: COLORS.default.fg,
+});
+
+const helpLine = Text({
+  text: "/ focus input   Tab switch pane   j/k navigate   Enter stream   q quit",
+  foreground: COLORS.default.grey,
+});
 
 // --- Nodes ---
 const searchInput = Input({
   placeholder: "Search torrents...",
-  border: borderStyle,
+  border: undefined,
   padding: "1 0",
-  flexGrow: 1,
+  foreground: COLORS.default.fg,
+  height: 3,
+  minWidth: 28,
   onSubmit: (val) => {
     const query = val.trim();
     if (query.length === 0) {
@@ -165,17 +192,55 @@ const searchInput = Input({
     focusTarget("input");
     self.setStyle({ border: focusedBorderStyle });
   },
-  onBlur: (self) => self.setStyle({ border: borderStyle }),
+  onBlur: (self) => self.setStyle({ border: undefined }),
 });
 
-const loadingBars = Row({ flexGrow: 1 }, [loadingBar.node]);
+const loadingBars = Row({}, [loadingBar.node]);
+const searchInputRow = Row({ minHeight: 3, alignItems: "stretch" }, [searchInput]);
 
 const resultsList = Column({ padding: "1 0", flexGrow: 1 }, []);
 
-const root = Column({ border: borderStyle, padding: "1 0" }, [
-  Column({ padding: "1 0" }, [searchInput, loadingBars]),
-  resultsList,
-]);
+const searchPanel = Column(
+  {
+    gap: 1,
+    padding: "0 0",
+    flexGrow: 1,
+    flexBasis: 32,
+    minWidth: 28,
+  },
+  [titleLine, subtitleLine, searchInputRow, loadingBars, searchStatusLine],
+);
+
+const resultsPanel = Column(
+  {
+    gap: 1,
+    padding: "0 0",
+    flexGrow: 2,
+    flexBasis: 50,
+    minWidth: 40,
+    minHeight: 14,
+  },
+  [resultsSummaryLine, resultsList, helpLine],
+);
+
+const root = Column(
+  {
+    flexGrow: 1,
+    gap: 1,
+    padding: "1 1",
+  },
+  [
+    Row(
+      {
+        flexGrow: 1,
+        gap: 1,
+        flexWrap: "wrap",
+        alignItems: "stretch",
+      },
+      [searchPanel, resultsPanel],
+    ),
+  ],
+);
 
 // --- Keep track of result buttons for focus management ---
 let resultButtons: ReturnType<typeof Button>[] = [];
@@ -193,6 +258,41 @@ function resultLabel(item: ScrapeResultItem, isActive: boolean): string {
 ff(() => {
   const all = results();
   const selected = selectedIndex();
+  const isLoading = loading();
+  const activePane = focusTarget();
+
+  titleLine.setStyle({
+    foreground:
+      activePane === "input" ? COLORS.default.green : COLORS.default.cyan,
+  });
+  searchStatusLine.setText(
+    isLoading
+      ? "status: searching remote scrape endpoint..."
+      : activePane === "input"
+        ? "status: input armed; submit query to populate results"
+      : "status: results active; input still available with /",
+  );
+  searchStatusLine.setStyle({
+    foreground:
+      isLoading
+        ? COLORS.default.yellow
+        : activePane === "input"
+          ? COLORS.default.green
+          : COLORS.default.grey,
+  });
+  resultsSummaryLine.setText(
+    all.length === 0
+      ? "results: empty"
+      : `results: ${all.length} items   selected: ${Math.min(all.length, selected + 1)}/${all.length}`,
+  );
+  resultsSummaryLine.setStyle({
+    foreground:
+      all.length === 0
+        ? COLORS.default.grey
+        : activePane === "results"
+          ? COLORS.default.green
+          : COLORS.default.cyan,
+  });
 
   if (all !== lastResultsSnapshot) {
     resultHeights.clear();
@@ -273,8 +373,8 @@ ff(() => {
     const isActive = globalIdx === selected;
     return Button({
       text: resultLabel(item, isActive),
-      border: isActive ? focusedBorderStyle : borderStyle,
-      padding: "1 0",
+      border: undefined,
+      foreground: isActive ? COLORS.default.green : COLORS.default.fg,
       onFocus: () => {
         focusTarget("results");
         if (selectedIndex() !== globalIdx) {

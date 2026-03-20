@@ -3,9 +3,19 @@ import { $, ff } from "@/signals";
 import { saveMetrics } from "@/metrics";
 import type { Node } from "@/types";
 
-const DARK_BG = 0x0a0a0f;
+const THEME = {
+  bg: 0x060b13,
+  panel: 0x0b1420,
+  panelAlt: 0x102032,
+  border: 0x25425f,
+  text: 0xe5f0ff,
+  muted: 0x85a0c4,
+  accent: 0x48e7c3,
+  amber: 0xffc568,
+  rose: 0xff7d91,
+} as const;
+
 const TICK_MS = 60;
-const DEFAULT_BAR_COUNT = 120;
 const MIN_FILL = 0.05;
 const MAX_FILL = 0.95;
 
@@ -15,14 +25,13 @@ type Bar = {
   bar: Node;
 };
 
-type PatternFn = (barIndex: number, tick: number, totalBars: number) => number;
+type Pattern = {
+  label: string;
+  fn: (barIndex: number, tick: number, totalBars: number) => number;
+};
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
-}
-
-function terminalBarCount(): number {
-  return Math.max(1, process.stdout.columns ?? DEFAULT_BAR_COUNT);
 }
 
 function hslToHex(h: number, s = 1, l = 0.55): number {
@@ -74,8 +83,7 @@ function smoothWave(barIndex: number, tick: number, totalBars: number): number {
   const wave1 = Math.sin(x * Math.PI * 4 + t) * 0.3;
   const wave2 = Math.sin(x * Math.PI * 7 - t * 1.3) * 0.2;
   const wave3 = Math.sin(x * Math.PI * 13 + t * 0.7) * 0.1;
-  const base = 0.35;
-  return clamp(base + wave1 + wave2 + wave3, MIN_FILL, MAX_FILL);
+  return clamp(0.35 + wave1 + wave2 + wave3, MIN_FILL, MAX_FILL);
 }
 
 function sharpPeaks(barIndex: number, tick: number, totalBars: number): number {
@@ -83,8 +91,7 @@ function sharpPeaks(barIndex: number, tick: number, totalBars: number): number {
   const t = tick * 0.08;
   const wave1 = Math.abs(Math.sin(x * Math.PI * 5 + t)) * 0.55;
   const wave2 = Math.abs(Math.sin(x * Math.PI * 11 - t * 1.4)) * 0.25;
-  const base = 0.1;
-  return clamp(base + wave1 + wave2, MIN_FILL, MAX_FILL);
+  return clamp(0.1 + wave1 + wave2, MIN_FILL, MAX_FILL);
 }
 
 function randomBounce(barIndex: number, tick: number, totalBars: number): number {
@@ -93,9 +100,14 @@ function randomBounce(barIndex: number, tick: number, totalBars: number): number
   const wave = Math.sin(x * Math.PI * 6 + t * 0.8) * 0.2;
   const peaks = Math.abs(Math.sin(x * Math.PI * 10 - t * 1.5)) * 0.2;
   const noise = pseudoNoise(barIndex * 0.77 + tick * 1.31) * 0.25;
-  const base = 0.35;
-  return clamp(base + wave + peaks + noise, MIN_FILL, MAX_FILL);
+  return clamp(0.35 + wave + peaks + noise, MIN_FILL, MAX_FILL);
 }
+
+const PATTERNS: Pattern[] = [
+  { label: "smooth wave", fn: smoothWave },
+  { label: "sharp peaks", fn: sharpPeaks },
+  { label: "random bounce", fn: randomBounce },
+];
 
 function createBar(barIndex: number, totalBars: number): Bar {
   const hue = (barIndex / totalBars) * 360;
@@ -103,8 +115,8 @@ function createBar(barIndex: number, totalBars: number): Bar {
 
   const gap = Text({
     text: " ",
-    background: DARK_BG,
-    foreground: DARK_BG,
+    background: THEME.panelAlt,
+    foreground: THEME.panelAlt,
     flexGrow: 60,
   });
 
@@ -115,42 +127,156 @@ function createBar(barIndex: number, totalBars: number): Bar {
     flexGrow: 40,
   });
 
-  const col = Column({ flexGrow: 1, background: DARK_BG }, [gap, bar]);
+  const col = Column({ flexGrow: 1, background: THEME.panelAlt }, [gap, bar]);
   return { col, gap, bar };
 }
 
 function createBars(count: number): Bar[] {
-  const nextBars: Bar[] = [];
-  for (let i = 0; i < count; i++) {
-    nextBars.push(createBar(i, count));
-  }
-  return nextBars;
+  const total = Math.max(1, count);
+  return Array.from({ length: total }, (_, index) => createBar(index, total));
 }
 
 const tick = $(0);
 const paused = $(false);
-let pattern: PatternFn = smoothWave;
-let bars = createBars(terminalBarCount());
+const patternIndex = $(0);
+const barCount = $(40);
 
-const root = Row({ flexGrow: 1, background: DARK_BG }, bars.map((bar) => bar.col));
+const title = Text({
+  text: "VISUALIZER // TERMINAL COLOR FIELD",
+  foreground: THEME.accent,
+});
 
-function syncBarsToTerminalWidth(): void {
-  const nextCount = terminalBarCount();
-  if (nextCount === bars.length) return;
-  bars = createBars(nextCount);
-  root.setChildren?.(bars.map((bar) => bar.col));
+const meta = Text({
+  text: "",
+  foreground: THEME.muted,
+});
+
+const patternBadge = Text({
+  text: "",
+  foreground: THEME.bg,
+  background: THEME.accent,
+  paddingX: 1,
+});
+
+const stateBadge = Text({
+  text: "",
+  foreground: THEME.bg,
+  background: THEME.amber,
+  paddingX: 1,
+});
+
+const viewport = Row(
+  {
+    flexGrow: 1,
+    background: THEME.panelAlt,
+    alignItems: "stretch",
+  },
+  [],
+);
+
+const hintLine = Text({
+  text: "1/2/3 pattern   space pause   q save metrics + quit",
+  foreground: THEME.muted,
+});
+
+const footer = Text({
+  text: "",
+  foreground: THEME.muted,
+});
+
+const root = Column(
+  {
+    flexGrow: 1,
+    gap: 1,
+    padding: "1 1",
+    background: THEME.bg,
+  },
+  [
+    Column(
+      {
+        gap: 1,
+        padding: "1 1",
+        border: { color: THEME.border, style: "rounded" },
+        background: THEME.panel,
+      },
+      [
+        Row(
+          {
+            justifyContent: "spaceBetween",
+            alignItems: "center",
+            gap: 1,
+            flexWrap: "wrap",
+          },
+          [
+            Column({ gap: 0 }, [title, meta]),
+            Row({ gap: 1, flexWrap: "wrap" }, [patternBadge, stateBadge]),
+          ],
+        ),
+      ],
+    ),
+    Column(
+      {
+        flexGrow: 1,
+        gap: 1,
+        padding: "1 1",
+        border: { color: THEME.border, style: "rounded" },
+        background: THEME.panel,
+        minHeight: 12,
+      },
+      [viewport, hintLine],
+    ),
+    footer,
+  ],
+);
+
+let bars = createBars(barCount());
+viewport.setChildren?.(bars.map((bar) => bar.col));
+
+function syncBarsToViewportWidth(): void {
+  const measuredWidth = Math.floor(viewport.frameWidth());
+  const nextCount = Math.max(12, measuredWidth > 0 ? measuredWidth - 2 : 40);
+  if (nextCount === barCount()) return;
+  barCount(nextCount);
 }
 
 ff(() => {
-  const t = tick();
-  if (paused()) return;
+  viewport.frameWidth();
+  syncBarsToViewportWidth();
+});
+
+ff(() => {
+  const total = barCount();
+  if (bars.length === total) return;
+  bars = createBars(total);
+  viewport.setChildren?.(bars.map((bar) => bar.col));
+});
+
+ff(() => {
+  const currentTick = tick();
+  const currentPattern = PATTERNS[patternIndex()] ?? PATTERNS[0]!;
+  const isPaused = paused();
+
+  title.setStyle({ foreground: isPaused ? THEME.rose : THEME.accent });
+  meta.setText(
+    `bars ${bars.length}   tick ${currentTick}   viewport ${Math.floor(viewport.frameWidth())}w   responsive count from actual panel width`,
+  );
+  patternBadge.setText(` ${currentPattern.label} `);
+  stateBadge.setText(isPaused ? " paused " : " running ");
+  stateBadge.setStyle({
+    background: isPaused ? THEME.rose : THEME.amber,
+  });
+  footer.setText(
+    "outer chrome uses minHeight + wrapped header badges while bar field stays stable under resize",
+  );
+
+  if (isPaused) return;
 
   const totalBars = bars.length;
   for (let i = 0; i < totalBars; i++) {
     const currentBar = bars[i];
     if (!currentBar) continue;
 
-    const fill = pattern(i, t, totalBars);
+    const fill = currentPattern.fn(i, currentTick, totalBars);
     const fillGrow = Math.max(1, Math.round(fill * 100));
     const gapGrow = Math.max(1, 100 - fillGrow);
 
@@ -164,9 +290,6 @@ const timer = setInterval(() => {
   tick(tick() + 1);
 }, TICK_MS);
 
-const resizeHandler = () => syncBarsToTerminalWidth();
-process.stdout.on("resize", resizeHandler);
-
 const app = run(root, { debug: true });
 
 let stopped = false;
@@ -174,19 +297,12 @@ function quit(): void {
   if (stopped) return;
   stopped = true;
   clearInterval(timer);
-  process.stdout.off("resize", resizeHandler);
   saveMetrics("dump/metrics-viz.txt");
   app.quit();
 }
 
 onKey("q", quit);
 onKey(" ", () => paused(!paused()));
-onKey("1", () => {
-  pattern = smoothWave;
-});
-onKey("2", () => {
-  pattern = sharpPeaks;
-});
-onKey("3", () => {
-  pattern = randomBounce;
-});
+onKey("1", () => patternIndex(0));
+onKey("2", () => patternIndex(1));
+onKey("3", () => patternIndex(2));
