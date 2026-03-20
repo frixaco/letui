@@ -20,10 +20,11 @@ State management primitives, component API, diffing, number of optimizations are
 
 # Recent architecture updates (post `v0.0.11`)
 
-- Text no longer sent as full payload during `paint()`
-- TypeScript runtime computes text diffs and batches ops
-- Rust applies batched ops via `sync_text_ops` into `TEXT_REGISTRY` keyed by node id
-- Metrics include dedicated `textSync` phase and op/byte counters
+- Runtime keeps JS-side `previousSentTree`; compatible frames send deltas instead of rebuilding native tree
+- Text sync uses op stream (`SetText`, `DeleteTextRange`) rather than re-sending full text payloads each frame
+- Rust keeps persistent `TREE_STATE`, applies op buffers via `apply_ops`, then runs layout + paint
+- Metrics split frame into `serialize`, `textSync`, `rust`, `sync`, and `flush`
+- Frame rectangles sync back into JS nodes after render; hit-testing uses that synced data
 
 # General
 

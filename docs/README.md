@@ -16,6 +16,14 @@
 - supported box fields: `gap`, `direction`
 - current docs treat code as source of truth; unsupported props should be considered not implemented
 
+## Current runtime shape
+
+- JS keeps a previous sent-tree snapshot and compares it against the current node tree each frame
+- compatible tree shape => send style deltas and text ops only
+- incompatible tree shape => clear Rust tree state and rebuild it once
+- Rust owns persistent tree state, layout, paint, terminal buffers, and incremental flush
+- debug metrics phases: `serialize`, `textSync`, `rust`, `sync`, `flush`
+
 ## Example map
 
 - `examples/smoke.ts`: deterministic PTY smoke target for CI and agents
@@ -37,4 +45,5 @@ Repo-local agent skills live in `.agents/skills/`.
 - use Bun, not Node, for runtime in this repo
 - colors are numeric hex (`0xRRGGBB`), not CSS strings
 - `Ctrl+Q` is always the default quit path
+- keep node identity stable when possible; recreating whole subtrees defeats incremental sync
 - examples and scripts are part of typecheck; if docs drift from code, fix docs/examples first

@@ -64,6 +64,14 @@ Checks:
 
 Checks:
 
-1. keep updates signal-driven; avoid manual full rebuild each tick
-2. enable debug metrics: `run(root, { debug: true })`
-3. inspect `dump/metrics.txt` for phase bottlenecks
+1. keep updates signal-driven; avoid rebuilding whole subtrees each tick
+2. keep node identity stable so runtime can reuse Rust tree state
+3. enable debug metrics: `run(root, { debug: true })`
+4. inspect `dump/metrics.txt` for phase bottlenecks
+
+Interpretation:
+
+- high `serialize`: too much JS-side tree churn or effect work
+- high `textSync`: large text rewrites; prefer targeted `setText` on stable nodes
+- high `rust`: layout/paint cost in native side
+- high `flush`: terminal I/O bound; reduce changed surface area

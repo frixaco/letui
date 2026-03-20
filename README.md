@@ -100,18 +100,21 @@ bun run app.ts
 ## How it works
 
 1. Signals-based TypeScript runtime drives updates
-2. UI tree is serialized into a compact flat payload for the native core
-3. Rust handles layout, paint, terminal buffer work, and flush
-4. Terminal output is cell-based and incremental — no full-frame repaints
-5. Text updates are batched as diff ops instead of sending full payloads every frame
+2. Each reactive frame snapshots the current node tree into JS-side sent state
+3. If node shape stays compatible, JS sends only style deltas plus text ops; if shape changes, Rust tree state is rebuilt once
+4. Rust keeps persistent tree state, runs layout + paint, and owns the terminal buffers
+5. Frame data is synced back to JS nodes for hit-testing and `frame` / `frameWidth()` / `frameHeight()`
+6. Terminal output is cell-based and incremental; flush only writes changed cells
 
 ## Architecture
 
-- **TypeScript** — component API, signals, event handling, serialization
-- **Rust** — terminal state, layout, paint, diff flush, buffer storage
-- **Bun FFI** — bridge between both layers
+- **TypeScript** — component API, signals, input routing, sent-tree diffing, op encoding
+- **Rust** — persistent tree state, style/text op application, layout, paint, incremental flush
+- **Bun FFI** — bridge for op buffers, frame buffers, and lifecycle hooks
 - Packaged native binaries for `darwin-arm64`, `linux-x64`, `win32-x64`
 - Only deps: `crossterm` and `taffy` Rust crates, everything written from scratch.
+
+Debug metrics split the frame into `serialize`, `textSync`, `rust`, `sync`, and `flush`. Enable with `run(root, { debug: true })`; output writes to `dump/metrics.txt`.
 
 ## Performance
 
@@ -137,7 +140,7 @@ Benchmark snapshot (`2026-02-20`, `terminal-rerender`, `full` profile, PTY mode)
 
 ## Status
 
-Mid-stage, active development. Core reactive runtime, terminal diffing, Rust paint/layout, and Bun FFI bridge are working. Public API is intentionally small.
+Mid-stage, active development. Core reactive runtime, persistent Rust tree state, incremental text sync, terminal diffing, and Bun FFI bridge are working. Public API is intentionally small.
 
 ## TODO
 
