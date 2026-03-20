@@ -9,21 +9,19 @@ use crossterm::{
     execute, queue,
     style::{Color, Print, SetBackgroundColor, SetForegroundColor},
     terminal::{
-        disable_raw_mode, enable_raw_mode, size, BeginSynchronizedUpdate, Clear, ClearType,
-        EndSynchronizedUpdate, EnterAlternateScreen, LeaveAlternateScreen,
+        BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate, EnterAlternateScreen,
+        LeaveAlternateScreen, disable_raw_mode, enable_raw_mode, size,
     },
 };
 use std::{
     cell::RefCell,
     collections::HashMap,
-    io::{stdout, Stdout, Write},
+    io::{Stdout, Write, stdout},
     os::raw::c_int,
     slice,
     sync::{LazyLock, Mutex},
 };
-use taffy::{prelude::*, Overflow, Point};
-
-mod colors;
+use taffy::{Overflow, Point, prelude::*};
 
 static LAST_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
 static CURRENT_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
@@ -1232,8 +1230,8 @@ pub extern "C" fn paint(pn: *const f32, ln: u32, _pt: *const u8, _lt: u32) -> c_
         build_frames_array(taffy, root, frames_vec, 0.0, 0.0);
         drop(frame_lock);
 
-        let parent_fg = colors::DEFAULT.fg;
-        let parent_bg = colors::DEFAULT.bg;
+        let parent_fg = root_node.fg;
+        let parent_bg = root_node.bg;
 
         // Single lock for entire paint phase
         let mut cb = CURRENT_BUFFER.lock().unwrap();
