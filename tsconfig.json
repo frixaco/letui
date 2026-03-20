@@ -10,6 +10,7 @@
 
     // Bundler mode
     "moduleResolution": "bundler",
+    "types": ["bun"],
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]

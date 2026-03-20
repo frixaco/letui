@@ -78,6 +78,10 @@ const { symbols: api } = dlopen(path, {
     args: [],
     returns: "i32",
   },
+  apply_ops: {
+    args: ["buffer", "u32"],
+    returns: "i32",
+  },
   paint: {
     args: ["pointer", "u32", "pointer", "u32"],
     returns: "i32",

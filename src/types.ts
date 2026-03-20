@@ -86,6 +86,21 @@ export type ButtonProps = StyleProps & {
 };
 
 // =============================================================================
+// NODE KIND (FFI mapping)
+// =============================================================================
+
+export const NODE_KIND = {
+  Row: 1,
+  Column: 2,
+  Button: 3,
+  Input: 4,
+  Text: 5,
+} as const;
+
+export type NodeKind = keyof typeof NODE_KIND;
+export type NodeKindNum = (typeof NODE_KIND)[NodeKind];
+
+// =============================================================================
 // HANDLER TYPES (plain functions, not reactive)
 // =============================================================================
 

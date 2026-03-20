@@ -9,19 +9,19 @@ use crossterm::{
     execute, queue,
     style::{Color, Print, SetBackgroundColor, SetForegroundColor},
     terminal::{
-        BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate, EnterAlternateScreen,
-        LeaveAlternateScreen, disable_raw_mode, enable_raw_mode, size,
+        disable_raw_mode, enable_raw_mode, size, BeginSynchronizedUpdate, Clear, ClearType,
+        EndSynchronizedUpdate, EnterAlternateScreen, LeaveAlternateScreen,
     },
 };
 use std::{
     cell::RefCell,
     collections::HashMap,
-    io::{Stdout, Write, stdout},
+    io::{stdout, Stdout, Write},
     os::raw::c_int,
     slice,
     sync::{LazyLock, Mutex},
 };
-use taffy::{Overflow, Point, prelude::*};
+use taffy::{prelude::*, Overflow, Point};
 
 mod colors;
 
@@ -425,6 +425,225 @@ pub extern "C" fn clear_text_registry() -> c_int {
     1
 }
 
+#[derive(Debug, Default)]
+struct TreeState {
+    root_id: Option<u32>,
+    nodes: HashMap<u32, NodeData>,
+}
+
+#[derive(Debug, Clone)]
+struct NodeData {
+    kind: NodeType,
+    parent: Option<u32>,
+    children: Vec<u32>,
+}
+
+static TREE_STATE: LazyLock<Mutex<TreeState>> = LazyLock::new(|| Mutex::new(TreeState::default()));
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum OpType {
+    SetText = 1,
+    DeleteTextRange = 2,
+    AddNode = 3,
+    DeleteNode = 4,
+    UpdateStyle = 5,
+    SetRoot = 6,
+    AppendChild = 7,
+}
+
+const OP_SIZE: usize = 1;
+const ID_SIZE: usize = 4;
+const KIND_SIZE: usize = 1;
+const LEN_SIZE: usize = 4;
+const RECORD_HEADER_SIZE: usize = OP_SIZE + ID_SIZE + LEN_SIZE;
+
+impl OpType {
+    fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(OpType::SetText),
+            2 => Some(OpType::DeleteTextRange),
+            3 => Some(OpType::AddNode),
+            4 => Some(OpType::DeleteNode),
+            5 => Some(OpType::UpdateStyle),
+            6 => Some(OpType::SetRoot),
+            7 => Some(OpType::AppendChild),
+            _ => None,
+        }
+    }
+}
+
+fn remove_subtree(state: &mut TreeState, node_id: u32) {
+    let children = match state.nodes.get(&node_id) {
+        Some(node) => node.children.clone(),
+        None => return,
+    };
+
+    for child_id in children {
+        remove_subtree(state, child_id);
+    }
+
+    state.nodes.remove(&node_id);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
+    if ops_len > 0 && ops_ptr.is_null() {
+        return 0;
+    }
+
+    let ops_bytes: &[u8] = if ops_len == 0 {
+        &[]
+    } else {
+        unsafe { slice::from_raw_parts(ops_ptr, ops_len as usize) }
+    };
+
+    if ops_bytes.is_empty() {
+        return 1;
+    }
+
+    let mut state = TREE_STATE.lock().unwrap();
+    let mut offset = 0usize;
+    while offset < ops_bytes.len() {
+        // Record layout: <op><node_id><payload_len><payload>
+        let header = match ops_bytes.get(offset..offset + RECORD_HEADER_SIZE) {
+            Some(header) => header,
+            None => return 0,
+        };
+
+        let op = match OpType::from_u8(header[0]) {
+            Some(op) => op,
+            None => return 0,
+        };
+
+        let node_id = match header[OP_SIZE..OP_SIZE + ID_SIZE].try_into().ok() {
+            Some(bytes) => u32::from_le_bytes(bytes),
+            None => return 0,
+        };
+
+        let payload_len = match header[OP_SIZE + ID_SIZE..RECORD_HEADER_SIZE]
+            .try_into()
+            .ok()
+        {
+            Some(bytes) => u32::from_le_bytes(bytes) as usize,
+            None => return 0,
+        };
+
+        offset += RECORD_HEADER_SIZE;
+
+        let payload = match ops_bytes.get(offset..offset + payload_len) {
+            Some(payload) => payload,
+            None => return 0,
+        };
+
+        match op {
+            OpType::AddNode => {
+                if payload.len() != KIND_SIZE {
+                    return 0;
+                }
+                if state.nodes.contains_key(&node_id) {
+                    return 0;
+                }
+
+                let kind = match NodeType::from_u8(payload[0]) {
+                    Some(kind) => kind,
+                    None => return 0,
+                };
+
+                state.nodes.insert(
+                    node_id,
+                    NodeData {
+                        kind,
+                        parent: None,
+                        children: Vec::new(),
+                    },
+                );
+            }
+            OpType::SetRoot => {
+                if !payload.is_empty() || !state.nodes.contains_key(&node_id) {
+                    return 0;
+                }
+                state.root_id = Some(node_id);
+            }
+            OpType::DeleteNode => {
+                if !payload.is_empty() || !state.nodes.contains_key(&node_id) {
+                    return 0;
+                }
+
+                let deleted_node_parent_id = state.nodes.get(&node_id).and_then(|node| node.parent);
+                if let Some(parent_id) = deleted_node_parent_id {
+                    if let Some(parent) = state.nodes.get_mut(&parent_id) {
+                        parent.children.retain(|child_id| *child_id != node_id);
+                    }
+                }
+
+                if state.root_id == Some(node_id) {
+                    state.root_id = None;
+                }
+
+                remove_subtree(&mut state, node_id);
+            }
+            OpType::AppendChild => {
+                if payload.len() != ID_SIZE {
+                    return 0;
+                }
+
+                let parent_id = node_id;
+                let child_id = match payload.try_into().ok() {
+                    Some(bytes) => u32::from_le_bytes(bytes),
+                    None => return 0,
+                };
+
+                if parent_id == child_id {
+                    return 0;
+                }
+
+                if !state.nodes.contains_key(&parent_id) || !state.nodes.contains_key(&child_id) {
+                    return 0;
+                }
+
+                let child_parent_id = match state.nodes.get(&child_id) {
+                    Some(child) => child.parent,
+                    None => return 0,
+                };
+                if child_parent_id.is_some() {
+                    return 0;
+                }
+
+                // Walk upward from the proposed parent. If we ever reach the child,
+                // attaching here would create a cycle.
+                let mut current_parent_id = Some(parent_id);
+                while let Some(parent_id_in_chain) = current_parent_id {
+                    if parent_id_in_chain == child_id {
+                        return 0;
+                    }
+                    current_parent_id = state
+                        .nodes
+                        .get(&parent_id_in_chain)
+                        .and_then(|node| node.parent);
+                }
+
+                // Store the relationship in both directions.
+                if let Some(parent) = state.nodes.get_mut(&parent_id) {
+                    parent.children.push(child_id);
+                } else {
+                    return 0;
+                }
+
+                if let Some(child) = state.nodes.get_mut(&child_id) {
+                    child.parent = Some(parent_id);
+                } else {
+                    return 0;
+                }
+            }
+            OpType::SetText | OpType::DeleteTextRange | OpType::UpdateStyle => return 0,
+        }
+
+        offset += payload_len;
+    }
+
+    1
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum NodeType {
     Row = 1,
@@ -435,6 +654,17 @@ enum NodeType {
 }
 
 impl NodeType {
+    fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            1 => Some(NodeType::Row),
+            2 => Some(NodeType::Column),
+            3 => Some(NodeType::Button),
+            4 => Some(NodeType::Input),
+            5 => Some(NodeType::Text),
+            _ => None,
+        }
+    }
+
     fn from_f32(v: f32) -> Self {
         match v as u32 {
             1 => NodeType::Row,
@@ -466,6 +696,7 @@ impl BorderStyle {
 
 #[derive(Debug)]
 struct Node {
+    node_id: u32,
     node_type: NodeType,
     gap: f32,
     padding_x: f32,
@@ -478,7 +709,6 @@ struct Node {
     fg: u32,
     border_color: u32,
     border_style: BorderStyle,
-    node_id: u32,
 }
 
 const FIELDS_PER_NODE: usize = 12;
