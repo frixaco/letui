@@ -74,16 +74,14 @@ const THREADS: PromptThread[] = [
 ];
 
 const THEME = {
-  bg: 0x09111b,
-  panel: 0x0f1825,
-  panelAlt: 0x152132,
-  border: 0x26415e,
-  text: 0xdbe7ff,
-  muted: 0x88a0c0,
-  accent: 0x57e2cc,
-  blue: 0x73b8ff,
-  lime: 0xcce66c,
-  amber: 0xffc870,
+  border: 0x3a3a5c,
+  text: 0xf0f0f0,
+  muted: 0x6e6e8a,
+  accent: 0xff5ef5,
+  blue: 0x00d4ff,
+  lime: 0x00ff9f,
+  amber: 0xffab40,
+  badgeFg: 0x050510,
 } as const;
 
 const idleBorder = { color: THEME.border, style: "rounded" as const };
@@ -93,7 +91,6 @@ const promptSlots = Array.from({ length: 7 }, () =>
   Text({
     text: "",
     foreground: THEME.text,
-    background: THEME.panelAlt,
     paddingX: 1,
   }),
 );
@@ -117,14 +114,14 @@ const headerMeta = Text({
 
 const threadBadge = Text({
   text: "",
-  foreground: THEME.bg,
+  foreground: THEME.badgeFg,
   background: THEME.accent,
   paddingX: 1,
 });
 
 const modeBadge = Text({
   text: " static payload ",
-  foreground: THEME.bg,
+  foreground: THEME.badgeFg,
   background: THEME.lime,
   paddingX: 1,
 });
@@ -140,8 +137,7 @@ const sidebar = Column(
   {
     gap: 1,
     padding: "1 1",
-    border: idleBorder,
-    background: THEME.panel,
+    borderRight: { color: THEME.border },
     flexGrow: 1,
     flexBasis: 30,
     minWidth: 28,
@@ -169,8 +165,6 @@ const transcriptPanel = Column(
   {
     gap: 1,
     padding: "1 1",
-    border: idleBorder,
-    background: THEME.panel,
     flexGrow: 1,
   },
   [transcriptHeader, transcriptSubhead, transcriptViewport],
@@ -185,7 +179,6 @@ const composer = Input({
   placeholder: "Type follow-up...",
   border: idleBorder,
   padding: "1 0",
-  background: THEME.panelAlt,
   foreground: THEME.text,
   onSubmit: () => {},
   onFocus: (self) => self.setStyle({ border: focusBorder }),
@@ -196,14 +189,21 @@ if (composer.type === NODE_TYPE.Input) {
   composer.setText("Summarize rollout risk and rollback criteria.");
 }
 
+const composerRow = Row(
+  {
+    minHeight: 3,
+    alignItems: "stretch",
+  },
+  [composer],
+);
+
 const composerPanel = Column(
   {
     gap: 1,
     padding: "1 1",
-    border: idleBorder,
-    background: THEME.panel,
+    flexShrink: 0,
   },
-  [Text({ text: "COMPOSER", foreground: THEME.blue }), composer, composerHint],
+  [Text({ text: "COMPOSER", foreground: THEME.blue }), composerRow, composerHint],
 );
 
 const rightPane = Column(
@@ -212,56 +212,49 @@ const rightPane = Column(
     flexBasis: 54,
     minWidth: 42,
     gap: 1,
+    justifyContent: "spaceBetween",
   },
   [transcriptPanel, composerPanel],
 );
 
-const footer = Text({
-  text: "",
-  foreground: THEME.muted,
-});
+const body = Row(
+  {
+    flexGrow: 1,
+    gap: 0,
+    alignItems: "stretch",
+  },
+  [sidebar, rightPane],
+);
+
+const header = Column(
+  {
+    gap: 1,
+    padding: "1 1",
+    borderBottom: { color: THEME.border },
+  },
+  [
+    Row(
+      {
+        justifyContent: "spaceBetween",
+        alignItems: "center",
+        gap: 1,
+        flexWrap: "wrap",
+      },
+      [
+        Column({ gap: 0 }, [headerTitle, headerMeta]),
+        Row({ gap: 1, flexWrap: "wrap" }, [threadBadge, modeBadge]),
+      ],
+    ),
+  ],
+);
 
 const root = Column(
   {
     flexGrow: 1,
-    gap: 1,
+    gap: 0,
     padding: "1 1",
-    background: THEME.bg,
   },
-  [
-    Column(
-      {
-        gap: 1,
-        padding: "1 1",
-        border: idleBorder,
-        background: THEME.panel,
-      },
-      [
-        Row(
-          {
-            justifyContent: "spaceBetween",
-            alignItems: "center",
-            gap: 1,
-            flexWrap: "wrap",
-          },
-          [
-            Column({ gap: 0 }, [headerTitle, headerMeta]),
-            Row({ gap: 1, flexWrap: "wrap" }, [threadBadge, modeBadge]),
-          ],
-        ),
-      ],
-    ),
-    Row(
-      {
-        flexGrow: 1,
-        gap: 1,
-        flexWrap: "wrap",
-        alignItems: "stretch",
-      },
-      [sidebar, rightPane],
-    ),
-    footer,
-  ],
+  [header, body],
 );
 
 let selectedIndex = 0;
@@ -345,7 +338,6 @@ function renderPromptSlots(): void {
       slot.setText("");
       slot.setStyle({
         foreground: THEME.muted,
-        background: THEME.panelAlt,
       });
       continue;
     }
@@ -353,8 +345,8 @@ function renderPromptSlots(): void {
     const active = threadIndex === selectedIndex;
     slot.setText(truncate(`${active ? ">" : " "} ${thread.title}`, width));
     slot.setStyle({
-      foreground: active ? THEME.bg : THEME.text,
-      background: active ? THEME.accent : THEME.panelAlt,
+      foreground: active ? THEME.badgeFg : THEME.text,
+      background: active ? THEME.accent : undefined,
       paddingX: 1,
     });
   }
@@ -397,9 +389,6 @@ function renderTranscript(): void {
 function refreshView(): void {
   renderPromptSlots();
   renderTranscript();
-  footer.setText(
-    "responsive behavior: sidebar minWidth 28, transcript stack minWidth 42   q quit",
-  );
 }
 
 function moveSelection(delta: number): void {

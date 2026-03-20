@@ -18,6 +18,10 @@ export type BorderProps = {
   style: BorderStyle;
 };
 
+export type BorderSideProps = {
+  color: number;
+};
+
 export type AxisPair = number | `${number} ${number}`;
 export type Direction = "row" | "column" | "rowReverse" | "columnReverse";
 export type AlignItems =
@@ -46,6 +50,10 @@ export type FlexWrap = "noWrap" | "wrap" | "wrapReverse";
 
 export type _StyleProps = {
   border: Signal<BorderProps | undefined>;
+  borderTop: Signal<BorderSideProps | undefined>;
+  borderRight: Signal<BorderSideProps | undefined>;
+  borderBottom: Signal<BorderSideProps | undefined>;
+  borderLeft: Signal<BorderSideProps | undefined>;
   padding: Signal<AxisPair | undefined>;
   paddingX: Signal<number | undefined>;
   paddingY: Signal<number | undefined>;
@@ -93,6 +101,10 @@ export type _ButtonProps = _StyleProps & {
 
 export type StyleProps = {
   border?: BorderProps;
+  borderTop?: BorderSideProps;
+  borderRight?: BorderSideProps;
+  borderBottom?: BorderSideProps;
+  borderLeft?: BorderSideProps;
   padding?: AxisPair;
   paddingX?: number;
   paddingY?: number;

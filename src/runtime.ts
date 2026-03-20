@@ -58,6 +58,18 @@ type TextOpStats = {
 };
 const textEncoder = new TextEncoder();
 
+type ResolvedBorderState = {
+  topWidth?: 1;
+  rightWidth?: 1;
+  bottomWidth?: 1;
+  leftWidth?: 1;
+  topColor?: number;
+  rightColor?: number;
+  bottomColor?: number;
+  leftColor?: number;
+  style?: "square" | "rounded";
+};
+
 function ensureParentDir(path: string): void {
   const parent = dirname(path);
   if (parent !== "." && parent.length > 0) {
@@ -71,6 +83,48 @@ function getNodeAt(x: number, y: number): Node | undefined {
 }
 
 const MOUSE_EVENT_PATTERN = /\x1b\[<\d+;\d+;\d+[Mm]/g;
+
+function resolveBorderState(props: any): ResolvedBorderState {
+  const border = props.border?.();
+  const borderTop = props.borderTop?.();
+  const borderRight = props.borderRight?.();
+  const borderBottom = props.borderBottom?.();
+  const borderLeft = props.borderLeft?.();
+
+  const topColor = borderTop?.color ?? border?.color;
+  const rightColor = borderRight?.color ?? border?.color;
+  const bottomColor = borderBottom?.color ?? border?.color;
+  const leftColor = borderLeft?.color ?? border?.color;
+
+  const hasAnySide =
+    topColor !== undefined ||
+    rightColor !== undefined ||
+    bottomColor !== undefined ||
+    leftColor !== undefined;
+  const hasSideOverride =
+    borderTop !== undefined ||
+    borderRight !== undefined ||
+    borderBottom !== undefined ||
+    borderLeft !== undefined;
+  const fullBorderStyle =
+    border !== undefined && !hasSideOverride
+      ? border.style === "rounded"
+        ? "rounded"
+        : "square"
+      : undefined;
+
+  return {
+    topWidth: topColor !== undefined ? 1 : undefined,
+    rightWidth: rightColor !== undefined ? 1 : undefined,
+    bottomWidth: bottomColor !== undefined ? 1 : undefined,
+    leftWidth: leftColor !== undefined ? 1 : undefined,
+    topColor,
+    rightColor,
+    bottomColor,
+    leftColor,
+    style: hasAnySide ? fullBorderStyle : undefined,
+  };
+}
 
 function readSentStyleState(node: Node): SentStyleState {
   const style: SentStyleState = {};
@@ -96,11 +150,33 @@ function readSentStyleState(node: Node): SentStyleState {
     style.paddingY = paddingY;
   }
 
-  const border = props.border?.();
-  if (border) {
-    style.borderWidth = 1;
-    style.borderColor = border.color;
-    style.borderStyle = border.style === "rounded" ? "rounded" : "square";
+  const border = resolveBorderState(props);
+  if (border.topWidth !== undefined) {
+    style.borderTopWidth = border.topWidth;
+  }
+  if (border.rightWidth !== undefined) {
+    style.borderRightWidth = border.rightWidth;
+  }
+  if (border.bottomWidth !== undefined) {
+    style.borderBottomWidth = border.bottomWidth;
+  }
+  if (border.leftWidth !== undefined) {
+    style.borderLeftWidth = border.leftWidth;
+  }
+  if (border.topColor !== undefined) {
+    style.borderTopColor = border.topColor;
+  }
+  if (border.rightColor !== undefined) {
+    style.borderRightColor = border.rightColor;
+  }
+  if (border.bottomColor !== undefined) {
+    style.borderBottomColor = border.bottomColor;
+  }
+  if (border.leftColor !== undefined) {
+    style.borderLeftColor = border.leftColor;
+  }
+  if (border.style !== undefined) {
+    style.borderStyle = border.style;
   }
 
   const background = props.background?.();

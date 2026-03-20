@@ -37,6 +37,7 @@ export type {
   FlexWrap,
   BorderStyle,
   BorderProps,
+  BorderSideProps,
 } from "./types";
 export { NODE_TYPE } from "./types";
 
@@ -58,6 +59,10 @@ function getInitialFrame(): Frame {
 function createStyleSignals(input: StyleProps): _StyleProps {
   return {
     border: $(input.border),
+    borderTop: $(input.borderTop),
+    borderRight: $(input.borderRight),
+    borderBottom: $(input.borderBottom),
+    borderLeft: $(input.borderLeft),
     padding: $(input.padding),
     paddingX: $(input.paddingX),
     paddingY: $(input.paddingY),

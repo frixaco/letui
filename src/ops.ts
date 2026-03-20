@@ -28,10 +28,16 @@ export type StylePropName =
   | "padding"
   | "paddingX"
   | "paddingY"
-  | "borderWidth"
+  | "borderTopWidth"
+  | "borderRightWidth"
+  | "borderBottomWidth"
+  | "borderLeftWidth"
   | "background"
   | "foreground"
-  | "borderColor"
+  | "borderTopColor"
+  | "borderRightColor"
+  | "borderBottomColor"
+  | "borderLeftColor"
   | "borderStyle"
   | "flexGrow"
   | "direction"
@@ -58,10 +64,16 @@ export const EMITTED_STYLE_PROPS = [
   "padding",
   "paddingX",
   "paddingY",
-  "borderWidth",
+  "borderTopWidth",
+  "borderRightWidth",
+  "borderBottomWidth",
+  "borderLeftWidth",
   "background",
   "foreground",
-  "borderColor",
+  "borderTopColor",
+  "borderRightColor",
+  "borderBottomColor",
+  "borderLeftColor",
   "borderStyle",
   "flexGrow",
   "direction",

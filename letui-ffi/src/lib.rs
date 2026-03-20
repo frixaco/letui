@@ -357,16 +357,82 @@ struct NodeData {
     style: NodeStyle,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct BorderSide {
+    width: f32,
+    color: u32,
+}
+
+impl BorderSide {
+    const fn none() -> Self {
+        Self {
+            width: 0.0,
+            color: DEFAULT_BG,
+        }
+    }
+
+    fn is_visible(&self) -> bool {
+        self.width > 0.0
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ResolvedBorder {
+    top: BorderSide,
+    right: BorderSide,
+    bottom: BorderSide,
+    left: BorderSide,
+    style: BorderStyle,
+}
+
+impl ResolvedBorder {
+    const fn none() -> Self {
+        Self {
+            top: BorderSide::none(),
+            right: BorderSide::none(),
+            bottom: BorderSide::none(),
+            left: BorderSide::none(),
+            style: BorderStyle::None,
+        }
+    }
+
+    fn has_any_visible_side(&self) -> bool {
+        self.top.is_visible()
+            || self.right.is_visible()
+            || self.bottom.is_visible()
+            || self.left.is_visible()
+    }
+
+    fn is_uniform_full_box(&self) -> Option<(u32, BorderStyle)> {
+        if !self.top.is_visible()
+            || !self.right.is_visible()
+            || !self.bottom.is_visible()
+            || !self.left.is_visible()
+        {
+            return None;
+        }
+
+        if self.style == BorderStyle::None {
+            return None;
+        }
+
+        let color = self.top.color;
+        if self.right.color != color || self.bottom.color != color || self.left.color != color {
+            return None;
+        }
+
+        Some((color, self.style))
+    }
+}
+
 #[derive(Debug, Clone)]
 struct NodeStyle {
     gap: f32,
     padding_x: f32,
     padding_y: f32,
-    border_width: f32,
+    border: ResolvedBorder,
     bg: u32,
     fg: u32,
-    border_color: u32,
-    border_style: BorderStyle,
     flex_grow: f32,
     direction: Direction,
     width: StyleDimension,
@@ -397,11 +463,9 @@ impl NodeStyle {
             gap: 0.0,
             padding_x: 0.0,
             padding_y: 0.0,
-            border_width: 0.0,
+            border: ResolvedBorder::none(),
             bg: DEFAULT_BG,
             fg: DEFAULT_FG,
-            border_color: DEFAULT_BG,
-            border_style: BorderStyle::None,
             flex_grow: 0.0,
             direction: Direction::from_node_type(kind),
             width: StyleDimension::Auto,
@@ -571,11 +635,17 @@ fn apply_style_reset(node: &mut NodeData, prop_name: &str) -> bool {
         }
         "paddingX" => node.style.padding_x = 0.0,
         "paddingY" => node.style.padding_y = 0.0,
-        "borderWidth" => node.style.border_width = 0.0,
+        "borderTopWidth" => node.style.border.top.width = 0.0,
+        "borderRightWidth" => node.style.border.right.width = 0.0,
+        "borderBottomWidth" => node.style.border.bottom.width = 0.0,
+        "borderLeftWidth" => node.style.border.left.width = 0.0,
         "background" => node.style.bg = DEFAULT_BG,
         "foreground" => node.style.fg = DEFAULT_FG,
-        "borderColor" => node.style.border_color = DEFAULT_BG,
-        "borderStyle" => node.style.border_style = BorderStyle::None,
+        "borderTopColor" => node.style.border.top.color = DEFAULT_BG,
+        "borderRightColor" => node.style.border.right.color = DEFAULT_BG,
+        "borderBottomColor" => node.style.border.bottom.color = DEFAULT_BG,
+        "borderLeftColor" => node.style.border.left.color = DEFAULT_BG,
+        "borderStyle" => node.style.border.style = BorderStyle::None,
         "flexGrow" => node.style.flex_grow = 0.0,
         "direction" => {
             if !node.kind.is_box() {
@@ -628,8 +698,20 @@ fn apply_style_number(node: &mut NodeData, prop_name: &str, value: f64) -> bool 
             Some(value) => node.style.padding_y = value,
             None => return false,
         },
-        "borderWidth" => match parse_style_f32(value) {
-            Some(value) => node.style.border_width = value,
+        "borderTopWidth" => match parse_style_f32(value) {
+            Some(value) => node.style.border.top.width = value,
+            None => return false,
+        },
+        "borderRightWidth" => match parse_style_f32(value) {
+            Some(value) => node.style.border.right.width = value,
+            None => return false,
+        },
+        "borderBottomWidth" => match parse_style_f32(value) {
+            Some(value) => node.style.border.bottom.width = value,
+            None => return false,
+        },
+        "borderLeftWidth" => match parse_style_f32(value) {
+            Some(value) => node.style.border.left.width = value,
             None => return false,
         },
         "background" => match parse_style_u32(value) {
@@ -640,8 +722,20 @@ fn apply_style_number(node: &mut NodeData, prop_name: &str, value: f64) -> bool 
             Some(value) => node.style.fg = value,
             None => return false,
         },
-        "borderColor" => match parse_style_u32(value) {
-            Some(value) => node.style.border_color = value,
+        "borderTopColor" => match parse_style_u32(value) {
+            Some(value) => node.style.border.top.color = value,
+            None => return false,
+        },
+        "borderRightColor" => match parse_style_u32(value) {
+            Some(value) => node.style.border.right.color = value,
+            None => return false,
+        },
+        "borderBottomColor" => match parse_style_u32(value) {
+            Some(value) => node.style.border.bottom.color = value,
+            None => return false,
+        },
+        "borderLeftColor" => match parse_style_u32(value) {
+            Some(value) => node.style.border.left.color = value,
             None => return false,
         },
         "flexGrow" => match parse_style_f32(value) {
@@ -718,7 +812,7 @@ fn apply_style_string(node: &mut NodeData, prop_name: &str, value: &str) -> bool
             None => return false,
         },
         "borderStyle" => match parse_border_style(value) {
-            Some(value) => node.style.border_style = value,
+            Some(value) => node.style.border.style = value,
             None => return false,
         },
         "direction" => {
@@ -1096,10 +1190,10 @@ fn node_data_to_style(data: &NodeData) -> Style {
             bottom: length(s.padding_y),
         },
         border: Rect {
-            left: length(s.border_width),
-            right: length(s.border_width),
-            top: length(s.border_width),
-            bottom: length(s.border_width),
+            left: length(s.border.left.width),
+            right: length(s.border.right.width),
+            top: length(s.border.top.width),
+            bottom: length(s.border.bottom.width),
         },
         margin: Rect {
             left: length(s.margin_x),
@@ -1163,14 +1257,12 @@ fn node_data_to_context(data: &NodeData) -> NodeContext {
         NodeType::Column => NodeContext::Column {
             bg: s.bg,
             fg: s.fg,
-            border_color: s.border_color,
-            border_style: s.border_style,
+            border: s.border,
         },
         NodeType::Row => NodeContext::Row {
             bg: s.bg,
             fg: s.fg,
-            border_color: s.border_color,
-            border_style: s.border_style,
+            border: s.border,
         },
         NodeType::Text => NodeContext::Text {
             content: data.text.clone(),
@@ -1181,15 +1273,13 @@ fn node_data_to_context(data: &NodeData) -> NodeContext {
             label: data.text.clone(),
             fg: s.fg,
             bg: s.bg,
-            border_color: s.border_color,
-            border_style: s.border_style,
+            border: s.border,
         },
         NodeType::Input => NodeContext::Input {
             content: data.text.clone(),
             fg: s.fg,
             bg: s.bg,
-            border_color: s.border_color,
-            border_style: s.border_style,
+            border: s.border,
         },
     }
 }
@@ -1251,27 +1341,23 @@ enum NodeContext {
         label: String,
         fg: u32,
         bg: u32,
-        border_color: u32,
-        border_style: BorderStyle,
+        border: ResolvedBorder,
     },
     Input {
         content: String,
         fg: u32,
         bg: u32,
-        border_color: u32,
-        border_style: BorderStyle,
+        border: ResolvedBorder,
     },
     Row {
         bg: u32,
         fg: u32,
-        border_color: u32,
-        border_style: BorderStyle,
+        border: ResolvedBorder,
     },
     Column {
         bg: u32,
         fg: u32,
-        border_color: u32,
-        border_style: BorderStyle,
+        border: ResolvedBorder,
     },
 }
 
@@ -1377,7 +1463,25 @@ fn draw_text_at(buf: &mut [u64], x: f32, y: f32, text: &str, fg: u32, bg: u32, t
     }
 }
 
-fn draw_border_at(
+fn set_border_cell(
+    buf: &mut [u64],
+    col: u16,
+    row: u16,
+    ch: char,
+    color: u32,
+    bg: u32,
+    tw: u16,
+    th: u16,
+) {
+    if col < tw && row < th {
+        let idx = (tw * row + col) as usize * 3;
+        buf[idx] = ch as u64;
+        buf[idx + 1] = color as u64;
+        buf[idx + 2] = bg as u64;
+    }
+}
+
+fn draw_uniform_border_at(
     buf: &mut [u64],
     x: f32,
     y: f32,
@@ -1400,27 +1504,83 @@ fn draw_border_at(
         BorderStyle::None => return,
     };
 
-    let set_cell = |buf: &mut [u64], col: u16, row: u16, ch: char| {
-        if col < tw && row < th {
-            let idx = (tw * row + col) as usize * 3;
-            buf[idx] = ch as u64;
-            buf[idx + 1] = color as u64;
-            buf[idx + 2] = bg as u64;
-        }
-    };
-
-    set_cell(buf, x_start, y_start, tl);
-    set_cell(buf, x_end, y_start, tr);
-    set_cell(buf, x_start, y_end, bl);
-    set_cell(buf, x_end, y_end, br);
+    set_border_cell(buf, x_start, y_start, tl, color, bg, tw, th);
+    set_border_cell(buf, x_end, y_start, tr, color, bg, tw, th);
+    set_border_cell(buf, x_start, y_end, bl, color, bg, tw, th);
+    set_border_cell(buf, x_end, y_end, br, color, bg, tw, th);
 
     for col in (x_start + 1)..x_end {
-        set_cell(buf, col, y_start, h_line);
-        set_cell(buf, col, y_end, h_line);
+        set_border_cell(buf, col, y_start, h_line, color, bg, tw, th);
+        set_border_cell(buf, col, y_end, h_line, color, bg, tw, th);
     }
     for row in (y_start + 1)..y_end {
-        set_cell(buf, x_start, row, v_line);
-        set_cell(buf, x_end, row, v_line);
+        set_border_cell(buf, x_start, row, v_line, color, bg, tw, th);
+        set_border_cell(buf, x_end, row, v_line, color, bg, tw, th);
+    }
+}
+
+fn draw_resolved_border_at(
+    buf: &mut [u64],
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    border: ResolvedBorder,
+    bg: u32,
+    tw: u16,
+    th: u16,
+) {
+    if !border.has_any_visible_side() {
+        return;
+    }
+
+    if let Some((color, style)) = border.is_uniform_full_box() {
+        draw_uniform_border_at(buf, x, y, w, h, color, bg, style, tw, th);
+        return;
+    }
+
+    let x_start = x as u16;
+    let y_start = y as u16;
+    let x_end = ((x + w) as u16).saturating_sub(1).min(tw.saturating_sub(1));
+    let y_end = ((y + h) as u16).saturating_sub(1).min(th.saturating_sub(1));
+
+    let top = border.top.is_visible();
+    let right = border.right.is_visible();
+    let bottom = border.bottom.is_visible();
+    let left = border.left.is_visible();
+
+    if top {
+        for col in x_start..=x_end {
+            set_border_cell(buf, col, y_start, '─', border.top.color, bg, tw, th);
+        }
+    }
+    if bottom {
+        for col in x_start..=x_end {
+            set_border_cell(buf, col, y_end, '─', border.bottom.color, bg, tw, th);
+        }
+    }
+    if left {
+        for row in y_start..=y_end {
+            set_border_cell(buf, x_start, row, '│', border.left.color, bg, tw, th);
+        }
+    }
+    if right {
+        for row in y_start..=y_end {
+            set_border_cell(buf, x_end, row, '│', border.right.color, bg, tw, th);
+        }
+    }
+
+    if top && left {
+        set_border_cell(buf, x_start, y_start, '┌', border.top.color, bg, tw, th);
+    }
+    if top && right {
+        set_border_cell(buf, x_end, y_start, '┐', border.top.color, bg, tw, th);
+    }
+    if bottom && left {
+        set_border_cell(buf, x_start, y_end, '└', border.bottom.color, bg, tw, th);
+    }
+    if bottom && right {
+        set_border_cell(buf, x_end, y_end, '┘', border.bottom.color, bg, tw, th);
     }
 }
 
@@ -1480,15 +1640,12 @@ fn paint_taffy_node(
             label,
             fg,
             bg,
-            border_color,
-            border_style,
+            border,
         }) => {
             let fg = if *fg != 0 { *fg } else { parent_fg };
             let bg = if *bg != 0 { *bg } else { parent_bg };
             draw_background_at(buf, x, y, w, h, bg, tw, th);
-            if *border_style != BorderStyle::None {
-                draw_border_at(buf, x, y, w, h, *border_color, bg, *border_style, tw, th);
-            }
+            draw_resolved_border_at(buf, x, y, w, h, *border, bg, tw, th);
             draw_text_at(buf, content_x, content_y, label, fg, bg, tw, th);
             (fg, bg)
         }
@@ -1496,15 +1653,12 @@ fn paint_taffy_node(
             content,
             fg,
             bg,
-            border_color,
-            border_style,
+            border,
         }) => {
             let fg = if *fg != 0 { *fg } else { parent_fg };
             let bg = if *bg != 0 { *bg } else { parent_bg };
             draw_background_at(buf, x, y, w, h, bg, tw, th);
-            if *border_style != BorderStyle::None {
-                draw_border_at(buf, x, y, w, h, *border_color, bg, *border_style, tw, th);
-            }
+            draw_resolved_border_at(buf, x, y, w, h, *border, bg, tw, th);
             draw_text_at(buf, content_x, content_y, content, fg, bg, tw, th);
             draw_cursor_at(
                 buf,
@@ -1521,21 +1675,17 @@ fn paint_taffy_node(
         Some(NodeContext::Row {
             fg,
             bg,
-            border_color,
-            border_style,
+            border,
         })
         | Some(NodeContext::Column {
             fg,
             bg,
-            border_color,
-            border_style,
+            border,
         }) => {
             let fg = if *fg != 0 { *fg } else { parent_fg };
             let bg = if *bg != 0 { *bg } else { parent_bg };
             draw_background_at(buf, x, y, w, h, bg, tw, th);
-            if *border_style != BorderStyle::None {
-                draw_border_at(buf, x, y, w, h, *border_color, bg, *border_style, tw, th);
-            }
+            draw_resolved_border_at(buf, x, y, w, h, *border, bg, tw, th);
             (fg, bg)
         }
         None => (parent_fg, parent_bg),
