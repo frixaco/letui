@@ -1,4 +1,14 @@
-import { Button, Column, Input, Row, Text, onKey, run, type Node } from "..";
+import {
+  Button,
+  Column,
+  Input,
+  NODE_TYPE,
+  Row,
+  Text,
+  onKey,
+  run,
+  type Node,
+} from "..";
 
 const THEME = {
   bg0: 0x070b14,
@@ -104,7 +114,7 @@ const commandInput = Input({
   onBlur: (self) => self.setStyle({ border: idleBorder }),
 });
 
-if (commandInput.type === "input") {
+if (commandInput.type === NODE_TYPE.Input) {
   commandInput.setText("uplink sync --priority high");
 }
 

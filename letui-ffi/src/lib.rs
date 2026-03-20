@@ -33,8 +33,7 @@ thread_local! {
     static TREE: RefCell<TaffyTree<NodeContext>> = RefCell::new(TaffyTree::new());
 }
 
-static TEXT_REGISTRY: LazyLock<Mutex<HashMap<u32, String>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+
 
 const DEFAULT_BG: u32 = 0x16181a;
 const DEFAULT_FG: u32 = 0xffffff;
@@ -336,97 +335,10 @@ pub extern "C" fn update_terminal_size() -> c_int {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn upsert_text(node_id: u32, text_ptr: *const u8, text_len: u32) -> c_int {
-    if text_len > 0 && text_ptr.is_null() {
-        return 0;
-    }
-
-    let bytes: &[u8] = if text_len == 0 {
-        &[]
-    } else {
-        unsafe { slice::from_raw_parts(text_ptr, text_len as usize) }
-    };
-    let text = String::from_utf8_lossy(bytes).into_owned();
-
-    let mut registry = TEXT_REGISTRY.lock().unwrap();
-    registry.insert(node_id, text);
-    1
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn delete_text(node_id: u32) -> c_int {
-    let mut registry = TEXT_REGISTRY.lock().unwrap();
-    registry.remove(&node_id);
-    1
-}
-
-const TEXT_OP_UPSERT: u8 = 1;
-const TEXT_OP_DELETE: u8 = 2;
-const TEXT_OP_HEADER_LEN: usize = 9;
-
-#[unsafe(no_mangle)]
-pub extern "C" fn sync_text_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
-    if ops_len == 0 {
-        return 1;
-    }
-    if ops_ptr.is_null() {
-        return 0;
-    }
-
-    let ops = unsafe { slice::from_raw_parts(ops_ptr, ops_len as usize) };
-    let mut offset = 0usize;
-    let mut registry = TEXT_REGISTRY.lock().unwrap();
-
-    while offset < ops.len() {
-        if offset + TEXT_OP_HEADER_LEN > ops.len() {
-            return 0;
-        }
-
-        let op = ops[offset];
-        offset += 1;
-
-        let node_id = u32::from_le_bytes([
-            ops[offset],
-            ops[offset + 1],
-            ops[offset + 2],
-            ops[offset + 3],
-        ]);
-        offset += 4;
-
-        let text_len = u32::from_le_bytes([
-            ops[offset],
-            ops[offset + 1],
-            ops[offset + 2],
-            ops[offset + 3],
-        ]) as usize;
-        offset += 4;
-
-        match op {
-            TEXT_OP_UPSERT => {
-                if offset + text_len > ops.len() {
-                    return 0;
-                }
-                let text = String::from_utf8_lossy(&ops[offset..offset + text_len]).into_owned();
-                offset += text_len;
-                registry.insert(node_id, text);
-            }
-            TEXT_OP_DELETE => {
-                if text_len != 0 {
-                    return 0;
-                }
-                registry.remove(&node_id);
-            }
-            _ => return 0,
-        }
-    }
-
-    1
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn clear_text_registry() -> c_int {
-    let mut registry = TEXT_REGISTRY.lock().unwrap();
-    registry.clear();
+pub extern "C" fn clear_tree_state() -> c_int {
+    let mut state = TREE_STATE.lock().unwrap();
+    state.root_id = None;
+    state.nodes.clear();
     1
 }
 
@@ -1126,17 +1038,6 @@ impl NodeType {
         }
     }
 
-    fn from_f32(v: f32) -> Self {
-        match v as u32 {
-            1 => NodeType::Row,
-            2 => NodeType::Column,
-            3 => NodeType::Button,
-            4 => NodeType::Input,
-            5 => NodeType::Text,
-            _ => NodeType::Column,
-        }
-    }
-
     fn supports_text(self) -> bool {
         matches!(self, NodeType::Text | NodeType::Button | NodeType::Input)
     }
@@ -1172,123 +1073,81 @@ enum BorderStyle {
 }
 
 impl BorderStyle {
-    fn from_u32(v: u32) -> Option<Self> {
-        match v {
-            0 => Some(BorderStyle::None),
-            1 => Some(BorderStyle::Rounded),
-            2 => Some(BorderStyle::Squared),
-            _ => None,
-        }
-    }
+}
 
-    fn from_f32(v: f32) -> Self {
-        Self::from_u32(v as u32).unwrap_or(BorderStyle::None)
+fn style_dimension_to_taffy(dim: StyleDimension) -> Dimension {
+    match dim {
+        StyleDimension::Auto => Dimension::auto(),
+        StyleDimension::Points(v) => Dimension::length(v),
     }
 }
 
-#[derive(Debug)]
-struct Node {
-    node_id: u32,
-    node_type: NodeType,
-    gap: f32,
-    padding_x: f32,
-    padding_y: f32,
-    border: f32,
-    flex_grow: f32,
-    text: String,
-    children: Vec<Node>,
-    bg: u32,
-    fg: u32,
-    border_color: u32,
-    border_style: BorderStyle,
-}
-
-const FIELDS_PER_NODE: usize = 12;
-
-fn parse_node(node_data: &[f32], node_offset: &mut usize, reg: &HashMap<u32, String>) -> Node {
-    let base = *node_offset;
-    let node_type = NodeType::from_f32(node_data[base]);
-    let gap = node_data[base + 1];
-    let padding_x = node_data[base + 2];
-    let padding_y = node_data[base + 3];
-    let border = node_data[base + 4];
-    let child_count = node_data[base + 5] as usize;
-    let bg = node_data[base + 6] as u32;
-    let fg = node_data[base + 7] as u32;
-    let border_color = node_data[base + 8] as u32;
-    let border_style = BorderStyle::from_f32(node_data[base + 9]);
-    let node_id = node_data[base + 10] as u32;
-    let flex_grow = node_data[base + 11];
-
-    *node_offset += FIELDS_PER_NODE;
-
-    let mut children = Vec::with_capacity(child_count);
-    for _ in 0..child_count {
-        children.push(parse_node(node_data, node_offset, reg));
-    }
-
-    let text = if matches!(
-        node_type,
-        NodeType::Text | NodeType::Button | NodeType::Input
-    ) {
-        reg.get(&node_id).cloned().unwrap_or_default()
-    } else {
-        String::new()
-    };
-    Node {
-        node_type,
-        gap,
-        padding_x,
-        padding_y,
-        border,
-        flex_grow,
-        text,
-        children,
-        bg,
-        fg,
-        border_color,
-        border_style,
-        node_id,
-    }
-}
-
-fn get_styles(node: &Node) -> Style {
+fn node_data_to_style(data: &NodeData) -> Style {
+    let s = &data.style;
     let mut style = Style {
         gap: Size {
-            width: length(node.gap),
+            width: length(s.gap),
             height: zero(),
         },
         padding: Rect {
-            left: length(node.padding_x),
-            right: length(node.padding_x),
-            top: length(node.padding_y),
-            bottom: length(node.padding_y),
+            left: length(s.padding_x),
+            right: length(s.padding_x),
+            top: length(s.padding_y),
+            bottom: length(s.padding_y),
         },
         border: Rect {
-            left: length(node.border),
-            right: length(node.border),
-            top: length(node.border),
-            bottom: length(node.border),
+            left: length(s.border_width),
+            right: length(s.border_width),
+            top: length(s.border_width),
+            bottom: length(s.border_width),
         },
-        flex_grow: node.flex_grow,
+        margin: Rect {
+            left: length(s.margin_x),
+            right: length(s.margin_x),
+            top: length(s.margin_y),
+            bottom: length(s.margin_y),
+        },
+        flex_grow: s.flex_grow,
+        flex_shrink: s.flex_shrink,
+        size: Size {
+            width: style_dimension_to_taffy(s.width),
+            height: style_dimension_to_taffy(s.height),
+        },
+        min_size: Size {
+            width: style_dimension_to_taffy(s.min_width),
+            height: style_dimension_to_taffy(s.min_height),
+        },
+        max_size: Size {
+            width: style_dimension_to_taffy(s.max_width),
+            height: style_dimension_to_taffy(s.max_height),
+        },
+        flex_basis: style_dimension_to_taffy(s.flex_basis),
+        flex_wrap: s.flex_wrap,
+        align_items: s.align_items,
+        justify_content: s.justify_content,
+        align_self: s.align_self,
         ..Default::default()
     };
 
-    match node.node_type {
+    match s.direction {
+        Direction::Row => style.flex_direction = FlexDirection::Row,
+        Direction::Column => style.flex_direction = FlexDirection::Column,
+        Direction::RowReverse => style.flex_direction = FlexDirection::RowReverse,
+        Direction::ColumnReverse => style.flex_direction = FlexDirection::ColumnReverse,
+    }
+
+    match data.kind {
         NodeType::Column => {
-            style.flex_direction = FlexDirection::Column;
-            style.align_items = Some(AlignItems::Stretch);
+            if s.align_items.is_none() {
+                style.align_items = Some(AlignItems::Stretch);
+            }
             style.overflow = Point {
                 x: Overflow::Hidden,
                 y: Overflow::Hidden,
             };
         }
-        NodeType::Row => {
-            style.flex_direction = FlexDirection::Row;
-        }
         NodeType::Input => {
-            style.flex_direction = FlexDirection::Row;
-            if node.flex_grow == 0.0 {
+            if s.flex_grow == 0.0 {
                 style.flex_grow = 1.0;
             }
         }
@@ -1298,52 +1157,63 @@ fn get_styles(node: &Node) -> Style {
     style
 }
 
-fn node_type_to_context(node: &Node) -> NodeContext {
-    match node.node_type {
+fn node_data_to_context(data: &NodeData) -> NodeContext {
+    let s = &data.style;
+    match data.kind {
         NodeType::Column => NodeContext::Column {
-            bg: node.bg,
-            fg: node.fg,
-            border_color: node.border_color,
-            border_style: node.border_style,
+            bg: s.bg,
+            fg: s.fg,
+            border_color: s.border_color,
+            border_style: s.border_style,
         },
         NodeType::Row => NodeContext::Row {
-            bg: node.bg,
-            fg: node.fg,
-            border_color: node.border_color,
-            border_style: node.border_style,
+            bg: s.bg,
+            fg: s.fg,
+            border_color: s.border_color,
+            border_style: s.border_style,
         },
         NodeType::Text => NodeContext::Text {
-            content: node.text.clone(),
-            fg: node.fg,
-            bg: node.bg,
+            content: data.text.clone(),
+            fg: s.fg,
+            bg: s.bg,
         },
         NodeType::Button => NodeContext::Button {
-            label: node.text.clone(),
-            fg: node.fg,
-            bg: node.bg,
-            border_color: node.border_color,
-            border_style: node.border_style,
+            label: data.text.clone(),
+            fg: s.fg,
+            bg: s.bg,
+            border_color: s.border_color,
+            border_style: s.border_style,
         },
         NodeType::Input => NodeContext::Input {
-            content: node.text.clone(),
-            fg: node.fg,
-            bg: node.bg,
-            border_color: node.border_color,
-            border_style: node.border_style,
+            content: data.text.clone(),
+            fg: s.fg,
+            bg: s.bg,
+            border_color: s.border_color,
+            border_style: s.border_style,
         },
     }
 }
 
-fn build_taffy_tree(taffy: &mut TaffyTree<NodeContext>, taffy_root: &NodeId, tree_node: &Node) {
-    for child in &tree_node.children {
-        let child_styles = get_styles(child);
-        let context = node_type_to_context(child);
+fn build_taffy_from_state(
+    taffy: &mut TaffyTree<NodeContext>,
+    state: &TreeState,
+    node_id: u32,
+    taffy_parent: Option<NodeId>,
+) -> Option<NodeId> {
+    let data = state.nodes.get(&node_id)?;
+    let style = node_data_to_style(data);
+    let context = node_data_to_context(data);
+    let taffy_node = taffy.new_leaf_with_context(style, context).unwrap();
 
-        let taffy_child = taffy.new_leaf_with_context(child_styles, context).unwrap();
-        taffy.add_child(*taffy_root, taffy_child).unwrap();
-
-        build_taffy_tree(taffy, &taffy_child, child);
+    if let Some(parent) = taffy_parent {
+        taffy.add_child(parent, taffy_node).unwrap();
     }
+
+    for &child_id in &data.children {
+        build_taffy_from_state(taffy, state, child_id, Some(taffy_node));
+    }
+
+    Some(taffy_node)
 }
 
 fn build_frames_array(
@@ -1677,32 +1547,33 @@ fn paint_taffy_node(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn paint(pn: *const f32, ln: u32, _pt: *const u8, _lt: u32) -> c_int {
+pub extern "C" fn render() -> c_int {
+    let state = TREE_STATE.lock().unwrap();
+    let root_id = match state.root_id {
+        Some(id) => id,
+        None => return 0,
+    };
+
     TREE.with_borrow_mut(|taffy| {
         let term_size = TERMINAL_SIZE.lock().unwrap();
-        let text_registry = TEXT_REGISTRY.lock().unwrap();
         let (tw, th) = *term_size;
-        drop(term_size); // Release early
+        drop(term_size);
 
-        let node_data = unsafe { slice::from_raw_parts(pn, ln as usize) };
+        let taffy_root = match build_taffy_from_state(taffy, &state, root_id, None) {
+            Some(id) => id,
+            None => return 0,
+        };
 
-        let mut node_offset = 0usize;
-        let root_node = parse_node(node_data, &mut node_offset, &text_registry);
-
-        let mut root_styles = get_styles(&root_node);
-        root_styles.size = Size {
+        // Force root to fill terminal
+        let mut root_style = taffy.style(taffy_root).unwrap().clone();
+        root_style.size = Size {
             width: length(tw),
             height: length(th),
         };
-
-        let context = node_type_to_context(&root_node);
-
-        let root = taffy.new_leaf_with_context(root_styles, context).unwrap();
-
-        build_taffy_tree(taffy, &root, &root_node);
+        taffy.set_style(taffy_root, root_style).unwrap();
 
         let _ = taffy.compute_layout_with_measure(
-            root,
+            taffy_root,
             Size {
                 width: length(tw),
                 height: length(th),
@@ -1721,20 +1592,21 @@ pub extern "C" fn paint(pn: *const f32, ln: u32, _pt: *const u8, _lt: u32) -> c_
         let mut frame_lock = FRAMES.lock().unwrap();
         let frames_vec = frame_lock.get_or_insert_with(Vec::new);
         frames_vec.clear();
-        build_frames_array(taffy, root, frames_vec, 0.0, 0.0);
+        build_frames_array(taffy, taffy_root, frames_vec, 0.0, 0.0);
         drop(frame_lock);
 
-        let parent_fg = root_node.fg;
-        let parent_bg = root_node.bg;
+        let root_data = state.nodes.get(&root_id);
+        let parent_fg = root_data.map_or(DEFAULT_FG, |d| d.style.fg);
+        let parent_bg = root_data.map_or(DEFAULT_BG, |d| d.style.bg);
 
-        // Single lock for entire paint phase
         let mut cb = CURRENT_BUFFER.lock().unwrap();
         if let Some(ref mut buf) = *cb {
-            paint_taffy_node(&taffy, root, buf, 0.0, 0.0, parent_fg, parent_bg, tw, th);
+            paint_taffy_node(taffy, taffy_root, buf, 0.0, 0.0, parent_fg, parent_bg, tw, th);
         }
-    });
 
-    1
+        taffy.clear();
+        1
+    })
 }
 
 #[unsafe(no_mangle)]

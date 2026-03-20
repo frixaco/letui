@@ -1,5 +1,4 @@
-import api from "./ffi";
-import { NODE_KIND, type NodeKind, type NodeKindNum } from "./types";
+import { NODE_KIND_ID, type NodeKind, type NodeKindNum } from "./types";
 
 enum OpEnum {
   SetText = 1,
@@ -16,6 +15,7 @@ const ID_SIZE = 4;
 const KIND_SIZE = 1;
 const LEN_SIZE = 4;
 const RECORD_HEADER_SIZE = OP_SIZE + ID_SIZE + LEN_SIZE;
+const DELETE_TEXT_RANGE_PAYLOAD_SIZE = ID_SIZE * 2;
 
 const STYLE_VALUE_RESET = 0;
 const STYLE_VALUE_NUMBER = 1;
@@ -53,6 +53,17 @@ export type StylePropName =
 
 export type StylePropValue = number | string | undefined;
 
+export const EMITTED_STYLE_PROPS = [
+  "gap",
+  "padding",
+  "borderWidth",
+  "background",
+  "foreground",
+  "borderColor",
+  "borderStyle",
+  "flexGrow",
+] as const satisfies readonly StylePropName[];
+
 function encodeShortString(value: string) {
   const bytes = textEncoder.encode(value);
   if (bytes.length > 255) {
@@ -85,7 +96,15 @@ function encodeStyleValue(value: StylePropValue) {
   return buffer;
 }
 
-class OpQueue {
+export function getSetTextOpSize(text: string): number {
+  return RECORD_HEADER_SIZE + textEncoder.encode(text).length;
+}
+
+export function getDeleteTextRangeOpSize(): number {
+  return RECORD_HEADER_SIZE + DELETE_TEXT_RANGE_PAYLOAD_SIZE;
+}
+
+export class OpQueue {
   chunks: Uint8Array[] = [];
 
   get buffer() {
@@ -115,7 +134,7 @@ class OpQueue {
   }
 
   addNode(id: number, kind: NodeKind) {
-    const kindNum: NodeKindNum = NODE_KIND[kind];
+    const kindNum: NodeKindNum = NODE_KIND_ID[kind];
     const buffer = new Uint8Array(RECORD_HEADER_SIZE + KIND_SIZE);
     const view = new DataView(buffer.buffer);
     view.setUint8(0, OpEnum.AddNode);
@@ -160,11 +179,11 @@ class OpQueue {
   }
 
   deleteTextRange(id: number, startByte: number, endByte: number) {
-    const buffer = new Uint8Array(RECORD_HEADER_SIZE + ID_SIZE * 2);
+    const buffer = new Uint8Array(RECORD_HEADER_SIZE + DELETE_TEXT_RANGE_PAYLOAD_SIZE);
     const view = new DataView(buffer.buffer);
     view.setUint8(0, OpEnum.DeleteTextRange);
     view.setUint32(OP_SIZE, id, true);
-    view.setUint32(OP_SIZE + ID_SIZE, ID_SIZE * 2, true);
+    view.setUint32(OP_SIZE + ID_SIZE, DELETE_TEXT_RANGE_PAYLOAD_SIZE, true);
     view.setUint32(RECORD_HEADER_SIZE, startByte, true);
     view.setUint32(RECORD_HEADER_SIZE + ID_SIZE, endByte, true);
 
@@ -185,19 +204,17 @@ class OpQueue {
 
     this.chunks.push(buffer);
   }
+
+  clear() {
+    this.chunks.length = 0;
+  }
+
+  drain(): Uint8Array {
+    if (this.chunks.length === 0) {
+      return new Uint8Array(0);
+    }
+    const buf = this.buffer;
+    this.clear();
+    return buf;
+  }
 }
-
-const ops = new OpQueue();
-
-ops.addNode(1, "Column");
-ops.setRoot(1);
-ops.addNode(2, "Text");
-ops.appendChild(2, 1);
-ops.setText(2, "hello");
-ops.updateStyle(1, "padding", "2 1");
-ops.updateStyle(1, "background", 0x111111);
-ops.updateStyle(1, "direction", "row");
-ops.updateStyle(1, "width", 40);
-ops.deleteTextRange(2, 1, 3);
-
-api.apply_ops(ops.buffer, ops.buffer.length);

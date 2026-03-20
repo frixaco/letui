@@ -1,4 +1,5 @@
 import { $, type Signal } from "./signals";
+import { NODE_TYPE } from "./types";
 import type {
   Frame,
   Node,
@@ -11,6 +12,7 @@ import type {
   ButtonNode,
   ButtonProps,
   StyleProps,
+  BoxKind,
   _StyleProps,
   _BoxProps,
   _TextProps,
@@ -30,6 +32,7 @@ export type {
   BorderStyle,
   BorderProps,
 } from "./types";
+export { NODE_TYPE } from "./types";
 
 // =============================================================================
 // INTERNALS
@@ -149,9 +152,12 @@ export function Box(input: BoxProps, children: Node[]): BoxNode {
   const childrenSignal = $(children);
   const frameWidth = $(0);
   const frameHeight = $(0);
+  const initialType: BoxKind =
+    input.direction === "row" ? NODE_TYPE.Row : NODE_TYPE.Column;
+  const setStyleSignals = makeSetStyle(props);
 
   const node: BoxNode = {
-    type: "box",
+    type: initialType,
     id: generateId(),
     props,
     handlers: {},
@@ -160,7 +166,13 @@ export function Box(input: BoxProps, children: Node[]): BoxNode {
     frameHeight,
     children: childrenSignal,
     setChildren: (nodes) => childrenSignal(nodes),
-    setStyle: makeSetStyle(props),
+    setStyle: (newProps) => {
+      if (newProps.direction !== undefined) {
+        node.type =
+          newProps.direction === "row" ? NODE_TYPE.Row : NODE_TYPE.Column;
+      }
+      setStyleSignals(newProps);
+    },
     focus: () => focusNode(node),
     blur: () => blurNode(node),
     isFocused: () => focusedNode === node,
@@ -189,7 +201,7 @@ export function Text(input: TextProps): TextNode {
   const frameHeight = $(0);
 
   const node: TextNode = {
-    type: "text",
+    type: NODE_TYPE.Text,
     id: generateId(),
     props,
     handlers: {},
@@ -215,7 +227,7 @@ export function Input(input: InputProps): InputNode {
   const frameHeight = $(0);
 
   const node: InputNode = {
-    type: "input",
+    type: NODE_TYPE.Input,
     id: generateId(),
     props,
     handlers: { onChange, onSubmit, onFocus, onBlur },
@@ -242,7 +254,7 @@ export function Button(input: ButtonProps, children: Node[] = []): ButtonNode {
   const frameHeight = $(0);
 
   const node: ButtonNode = {
-    type: "button",
+    type: NODE_TYPE.Button,
     id: generateId(),
     props,
     handlers: { onClick, onKeyDown, onFocus, onBlur },

@@ -1,6 +1,6 @@
-2026fps | 0.5ms avg (0.2-1.5, p99:1.5) | 5MB | 9 frames
-serialize: 0.3ms (0-0.8)
-textSync: 0ms (0-0.2, p99:0.2) | ops:1.9 avg 5 max | bytes:32.4 avg 93 max
-rust:      0.1ms (0-0.2) [layout+paint]
+1600fps | 0.6ms avg (0.2-1.7, p99:1.6) | 5MB | 9 frames
+serialize: 0.3ms (0.1-0.8) [tree→rust]
+textSync:  0.3ms (0.1-0.8, p99:0.8) | ops:2 avg 4 max | bytes:27.3 avg 84 max
+rust:      0.1ms (0-0.1) [layout+paint]
 sync:      0.1ms (0-0.4) [frames→JS]
 flush:     0.1ms (0-0.1) [terminal I/O]

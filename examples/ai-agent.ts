@@ -2,6 +2,7 @@ import {
   COLORS,
   Column,
   Input,
+  NODE_TYPE,
   Row,
   Text,
   ff,
@@ -150,7 +151,7 @@ const composer = Input({
   onBlur: (self) => self.setStyle({ border: idleBorder }),
 });
 
-if (composer.type === "input") {
+if (composer.type === NODE_TYPE.Input) {
   composer.setText("Summarize rollout risk and rollback criteria.");
 }
 

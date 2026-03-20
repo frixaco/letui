@@ -86,19 +86,32 @@ export type ButtonProps = StyleProps & {
 };
 
 // =============================================================================
-// NODE KIND (FFI mapping)
+// NODE KIND
 // =============================================================================
 
-export const NODE_KIND = {
-  Row: 1,
-  Column: 2,
-  Button: 3,
-  Input: 4,
-  Text: 5,
+export const NODE_TYPE = {
+  Row: "Row",
+  Column: "Column",
+  Button: "Button",
+  Input: "Input",
+  Text: "Text",
 } as const;
 
-export type NodeKind = keyof typeof NODE_KIND;
-export type NodeKindNum = (typeof NODE_KIND)[NodeKind];
+export type NodeKind = (typeof NODE_TYPE)[keyof typeof NODE_TYPE];
+export type BoxKind = (typeof NODE_TYPE)[keyof Pick<
+  typeof NODE_TYPE,
+  "Row" | "Column"
+>];
+
+export const NODE_KIND_ID: Record<NodeKind, number> = {
+  [NODE_TYPE.Row]: 1,
+  [NODE_TYPE.Column]: 2,
+  [NODE_TYPE.Button]: 3,
+  [NODE_TYPE.Input]: 4,
+  [NODE_TYPE.Text]: 5,
+} as const;
+
+export type NodeKindNum = (typeof NODE_KIND_ID)[NodeKind];
 
 // =============================================================================
 // HANDLER TYPES (plain functions, not reactive)
@@ -146,36 +159,36 @@ type LeafNode = {
   setChildren: undefined;
 };
 
-export type TextNode = CommonFields &
+type NodeBase<K extends NodeKind> = CommonFields & {
+  type: K;
+};
+
+export type TextNode = NodeBase<typeof NODE_TYPE.Text> &
   LeafNode & {
-    type: "text";
     props: _TextProps;
     handlers: TextHandlers;
     setStyle: (p: Partial<StyleProps>) => void;
     setText: (v: string) => void;
   };
 
-export type InputNode = CommonFields &
+export type InputNode = NodeBase<typeof NODE_TYPE.Input> &
   LeafNode & {
-    type: "input";
     props: _InputProps;
     handlers: InputHandlers;
     setStyle: (p: Partial<StyleProps & { placeholder?: string }>) => void;
     setText: (v: string) => void;
   };
 
-export type ButtonNode = CommonFields &
+export type ButtonNode = NodeBase<typeof NODE_TYPE.Button> &
   ContainerNode & {
-    type: "button";
     props: _ButtonProps;
     handlers: ButtonHandlers;
     setStyle: (p: Partial<StyleProps & { text?: string }>) => void;
     setText: (v: string) => void;
   };
 
-export type BoxNode = CommonFields &
+export type BoxNode = NodeBase<BoxKind> &
   ContainerNode & {
-    type: "box";
     props: _BoxProps;
     handlers: BoxHandlers;
     setStyle: (p: Partial<BoxProps>) => void;

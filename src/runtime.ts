@@ -1,18 +1,25 @@
-import { ptr, toArrayBuffer, type Pointer } from "bun:ffi";
+import { toArrayBuffer, type Pointer } from "bun:ffi";
 import { mkdirSync, writeFileSync } from "fs";
 import { dirname } from "path";
-import { COLORS } from "./colors";
 import api from "./ffi";
 import { $, ff, type Signal } from "./signals";
 import { getFocusedNode } from "./components";
-import type { Node } from "./types";
+import { NODE_TYPE, type Node, type NodeKind } from "./types";
+import {
+  EMITTED_STYLE_PROPS,
+  OpQueue,
+  getDeleteTextRangeOpSize,
+  getSetTextOpSize,
+  type StylePropName,
+  type StylePropValue,
+} from "./ops";
 import {
   startFrame,
   endFrame,
   startPhase,
-  endSerialize,
+  endOps,
   endTextSync,
-  endRust,
+  endRender,
   endSync,
   endFlush,
   formatMetrics,
@@ -28,11 +35,28 @@ let terminalWidth: Signal<number>;
 let terminalHeight: Signal<number>;
 let spatialLookup: (number | undefined)[];
 let nodeRegistry: Map<number, Node>;
-let textRegistry: Map<number, string>;
 let globalKeyHandlers: Map<string, () => void>;
 let pressedNodeId: number | null = null;
 let isRunning = false;
 let quitFn: (() => void) | null = null;
+let ops: OpQueue;
+let previousSentTree: SentNodeState | null = null;
+
+type SentStyleState = Partial<Record<StylePropName, StylePropValue>>;
+
+type SentNodeState = {
+  id: number;
+  type: NodeKind;
+  style: SentStyleState;
+  text: string;
+  children: SentNodeState[];
+};
+
+type TextOpStats = {
+  opCount: number;
+  byteCount: number;
+};
+const textEncoder = new TextEncoder();
 
 function ensureParentDir(path: string): void {
   const parent = dirname(path);
@@ -46,163 +70,199 @@ function getNodeAt(x: number, y: number): Node | undefined {
   return id !== undefined ? nodeRegistry.get(id) : undefined;
 }
 
-const EMPTY_TEXT_PAYLOAD = new Uint8Array(1);
-const FIELDS_PER_NODE = 12;
-const textEncoder = new TextEncoder();
-const TEXT_OP_UPSERT = 1;
-const TEXT_OP_DELETE = 2;
 const MOUSE_EVENT_PATTERN = /\x1b\[<\d+;\d+;\d+[Mm]/g;
 
-function writeU32LE(target: number[], value: number): void {
-  target.push(
-    value & 0xff,
-    (value >>> 8) & 0xff,
-    (value >>> 16) & 0xff,
-    (value >>> 24) & 0xff,
-  );
+function readSentStyleState(node: Node): SentStyleState {
+  const style: SentStyleState = {};
+
+  const gap = (node.props as any).gap?.();
+  if (gap !== undefined && gap !== 0) {
+    style.gap = gap;
+  }
+
+  const padding = node.props.padding?.();
+  if (padding !== undefined && padding !== 0) {
+    style.padding = padding;
+  }
+
+  const border = node.props.border?.();
+  if (border) {
+    style.borderWidth = 1;
+    style.borderColor = border.color;
+    style.borderStyle = border.style === "rounded" ? "rounded" : "square";
+  }
+
+  const background = node.props.background?.();
+  if (background !== undefined) {
+    style.background = background;
+  }
+
+  const foreground = node.props.foreground?.();
+  if (foreground !== undefined) {
+    style.foreground = foreground;
+  }
+
+  const flexGrow = node.props.flexGrow?.();
+  if (flexGrow !== undefined && flexGrow !== 0) {
+    style.flexGrow = flexGrow;
+  }
+
+  return style;
 }
 
-function queueUpsertTextOp(target: number[], nodeId: number, text: string): void {
-  const encoded = textEncoder.encode(text);
-  target.push(TEXT_OP_UPSERT);
-  writeU32LE(target, nodeId >>> 0);
-  writeU32LE(target, encoded.length >>> 0);
-  for (const byte of encoded) {
-    target.push(byte);
+function buildSentNodeState(node: Node): SentNodeState {
+  const text =
+    node.type === NODE_TYPE.Text ||
+    node.type === NODE_TYPE.Input ||
+    node.type === NODE_TYPE.Button
+      ? ((node.props as any).text?.() ?? "")
+      : "";
+  const children = node.children?.() ?? [];
+
+  return {
+    id: node.id,
+    type: node.type,
+    style: readSentStyleState(node),
+    text,
+    children: children.map(buildSentNodeState),
+  };
+}
+
+function recordTextSet(stats: TextOpStats, text: string): void {
+  stats.opCount++;
+  stats.byteCount += getSetTextOpSize(text);
+}
+
+function recordTextDelete(stats: TextOpStats): void {
+  stats.opCount++;
+  stats.byteCount += getDeleteTextRangeOpSize();
+}
+
+function queueFullTreeInsert(node: SentNodeState, textStats: TextOpStats): void {
+  ops.addNode(node.id, node.type);
+
+  for (const prop of EMITTED_STYLE_PROPS) {
+    const value = node.style[prop];
+    if (value !== undefined) {
+      ops.updateStyle(node.id, prop, value);
+    }
+  }
+
+  if (node.text.length > 0) {
+    ops.setText(node.id, node.text);
+    recordTextSet(textStats, node.text);
+  }
+
+  for (const child of node.children) {
+    queueFullTreeInsert(child, textStats);
+    ops.appendChild(child.id, node.id);
   }
 }
 
-function queueDeleteTextOp(target: number[], nodeId: number): void {
-  target.push(TEXT_OP_DELETE);
-  writeU32LE(target, nodeId >>> 0);
-  writeU32LE(target, 0);
+function hasSameNodeShape(previous: SentNodeState, current: SentNodeState): boolean {
+  if (previous.id !== current.id || previous.type !== current.type) {
+    return false;
+  }
+
+  if (previous.children.length !== current.children.length) {
+    return false;
+  }
+
+  for (let i = 0; i < previous.children.length; i++) {
+    const previousChild = previous.children[i];
+    const currentChild = current.children[i];
+    if (!previousChild || !currentChild) {
+      return false;
+    }
+    if (!hasSameNodeShape(previousChild, currentChild)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
-function syncTextOperations(
-  textOps: number[],
-  textOpCount: number,
-  collectMetrics: boolean,
+function syncNodeStyle(
+  id: number,
+  previous: SentStyleState,
+  current: SentStyleState,
 ): void {
-  if (collectMetrics) {
-    const textSyncStart = startPhase();
-    if (textOps.length > 0) {
-      const payload = Uint8Array.from(textOps);
-      api.sync_text_ops(payload, payload.length);
+  for (const prop of EMITTED_STYLE_PROPS) {
+    if (previous[prop] !== current[prop]) {
+      ops.updateStyle(id, prop, current[prop]);
     }
-    endTextSync(textSyncStart, textOpCount, textOps.length);
+  }
+}
+
+function syncNodeText(
+  id: number,
+  previous: string,
+  current: string,
+  textStats: TextOpStats,
+): void {
+  if (previous === current) {
     return;
   }
 
-  if (textOps.length > 0) {
-    const payload = Uint8Array.from(textOps);
-    api.sync_text_ops(payload, payload.length);
+  const previousChars = Array.from(previous);
+  const currentChars = Array.from(current);
+
+  let prefixLength = 0;
+  while (
+    prefixLength < previousChars.length &&
+    prefixLength < currentChars.length &&
+    previousChars[prefixLength] === currentChars[prefixLength]
+  ) {
+    prefixLength++;
+  }
+
+  let suffixLength = 0;
+  while (
+    suffixLength < previousChars.length - prefixLength &&
+    suffixLength < currentChars.length - prefixLength &&
+    previousChars[previousChars.length - 1 - suffixLength] ===
+      currentChars[currentChars.length - 1 - suffixLength]
+  ) {
+    suffixLength++;
+  }
+
+  const sharedPrefix = previousChars.slice(0, prefixLength).join("");
+  const previousMiddle = previousChars
+    .slice(prefixLength, previousChars.length - suffixLength)
+    .join("");
+  const currentMiddle = currentChars
+    .slice(prefixLength, currentChars.length - suffixLength)
+    .join("");
+
+  if (previousMiddle.length > 0) {
+    const startByte = textEncoder.encode(sharedPrefix).length;
+    const endByte = startByte + textEncoder.encode(previousMiddle).length;
+    ops.deleteTextRange(id, startByte, endByte);
+    recordTextDelete(textStats);
+  }
+
+  if (currentMiddle.length > 0) {
+    ops.setText(id, currentMiddle);
+    recordTextSet(textStats, currentMiddle);
   }
 }
 
-function countNodes(node: Node): number {
-  const children = node.children?.() ?? [];
-  return 1 + children.reduce((sum, child) => sum + countNodes(child), 0);
-}
+function syncRenderTree(
+  previous: SentNodeState,
+  current: SentNodeState,
+  textStats: TextOpStats,
+): void {
+  syncNodeStyle(current.id, previous.style, current.style);
+  syncNodeText(current.id, previous.text, current.text, textStats);
 
-function serialize(
-  root: Node,
-  collectMetrics = false,
-): {
-  nodeData: Float32Array;
-} {
-  const nodeCount = countNodes(root);
-  const nodeData = new Float32Array(nodeCount * FIELDS_PER_NODE);
-  const nextTextRegistry = new Map<number, string>();
-  const textOps: number[] = [];
-  let textOpCount = 0;
-
-  let offset = 0;
-
-  function serializeNode(node: Node): void {
-    // Node type: 1=row, 2=column, 3=button, 4=input, 5=text
-    let nodeType: number;
-    if (node.type === "box") {
-      nodeType = node.props.direction?.() === "row" ? 1 : 2;
-    } else if (node.type === "button") {
-      nodeType = 3;
-    } else if (node.type === "input") {
-      nodeType = 4;
-    } else {
-      nodeType = 5; // text
+  for (let i = 0; i < current.children.length; i++) {
+    const previousChild = previous.children[i];
+    const currentChild = current.children[i];
+    if (!previousChild || !currentChild) {
+      continue;
     }
-
-    // Read props (auto-subscribes render effect)
-    const gap = (node.props as any).gap?.() ?? 0;
-    const padding = node.props.padding?.() ?? 0;
-    let paddingX: number, paddingY: number;
-    if (typeof padding === "string") {
-      [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
-    } else {
-      paddingX = paddingY = padding;
-    }
-
-    const border = node.props.border?.();
-    const hasBorder = border ? 1 : 0;
-    const borderColor = border?.color ?? COLORS.default.bg;
-    const borderStyle =
-      border?.style === "rounded" ? 1 : border?.style === "square" ? 2 : 0;
-
-    const background = node.props.background?.() ?? COLORS.default.bg;
-    const foreground = node.props.foreground?.() ?? COLORS.default.fg;
-    const flexGrow = node.props.flexGrow?.() ?? 0;
-
-    // Children count
-    const children = node.children?.() ?? [];
-    const childCount = children.length;
-
-    // Text content (for text/input/button)
-    let textContent = "";
-    if (
-      node.type === "text" ||
-      node.type === "input" ||
-      node.type === "button"
-    ) {
-      textContent = (node.props as any).text?.() ?? "";
-      nextTextRegistry.set(node.id, textContent);
-
-      if (textRegistry.get(node.id) !== textContent) {
-        queueUpsertTextOp(textOps, node.id, textContent);
-        textOpCount++;
-      }
-    }
-
-    // Write 12 fields
-    nodeData[offset++] = nodeType;
-    nodeData[offset++] = gap;
-    nodeData[offset++] = paddingX;
-    nodeData[offset++] = paddingY;
-    nodeData[offset++] = hasBorder;
-    nodeData[offset++] = childCount;
-    nodeData[offset++] = background;
-    nodeData[offset++] = foreground;
-    nodeData[offset++] = borderColor;
-    nodeData[offset++] = borderStyle;
-    nodeData[offset++] = node.id;
-    nodeData[offset++] = flexGrow;
-
-    for (const child of children) {
-      serializeNode(child);
-    }
+    syncRenderTree(previousChild, currentChild, textStats);
   }
-
-  serializeNode(root);
-
-  for (const id of textRegistry.keys()) {
-    if (!nextTextRegistry.has(id)) {
-      queueDeleteTextOp(textOps, id);
-      textOpCount++;
-    }
-  }
-  syncTextOperations(textOps, textOpCount, collectMetrics);
-
-  textRegistry = nextTextRegistry;
-
-  return { nodeData };
 }
 
 function updateNodeFrames(root: Node): void {
@@ -217,7 +277,7 @@ function updateNodeFrames(root: Node): void {
   const height = terminalHeight();
 
   function markInteractiveHitArea(node: Node): void {
-    if (node.type !== "input" && node.type !== "button") return;
+    if (node.type !== NODE_TYPE.Input && node.type !== NODE_TYPE.Button) return;
 
     const startX = Math.max(0, Math.floor(node.frame.x));
     const startY = Math.max(0, Math.floor(node.frame.y));
@@ -256,7 +316,7 @@ function updateNodeFrames(root: Node): void {
 }
 
 function dispatchToNode(node: Node, data: string): boolean {
-  if (node.type === "input") {
+  if (node.type === NODE_TYPE.Input) {
     const handlers = node.handlers;
     const currentText = (node.props as any).text();
 
@@ -286,7 +346,7 @@ function dispatchToNode(node: Node, data: string): boolean {
     return false;
   }
 
-  if (node.type === "button") {
+  if (node.type === NODE_TYPE.Button) {
     const handlers = node.handlers;
 
     // Enter or Space triggers click
@@ -365,7 +425,7 @@ function handleMouseEvent(data: string): void {
 
   if (isRelease && isLeftButton) {
     if (pressedNodeId !== null && target && target.id === pressedNodeId) {
-      if (target.type === "button") {
+      if (target.type === NODE_TYPE.Button) {
         target.handlers.onClick();
       }
     }
@@ -425,14 +485,15 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     api.free_buffer();
     throw new Error("Failed to initialize letui terminal");
   }
-  api.clear_text_registry();
+  api.clear_tree_state();
 
   // 2. Initialize state (after init_buffer so terminal size is available)
   terminalWidth = $(api.get_width());
   terminalHeight = $(api.get_height());
   globalKeyHandlers = globalKeyHandlers ?? new Map();
   nodeRegistry = new Map();
-  textRegistry = new Map();
+  ops = new OpQueue();
+  previousSentTree = null;
   spatialLookup = new Array(terminalWidth() * terminalHeight());
   pressedNodeId = null;
   isRunning = true;
@@ -460,8 +521,9 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     process.off("unhandledRejection", handleUnhandledRejection);
 
     try {
-      api.clear_text_registry();
+      api.clear_tree_state();
     } catch {}
+    previousSentTree = null;
 
     try {
       api.free_buffer();
@@ -508,21 +570,34 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     // Clear state for this frame
     spatialLookup.fill(undefined);
     nodeRegistry.clear();
+    const sentTree = buildSentNodeState(root);
 
-    // Phase 1: Serialize node tree to flat arrays
-    const serializeStart = options?.debug ? startPhase() : 0;
-    const { nodeData } = serialize(root, !!options?.debug);
-    if (options?.debug) endSerialize(serializeStart);
+    // Keep the Rust-side tree alive across compatible frames. If structure changes,
+    // rebuild once; otherwise send only style/text deltas.
+    const opsStart = options?.debug ? startPhase() : 0;
+    const textSyncStart = options?.debug ? startPhase() : 0;
+    const textStats: TextOpStats = { opCount: 0, byteCount: 0 };
+    if (!previousSentTree || !hasSameNodeShape(previousSentTree, sentTree)) {
+      api.clear_tree_state();
+      queueFullTreeInsert(sentTree, textStats);
+      ops.setRoot(sentTree.id);
+    } else {
+      syncRenderTree(previousSentTree, sentTree, textStats);
+    }
+    const opBuffer = ops.drain();
+    if (opBuffer.length > 0) {
+      api.apply_ops(opBuffer, opBuffer.length);
+    }
+    if (options?.debug) endOps(opsStart);
+    if (options?.debug) {
+      endTextSync(textSyncStart, textStats.opCount, textStats.byteCount);
+    }
+    previousSentTree = sentTree;
 
-    // Phase 2: Rust FFI (taffy layout + buffer paint)
-    const rustStart = options?.debug ? startPhase() : 0;
-    api.paint(
-      ptr(nodeData),
-      nodeData.length,
-      ptr(EMPTY_TEXT_PAYLOAD),
-      0,
-    );
-    if (options?.debug) endRust(rustStart);
+    // Phase 2: Rust layout + paint
+    const renderStart = options?.debug ? startPhase() : 0;
+    api.render();
+    if (options?.debug) endRender(renderStart);
 
     // Phase 3: Sync frame data back to JS nodes
     const syncStart = options?.debug ? startPhase() : 0;
