@@ -9,19 +9,19 @@ use crossterm::{
     execute, queue,
     style::{Color, Print, SetBackgroundColor, SetForegroundColor},
     terminal::{
-        BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate, EnterAlternateScreen,
-        LeaveAlternateScreen, disable_raw_mode, enable_raw_mode, size,
+        disable_raw_mode, enable_raw_mode, size, BeginSynchronizedUpdate, Clear, ClearType,
+        EndSynchronizedUpdate, EnterAlternateScreen, LeaveAlternateScreen,
     },
 };
 use std::{
     cell::RefCell,
     collections::HashMap,
-    io::{Stdout, Write, stdout},
+    io::{stdout, Stdout, Write},
     os::raw::c_int,
     slice,
     sync::{LazyLock, Mutex},
 };
-use taffy::{Overflow, Point, prelude::*};
+use taffy::{prelude::*, Overflow, Point};
 
 static LAST_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
 static CURRENT_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
@@ -35,6 +35,13 @@ thread_local! {
 
 static TEXT_REGISTRY: LazyLock<Mutex<HashMap<u32, String>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+const DEFAULT_BG: u32 = 0x16181a;
+const DEFAULT_FG: u32 = 0xffffff;
+
+const STYLE_VALUE_RESET: u8 = 0;
+const STYLE_VALUE_NUMBER: u8 = 1;
+const STYLE_VALUE_STRING: u8 = 2;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn init_buffer() -> c_int {
@@ -434,6 +441,73 @@ struct NodeData {
     kind: NodeType,
     parent: Option<u32>,
     children: Vec<u32>,
+    text: String,
+    style: NodeStyle,
+}
+
+#[derive(Debug, Clone)]
+struct NodeStyle {
+    gap: f32,
+    padding_x: f32,
+    padding_y: f32,
+    border_width: f32,
+    bg: u32,
+    fg: u32,
+    border_color: u32,
+    border_style: BorderStyle,
+    flex_grow: f32,
+    direction: Direction,
+    width: StyleDimension,
+    height: StyleDimension,
+    min_width: StyleDimension,
+    min_height: StyleDimension,
+    max_width: StyleDimension,
+    max_height: StyleDimension,
+    margin_x: f32,
+    margin_y: f32,
+    align_items: Option<AlignItems>,
+    justify_content: Option<AlignContent>,
+    align_self: Option<AlignItems>,
+    flex_shrink: f32,
+    flex_basis: StyleDimension,
+    flex_wrap: FlexWrap,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum StyleDimension {
+    Auto,
+    Points(f32),
+}
+
+impl NodeStyle {
+    fn default_for_kind(kind: NodeType) -> Self {
+        Self {
+            gap: 0.0,
+            padding_x: 0.0,
+            padding_y: 0.0,
+            border_width: 0.0,
+            bg: DEFAULT_BG,
+            fg: DEFAULT_FG,
+            border_color: DEFAULT_BG,
+            border_style: BorderStyle::None,
+            flex_grow: 0.0,
+            direction: Direction::from_node_type(kind),
+            width: StyleDimension::Auto,
+            height: StyleDimension::Auto,
+            min_width: StyleDimension::Auto,
+            min_height: StyleDimension::Auto,
+            max_width: StyleDimension::Auto,
+            max_height: StyleDimension::Auto,
+            margin_x: 0.0,
+            margin_y: 0.0,
+            align_items: None,
+            justify_content: None,
+            align_self: None,
+            flex_shrink: 1.0,
+            flex_basis: StyleDimension::Auto,
+            flex_wrap: FlexWrap::NoWrap,
+        }
+    }
 }
 
 static TREE_STATE: LazyLock<Mutex<TreeState>> = LazyLock::new(|| Mutex::new(TreeState::default()));
@@ -481,6 +555,290 @@ fn remove_subtree(state: &mut TreeState, node_id: u32) {
     }
 
     state.nodes.remove(&node_id);
+}
+
+fn parse_style_number(payload: &[u8]) -> Option<f64> {
+    let bytes: [u8; 8] = payload.try_into().ok()?;
+    Some(f64::from_le_bytes(bytes))
+}
+
+fn parse_style_string(payload: &[u8]) -> Option<&str> {
+    let string_len = *payload.first()? as usize;
+    if payload.len() != 1 + string_len {
+        return None;
+    }
+
+    std::str::from_utf8(&payload[1..]).ok()
+}
+
+fn parse_axis_pair(value: &str) -> Option<(f32, f32)> {
+    let (first, second) = value.split_once(' ')?;
+    let first = first.trim().parse::<f32>().ok()?;
+    let second = second.trim().parse::<f32>().ok()?;
+    Some((first, second))
+}
+
+fn parse_align_items(value: &str) -> Option<AlignItems> {
+    match value {
+        "start" => Some(AlignItems::Start),
+        "end" => Some(AlignItems::End),
+        "flexStart" => Some(AlignItems::FlexStart),
+        "flexEnd" => Some(AlignItems::FlexEnd),
+        "center" => Some(AlignItems::Center),
+        "baseline" => Some(AlignItems::Baseline),
+        "stretch" => Some(AlignItems::Stretch),
+        _ => None,
+    }
+}
+
+fn parse_justify_content(value: &str) -> Option<AlignContent> {
+    match value {
+        "start" => Some(AlignContent::Start),
+        "end" => Some(AlignContent::End),
+        "flexStart" => Some(AlignContent::FlexStart),
+        "flexEnd" => Some(AlignContent::FlexEnd),
+        "center" => Some(AlignContent::Center),
+        "stretch" => Some(AlignContent::Stretch),
+        "spaceBetween" => Some(AlignContent::SpaceBetween),
+        "spaceEvenly" => Some(AlignContent::SpaceEvenly),
+        "spaceAround" => Some(AlignContent::SpaceAround),
+        _ => None,
+    }
+}
+
+fn parse_flex_wrap(value: &str) -> Option<FlexWrap> {
+    match value {
+        "noWrap" => Some(FlexWrap::NoWrap),
+        "wrap" => Some(FlexWrap::Wrap),
+        "wrapReverse" => Some(FlexWrap::WrapReverse),
+        _ => None,
+    }
+}
+
+fn parse_direction(value: &str) -> Option<Direction> {
+    match value {
+        "row" => Some(Direction::Row),
+        "column" => Some(Direction::Column),
+        "rowReverse" => Some(Direction::RowReverse),
+        "columnReverse" => Some(Direction::ColumnReverse),
+        _ => None,
+    }
+}
+
+fn parse_border_style(value: &str) -> Option<BorderStyle> {
+    match value {
+        "none" => Some(BorderStyle::None),
+        "rounded" => Some(BorderStyle::Rounded),
+        "square" => Some(BorderStyle::Squared),
+        _ => None,
+    }
+}
+
+fn parse_style_f32(value: f64) -> Option<f32> {
+    if value.is_finite() && value >= f32::MIN as f64 && value <= f32::MAX as f64 {
+        Some(value as f32)
+    } else {
+        None
+    }
+}
+
+fn parse_style_u32(value: f64) -> Option<u32> {
+    if value.is_finite() && value >= 0.0 && value <= u32::MAX as f64 {
+        Some(value as u32)
+    } else {
+        None
+    }
+}
+
+fn apply_style_reset(node: &mut NodeData, prop_name: &str) -> bool {
+    match prop_name {
+        "gap" => node.style.gap = 0.0,
+        "padding" => {
+            node.style.padding_x = 0.0;
+            node.style.padding_y = 0.0;
+        }
+        "paddingX" => node.style.padding_x = 0.0,
+        "paddingY" => node.style.padding_y = 0.0,
+        "borderWidth" => node.style.border_width = 0.0,
+        "background" => node.style.bg = DEFAULT_BG,
+        "foreground" => node.style.fg = DEFAULT_FG,
+        "borderColor" => node.style.border_color = DEFAULT_BG,
+        "borderStyle" => node.style.border_style = BorderStyle::None,
+        "flexGrow" => node.style.flex_grow = 0.0,
+        "direction" => {
+            if !node.kind.is_box() {
+                return false;
+            }
+            node.style.direction = Direction::from_node_type(node.kind);
+        }
+        "width" => node.style.width = StyleDimension::Auto,
+        "height" => node.style.height = StyleDimension::Auto,
+        "minWidth" => node.style.min_width = StyleDimension::Auto,
+        "minHeight" => node.style.min_height = StyleDimension::Auto,
+        "maxWidth" => node.style.max_width = StyleDimension::Auto,
+        "maxHeight" => node.style.max_height = StyleDimension::Auto,
+        "margin" => {
+            node.style.margin_x = 0.0;
+            node.style.margin_y = 0.0;
+        }
+        "marginX" => node.style.margin_x = 0.0,
+        "marginY" => node.style.margin_y = 0.0,
+        "alignItems" => node.style.align_items = None,
+        "justifyContent" => node.style.justify_content = None,
+        "alignSelf" => node.style.align_self = None,
+        "flexShrink" => node.style.flex_shrink = 1.0,
+        "flexBasis" => node.style.flex_basis = StyleDimension::Auto,
+        "flexWrap" => node.style.flex_wrap = FlexWrap::NoWrap,
+        _ => return false,
+    }
+
+    true
+}
+
+fn apply_style_number(node: &mut NodeData, prop_name: &str, value: f64) -> bool {
+    match prop_name {
+        "gap" => match parse_style_f32(value) {
+            Some(value) => node.style.gap = value,
+            None => return false,
+        },
+        "padding" => match parse_style_f32(value) {
+            Some(value) => {
+                node.style.padding_x = value;
+                node.style.padding_y = value;
+            }
+            None => return false,
+        },
+        "paddingX" => match parse_style_f32(value) {
+            Some(value) => node.style.padding_x = value,
+            None => return false,
+        },
+        "paddingY" => match parse_style_f32(value) {
+            Some(value) => node.style.padding_y = value,
+            None => return false,
+        },
+        "borderWidth" => match parse_style_f32(value) {
+            Some(value) => node.style.border_width = value,
+            None => return false,
+        },
+        "background" => match parse_style_u32(value) {
+            Some(value) => node.style.bg = value,
+            None => return false,
+        },
+        "foreground" => match parse_style_u32(value) {
+            Some(value) => node.style.fg = value,
+            None => return false,
+        },
+        "borderColor" => match parse_style_u32(value) {
+            Some(value) => node.style.border_color = value,
+            None => return false,
+        },
+        "flexGrow" => match parse_style_f32(value) {
+            Some(value) => node.style.flex_grow = value,
+            None => return false,
+        },
+        "width" => match parse_style_f32(value) {
+            Some(value) => node.style.width = StyleDimension::Points(value),
+            None => return false,
+        },
+        "height" => match parse_style_f32(value) {
+            Some(value) => node.style.height = StyleDimension::Points(value),
+            None => return false,
+        },
+        "minWidth" => match parse_style_f32(value) {
+            Some(value) => node.style.min_width = StyleDimension::Points(value),
+            None => return false,
+        },
+        "minHeight" => match parse_style_f32(value) {
+            Some(value) => node.style.min_height = StyleDimension::Points(value),
+            None => return false,
+        },
+        "maxWidth" => match parse_style_f32(value) {
+            Some(value) => node.style.max_width = StyleDimension::Points(value),
+            None => return false,
+        },
+        "maxHeight" => match parse_style_f32(value) {
+            Some(value) => node.style.max_height = StyleDimension::Points(value),
+            None => return false,
+        },
+        "margin" => match parse_style_f32(value) {
+            Some(value) => {
+                node.style.margin_x = value;
+                node.style.margin_y = value;
+            }
+            None => return false,
+        },
+        "marginX" => match parse_style_f32(value) {
+            Some(value) => node.style.margin_x = value,
+            None => return false,
+        },
+        "marginY" => match parse_style_f32(value) {
+            Some(value) => node.style.margin_y = value,
+            None => return false,
+        },
+        "flexShrink" => match parse_style_f32(value) {
+            Some(value) => node.style.flex_shrink = value,
+            None => return false,
+        },
+        "flexBasis" => match parse_style_f32(value) {
+            Some(value) => node.style.flex_basis = StyleDimension::Points(value),
+            None => return false,
+        },
+        _ => return false,
+    }
+
+    true
+}
+
+fn apply_style_string(node: &mut NodeData, prop_name: &str, value: &str) -> bool {
+    match prop_name {
+        "padding" => match parse_axis_pair(value) {
+            Some((x, y)) => {
+                node.style.padding_x = x;
+                node.style.padding_y = y;
+            }
+            None => return false,
+        },
+        "margin" => match parse_axis_pair(value) {
+            Some((x, y)) => {
+                node.style.margin_x = x;
+                node.style.margin_y = y;
+            }
+            None => return false,
+        },
+        "borderStyle" => match parse_border_style(value) {
+            Some(value) => node.style.border_style = value,
+            None => return false,
+        },
+        "direction" => {
+            if !node.kind.is_box() {
+                return false;
+            }
+
+            node.style.direction = match parse_direction(value) {
+                Some(value) => value,
+                None => return false,
+            };
+        }
+        "alignItems" => match parse_align_items(value) {
+            Some(value) => node.style.align_items = Some(value),
+            None => return false,
+        },
+        "justifyContent" => match parse_justify_content(value) {
+            Some(value) => node.style.justify_content = Some(value),
+            None => return false,
+        },
+        "alignSelf" => match parse_align_items(value) {
+            Some(value) => node.style.align_self = Some(value),
+            None => return false,
+        },
+        "flexWrap" => match parse_flex_wrap(value) {
+            Some(value) => node.style.flex_wrap = value,
+            None => return false,
+        },
+        _ => return false,
+    }
+
+    true
 }
 
 #[unsafe(no_mangle)]
@@ -553,8 +911,62 @@ pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
                         kind,
                         parent: None,
                         children: Vec::new(),
+                        text: String::new(),
+                        style: NodeStyle::default_for_kind(kind),
                     },
                 );
+            }
+            OpType::SetText => {
+                let appended_text = match std::str::from_utf8(payload) {
+                    Ok(text) => text,
+                    Err(_) => return 0,
+                };
+
+                let node = match state.nodes.get_mut(&node_id) {
+                    Some(node) => node,
+                    None => return 0,
+                };
+
+                if !node.kind.supports_text() {
+                    return 0;
+                }
+
+                node.text.push_str(appended_text);
+            }
+            OpType::DeleteTextRange => {
+                if payload.len() != ID_SIZE * 2 {
+                    return 0;
+                }
+
+                let start_byte = match payload[0..ID_SIZE].try_into().ok() {
+                    Some(bytes) => u32::from_le_bytes(bytes) as usize,
+                    None => return 0,
+                };
+
+                let end_byte = match payload[ID_SIZE..ID_SIZE * 2].try_into().ok() {
+                    Some(bytes) => u32::from_le_bytes(bytes) as usize,
+                    None => return 0,
+                };
+
+                let node = match state.nodes.get_mut(&node_id) {
+                    Some(node) => node,
+                    None => return 0,
+                };
+
+                if !node.kind.supports_text() {
+                    return 0;
+                }
+
+                if start_byte > end_byte || end_byte > node.text.len() {
+                    return 0;
+                }
+
+                if !node.text.is_char_boundary(start_byte) || !node.text.is_char_boundary(end_byte)
+                {
+                    return 0;
+                }
+
+                node.text.replace_range(start_byte..end_byte, "");
             }
             OpType::SetRoot => {
                 if !payload.is_empty() || !state.nodes.contains_key(&node_id) {
@@ -633,7 +1045,58 @@ pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
                     return 0;
                 }
             }
-            OpType::SetText | OpType::DeleteTextRange | OpType::UpdateStyle => return 0,
+            OpType::UpdateStyle => {
+                if payload.len() < 2 {
+                    return 0;
+                }
+
+                let prop_name_len = payload[0] as usize;
+                if prop_name_len == 0 || payload.len() < 1 + prop_name_len + 1 {
+                    return 0;
+                }
+
+                let prop_name_end = 1 + prop_name_len;
+                let prop_name = match std::str::from_utf8(&payload[1..prop_name_end]) {
+                    Ok(prop_name) => prop_name,
+                    Err(_) => return 0,
+                };
+
+                let value_kind = payload[prop_name_end];
+                let value_payload = &payload[prop_name_end + 1..];
+
+                let node = match state.nodes.get_mut(&node_id) {
+                    Some(node) => node,
+                    None => return 0,
+                };
+
+                let success = match value_kind {
+                    STYLE_VALUE_RESET => {
+                        if !value_payload.is_empty() {
+                            return 0;
+                        }
+                        apply_style_reset(node, prop_name)
+                    }
+                    STYLE_VALUE_NUMBER => {
+                        let value = match parse_style_number(value_payload) {
+                            Some(value) => value,
+                            None => return 0,
+                        };
+                        apply_style_number(node, prop_name, value)
+                    }
+                    STYLE_VALUE_STRING => {
+                        let value = match parse_style_string(value_payload) {
+                            Some(value) => value,
+                            None => return 0,
+                        };
+                        apply_style_string(node, prop_name, value)
+                    }
+                    _ => return 0,
+                };
+
+                if !success {
+                    return 0;
+                }
+            }
         }
 
         offset += payload_len;
@@ -673,6 +1136,32 @@ impl NodeType {
             _ => NodeType::Column,
         }
     }
+
+    fn supports_text(self) -> bool {
+        matches!(self, NodeType::Text | NodeType::Button | NodeType::Input)
+    }
+
+    fn is_box(self) -> bool {
+        matches!(self, NodeType::Row | NodeType::Column)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Direction {
+    Row = 1,
+    Column = 2,
+    RowReverse = 3,
+    ColumnReverse = 4,
+}
+
+impl Direction {
+    fn from_node_type(kind: NodeType) -> Self {
+        match kind {
+            NodeType::Row => Direction::Row,
+            NodeType::Column => Direction::Column,
+            _ => Direction::Column,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -683,12 +1172,17 @@ enum BorderStyle {
 }
 
 impl BorderStyle {
-    fn from_f32(v: f32) -> Self {
-        match v as u32 {
-            1 => BorderStyle::Rounded,
-            2 => BorderStyle::Squared,
-            _ => BorderStyle::None,
+    fn from_u32(v: u32) -> Option<Self> {
+        match v {
+            0 => Some(BorderStyle::None),
+            1 => Some(BorderStyle::Rounded),
+            2 => Some(BorderStyle::Squared),
+            _ => None,
         }
+    }
+
+    fn from_f32(v: f32) -> Self {
+        Self::from_u32(v as u32).unwrap_or(BorderStyle::None)
     }
 }
 
