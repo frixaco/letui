@@ -7,6 +7,7 @@
 3. Start with `bun run dev`, `bun run anitrack`, or `examples/mission-control.ts`
 4. Use `docs/components-and-styling.md` for current public props
 5. Use `docs/state-events-lifecycle.md` for signals, focus, input, and cleanup
+6. Use `docs/releasing.md` when cutting a new npm release
 
 ## Current API shape
 

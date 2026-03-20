@@ -136,6 +136,7 @@ Benchmark snapshot (`2026-02-20`, `terminal-rerender`, `full` profile, PTY mode)
 - [Getting started](./docs/getting-started.md)
 - [Components & styling](./docs/components-and-styling.md)
 - [State, events & lifecycle](./docs/state-events-lifecycle.md)
+- [Releasing](./docs/releasing.md)
 - [Troubleshooting](./docs/troubleshooting.md)
 
 ## Status
@@ -157,7 +158,4 @@ Mid-stage, active development. Core reactive runtime, persistent Rust tree state
 
 ## Releasing
 
-1. Push changes
-2. Update versions in `Cargo.toml` and `package.json`
-3. `git tag v0.0.x && git push origin v0.0.x`
-4. Release action builds and publishes packages
+See [docs/releasing.md](./docs/releasing.md).
