@@ -147,10 +147,10 @@ Mid-stage, active development. Core reactive runtime, persistent Rust tree state
 ## TODO
 
 - [x] Globals ops queue (see `./docs/FULL_RUST_AUTHORITY_SPEC.md`)
-- [ ] Text styling: markdown and syntax highlighting API
+- [x] Text styling: markdown and syntax highlighting API
+- [ ] Vertical and horizontal scrolling
 - [ ] Safer quit/cleanup when used as a library
 - [ ] Responsive examples for smaller terminal sizes
-- [ ] Vertical and horizontal scrolling
 - [ ] Multi-line text input and shortcuts
 - [ ] Persistent Taffy tree
 - [ ] Experiment: Neovim as text input via [Bun PTY](https://bun.com/docs/runtime/child-process#terminal-pty-support)
