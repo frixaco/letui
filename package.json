@@ -32,6 +32,8 @@
     "@frixaco/letui-win32-x64": "0.0.12"
   },
   "dependencies": {
-    "bun-ffi-structs": "^0.1.2"
+    "@openai/codex-sdk": "^0.116.0",
+    "bun-ffi-structs": "^0.1.2",
+    "shiki": "^4.0.2"
   }
 }
