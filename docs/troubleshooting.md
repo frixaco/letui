@@ -57,7 +57,7 @@ Symptom:
 Checks:
 
 1. use numeric colors (`0xRRGGBB`), not `"#RRGGBB"`
-2. current public layout API is small: `gap`, `padding`, `flexGrow`, `border`, `background`, `foreground`
+2. check prop names against exported `StyleProps` / `BoxProps` in `src/types.ts`
 3. use valid border styles only: `"square"` or `"rounded"`
 
 ## Demo is slow

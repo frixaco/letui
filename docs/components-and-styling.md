@@ -14,7 +14,7 @@ Button(input: ButtonProps, children?: Node[]): Node
 ## Required vs optional props
 
 - `TextProps`
-- required: `text`
+- required: `text` (`string | StyledText`)
 - optional: all `StyleProps`
 
 - `InputProps`
@@ -27,26 +27,40 @@ Button(input: ButtonProps, children?: Node[]): Node
 - optional: all `StyleProps`
 
 - `BoxProps`
-- optional: `direction` (`"row" | "column"`)
+- optional: `gap`
+- optional: `direction` (`"row" | "column" | "rowReverse" | "columnReverse"`)
 - optional: all `StyleProps`
 
 ## Shared style fields (`StyleProps`)
 
 - `border`: `{ color: number; style: "square" | "rounded" }`
+- `borderTop`, `borderRight`, `borderBottom`, `borderLeft`: `{ color: number }`
 - `padding`: number or string pair (`"horizontal vertical"`)
+- `paddingX`, `paddingY`
 - `background`, `foreground` (number colors)
 - `flexGrow`
+- `width`, `height`
+- `minWidth`, `minHeight`
+- `maxWidth`, `maxHeight`
+- `margin`: number or string pair (`"horizontal vertical"`)
+- `marginX`, `marginY`
+- `alignItems`
+- `justifyContent`
+- `alignSelf`
+- `flexShrink`
+- `flexBasis`
+- `flexWrap`
 
 ## Box layout fields (`BoxProps`)
 
 - `gap`
-- `direction`: `"row" | "column"`
+- `direction`: `"row" | "column" | "rowReverse" | "columnReverse"`
 
 ## Current scope
 
-- The public API is intentionally narrow right now.
-- If you need fixed sizing, alignment, overflow, or min/max constraints, treat those as not yet supported.
-- Prefer composing `Row` / `Column`, `gap`, `padding`, borders, colors, and `flexGrow`.
+- Public styling/layout surface is the exported `StyleProps` + `BoxProps` above.
+- `overflow`, scrolling, and other non-exported props are not part of the public API.
+- Prefer `Row` / `Column` for common cases; use `Box` when you need explicit `direction`, including reverse directions.
 
 ## Colors
 
@@ -63,7 +77,7 @@ Rule: pass numeric hex colors (`0xRRGGBB`), not CSS strings.
 
 ## Node methods exposed by constructors
 
-- `setStyle(partialStyle)`
+- `setStyle(partialStyle)` on all nodes
 - `setText(nextText)` on `Text`, `Input`, `Button`
 - `setChildren(nextChildren)` on `Box`, `Button`
 - `focus()`, `blur()`, `isFocused()` on all nodes
@@ -73,3 +87,4 @@ Rule: pass numeric hex colors (`0xRRGGBB`), not CSS strings.
 - Build containers with `Row` and `Column`
 - Keep leaf nodes (`Text`, `Input`, `Button`) referenced so you can call `setText`/`setStyle`
 - Update via signals + `ff`, not manual redraw loops
+- If prop meaning is unclear, check exported types in `src/types.ts`

@@ -48,7 +48,7 @@ const root = Column(
       foreground: COLORS.default.grey,
     }),
     Text({
-      text: "supported layout props today: gap, padding, flexGrow",
+      text: "starter uses gap/padding/flexGrow; wider layout API lives in StyleProps + BoxProps",
       foreground: COLORS.default.grey,
     }),
   ],
@@ -88,6 +88,6 @@ bun run examples/hello-world.ts
 - In `examples/`, relative import from `../index.ts` is simplest starter path
 - Existing examples also use `@/...` alias for modules inside `src/`
 - The starter snippet above matches [examples/hello-world.ts](/Users/frixa/Documents/letui/examples/hello-world.ts)
-- Current layout/styling API is intentionally small: `gap`, `padding`, `flexGrow`, `border`, `background`, `foreground`
+- Current public props come from `StyleProps`, `BoxProps`, `TextProps`, `InputProps`, and `ButtonProps` in `src/types.ts`
 - Keep node references stable across updates when you can; same-shape trees let runtime send deltas instead of rebuilding Rust tree state
 - `run(root, { debug: true })` writes phase timings to `dump/metrics.txt`: `serialize`, `textSync`, `rust`, `sync`, `flush`

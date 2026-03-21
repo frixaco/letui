@@ -140,18 +140,14 @@ Benchmark snapshot (`2026-02-20`, `terminal-rerender`, `full` profile, PTY mode)
 - [Releasing](./docs/releasing.md)
 - [Troubleshooting](./docs/troubleshooting.md)
 
-## Status
-
-Mid-stage, active development. Core reactive runtime, persistent Rust tree state, incremental text sync, terminal diffing, and Bun FFI bridge are working. Public API is intentionally small.
-
 ## TODO
 
 - [x] Globals ops queue (see `./docs/FULL_RUST_AUTHORITY_SPEC.md`)
 - [x] Text styling: markdown and syntax highlighting API
+- [ ] Multi-line text input, text overflow and wrapping
 - [ ] Vertical and horizontal scrolling
 - [ ] Safer quit/cleanup when used as a library
 - [ ] Responsive examples for smaller terminal sizes
-- [ ] Multi-line text input and shortcuts
 - [ ] Persistent Taffy tree
 - [ ] Experiment: Neovim as text input via [Bun PTY](https://bun.com/docs/runtime/child-process#terminal-pty-support)
 - [ ] Refactor `flush` with `BatchWriter` pattern

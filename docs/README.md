@@ -7,15 +7,17 @@
 3. Start with `bun run dev`, `bun run anitrack`, `examples/snake.ts`, or `examples/typing-speed.ts`
 4. Use `docs/components-and-styling.md` for current public props
 5. Use `docs/state-events-lifecycle.md` for signals, focus, input, and cleanup
-6. Use `docs/releasing.md` when cutting a new npm release
+6. Use `docs/text-layout-overflow-spec.md` for multiline text / overflow design
+7. Use `docs/releasing.md` when cutting a new npm release
 
 ## Current API shape
 
 - layout primitives: `Box`, `Row`, `Column`
 - leaf nodes: `Text`, `Input`, `Button`
-- supported shared style fields: `border`, `padding`, `background`, `foreground`, `flexGrow`
-- supported box fields: `gap`, `direction`
-- current docs treat code as source of truth; unsupported props should be considered not implemented
+- shared style props live in `StyleProps`: borders, padding, colors, flex, sizing, min/max, margins, alignment, wrapping
+- box-only props live in `BoxProps`: `gap`, `direction`
+- direction supports `row`, `column`, `rowReverse`, `columnReverse`
+- current docs treat code as source of truth; anything outside exported prop types is not public API
 
 ## Current runtime shape
 
