@@ -30,6 +30,7 @@ More examples:
 ```bash
 bun run dev
 bun run examples/snake.ts
+bun run examples/typing-speed.ts
 bun run examples/ai-agent.ts
 bun run examples/visualizer.ts
 bun run examples/progress-bar.ts
