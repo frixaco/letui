@@ -8,6 +8,7 @@ pub(crate) static FIRST_DIFF: Mutex<bool> = Mutex::new(true);
 
 pub(crate) const DEFAULT_BG: u32 = 0x16181a;
 pub(crate) const DEFAULT_FG: u32 = 0xffffff;
+pub(crate) const CONTINUATION_CELL: char = '\0';
 // Each terminal cell stores: <char><fg><bg><attrs>.
 pub(crate) const CELL_STRIDE: usize = 4;
 // Text attrs are packed into one byte so flush can cheaply diff/toggle ANSI state.

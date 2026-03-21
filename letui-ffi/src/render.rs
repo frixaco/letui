@@ -1,6 +1,13 @@
-use crate::shared::{CELL_STRIDE, CURRENT_BUFFER, DEFAULT_BG, DEFAULT_FG, FRAMES, TERMINAL_SIZE};
-use crate::tree::{BorderStyle, Direction, NodeData, NodeType, ResolvedBorder, StyleDimension};
-use crate::tree::{TREE_STATE, TextSpanData, TreeState};
+use crate::shared::{
+    CELL_STRIDE, CONTINUATION_CELL, CURRENT_BUFFER, DEFAULT_BG, DEFAULT_FG, FRAMES, TERMINAL_SIZE,
+};
+use crate::text_layout::{
+    ClipRect, TextLayoutRequest, layout_text, measure_max_content, measure_min_content,
+};
+use crate::tree::{
+    BorderStyle, Direction, NodeData, NodeType, ResolvedBorder, StyleDimension, TREE_STATE,
+    TextOverflow, TextSpanData, TextWrap, TreeState,
+};
 use std::{cell::RefCell, os::raw::c_int};
 use taffy::{Overflow, Point, prelude::*};
 
@@ -13,6 +20,22 @@ fn style_dimension_to_taffy(dim: StyleDimension) -> Dimension {
         StyleDimension::Auto => Dimension::auto(),
         StyleDimension::Points(v) => Dimension::length(v),
     }
+}
+
+fn quantize_origin(value: f32) -> u16 {
+    value.max(0.0).floor().min(u16::MAX as f32) as u16
+}
+
+fn quantize_size(value: f32) -> u16 {
+    value.max(0.0).floor().min(u16::MAX as f32) as u16
+}
+
+fn resolved_default_fg(fg: u32, parent_fg: u32) -> u32 {
+    if fg != 0 { fg } else { parent_fg }
+}
+
+fn resolved_default_bg(bg: u32, parent_bg: u32) -> u32 {
+    if bg != 0 { bg } else { parent_bg }
 }
 
 fn node_data_to_style(data: &NodeData) -> Style {
@@ -90,6 +113,68 @@ fn node_data_to_style(data: &NodeData) -> Style {
     style
 }
 
+fn effective_wrap(kind: NodeType, data: &NodeData) -> TextWrap {
+    match kind {
+        NodeType::Text => data.style.text_wrap,
+        NodeType::Input => {
+            if data.style.multiline {
+                match data.style.text_wrap {
+                    TextWrap::None => TextWrap::Word,
+                    wrap => wrap,
+                }
+            } else {
+                TextWrap::None
+            }
+        }
+        NodeType::Button => TextWrap::None,
+        NodeType::Row | NodeType::Column => TextWrap::None,
+    }
+}
+
+fn effective_overflow(kind: NodeType, data: &NodeData) -> TextOverflow {
+    match kind {
+        NodeType::Text => data.style.text_overflow,
+        _ => TextOverflow::Clip,
+    }
+}
+
+enum NodeContext {
+    Text {
+        content: String,
+        spans: Vec<TextSpanData>,
+        fg: u32,
+        bg: u32,
+        wrap: TextWrap,
+        overflow: TextOverflow,
+    },
+    Button {
+        label: String,
+        fg: u32,
+        bg: u32,
+        border: ResolvedBorder,
+        wrap: TextWrap,
+        overflow: TextOverflow,
+    },
+    Input {
+        content: String,
+        fg: u32,
+        bg: u32,
+        border: ResolvedBorder,
+        wrap: TextWrap,
+        cursor_visible: bool,
+    },
+    Row {
+        bg: u32,
+        fg: u32,
+        border: ResolvedBorder,
+    },
+    Column {
+        bg: u32,
+        fg: u32,
+        border: ResolvedBorder,
+    },
+}
+
 fn node_data_to_context(data: &NodeData) -> NodeContext {
     let s = &data.style;
     match data.kind {
@@ -108,18 +193,24 @@ fn node_data_to_context(data: &NodeData) -> NodeContext {
             spans: data.text_spans.clone(),
             fg: s.fg,
             bg: s.bg,
+            wrap: effective_wrap(data.kind, data),
+            overflow: effective_overflow(data.kind, data),
         },
         NodeType::Button => NodeContext::Button {
             label: data.text.clone(),
             fg: s.fg,
             bg: s.bg,
             border: s.border,
+            wrap: effective_wrap(data.kind, data),
+            overflow: effective_overflow(data.kind, data),
         },
         NodeType::Input => NodeContext::Input {
             content: data.text.clone(),
             fg: s.fg,
             bg: s.bg,
             border: s.border,
+            wrap: effective_wrap(data.kind, data),
+            cursor_visible: s.cursor_visible,
         },
     }
 }
@@ -171,37 +262,6 @@ fn build_frames_array(
     }
 }
 
-enum NodeContext {
-    Text {
-        content: String,
-        spans: Vec<TextSpanData>,
-        fg: u32,
-        bg: u32,
-    },
-    Button {
-        label: String,
-        fg: u32,
-        bg: u32,
-        border: ResolvedBorder,
-    },
-    Input {
-        content: String,
-        fg: u32,
-        bg: u32,
-        border: ResolvedBorder,
-    },
-    Row {
-        bg: u32,
-        fg: u32,
-        border: ResolvedBorder,
-    },
-    Column {
-        bg: u32,
-        fg: u32,
-        border: ResolvedBorder,
-    },
-}
-
 fn measure_function(
     known_dimensions: Size<Option<f32>>,
     available_space: Size<AvailableSpace>,
@@ -217,53 +277,86 @@ fn measure_function(
         return Size { width, height };
     }
 
-    let text = match node_context {
-        Some(NodeContext::Text { content, .. }) => content.as_str(),
-        Some(NodeContext::Button { label, .. }) => label.as_str(),
-        Some(NodeContext::Input { content, .. }) => content.as_str(),
+    let (text, spans, wrap, overflow, fg, bg, show_cursor) = match node_context {
+        Some(NodeContext::Text {
+            content,
+            spans,
+            wrap,
+            overflow,
+            fg,
+            bg,
+        }) => (
+            content.as_str(),
+            spans.as_slice(),
+            *wrap,
+            *overflow,
+            *fg,
+            *bg,
+            false,
+        ),
+        Some(NodeContext::Button {
+            label,
+            wrap,
+            overflow,
+            fg,
+            bg,
+            ..
+        }) => (label.as_str(), &[][..], *wrap, *overflow, *fg, *bg, false),
+        Some(NodeContext::Input {
+            content,
+            wrap,
+            fg,
+            bg,
+            cursor_visible,
+            ..
+        }) => (
+            content.as_str(),
+            &[][..],
+            *wrap,
+            TextOverflow::Clip,
+            *fg,
+            *bg,
+            *cursor_visible,
+        ),
         Some(NodeContext::Row { .. }) | Some(NodeContext::Column { .. }) => return Size::ZERO,
         None => return Size::ZERO,
     };
 
-    let text_width = text.chars().count() as f32;
+    let resolved_fg = if fg != 0 { fg } else { DEFAULT_FG };
+    let resolved_bg = if bg != 0 { bg } else { DEFAULT_BG };
 
-    let max_width = match available_space.width {
-        AvailableSpace::Definite(w) => w,
-        _ => text_width,
+    let result = match available_space.width {
+        AvailableSpace::MaxContent => measure_max_content(text, spans, resolved_fg, resolved_bg),
+        AvailableSpace::MinContent => {
+            let min_width = measure_min_content(text, spans, wrap, resolved_fg, resolved_bg);
+            layout_text(&TextLayoutRequest {
+                text,
+                spans,
+                max_width: Some(min_width),
+                wrap,
+                overflow,
+                cursor: if show_cursor { Some(text.len()) } else { None },
+                show_cursor,
+                default_fg: resolved_fg,
+                default_bg: resolved_bg,
+            })
+        }
+        AvailableSpace::Definite(width) => layout_text(&TextLayoutRequest {
+            text,
+            spans,
+            max_width: Some(quantize_size(width)),
+            wrap,
+            overflow,
+            cursor: if show_cursor { Some(text.len()) } else { None },
+            show_cursor,
+            default_fg: resolved_fg,
+            default_bg: resolved_bg,
+        }),
     };
 
-    if text_width <= max_width {
-        return Size {
-            width: text_width,
-            height: 1.0,
-        };
-    }
-
-    let words: Vec<&str> = text.split_whitespace().collect();
-    let mut lines = 1;
-    let mut current_width: f32 = 0.0;
-    let mut max_line_width: f32 = 0.0;
-
-    for word in words {
-        let word_width = word.chars().count() as f32;
-        let needed_width = if current_width == 0.0 {
-            word_width
-        } else {
-            current_width + 1.0 + word_width
-        };
-
-        if needed_width > max_width {
-            lines += 1;
-            max_line_width = max_line_width.max(current_width);
-            current_width = word_width;
-        } else {
-            current_width = needed_width;
-        }
-    }
-
     Size {
-        width: max_line_width.max(max_width),
-        height: lines as f32,
+        width: result.width as f32,
+        height: result.height as f32,
     }
 }
 
@@ -278,7 +371,6 @@ fn set_buffer_cell(
     tw: u16,
     th: u16,
 ) {
-    // Single write path for the 4-slot cell layout: char + fg + bg + text attrs.
     if col >= tw || row >= th {
         return;
     }
@@ -294,85 +386,45 @@ fn set_buffer_cell(
     buf[idx + 3] = attrs as u64;
 }
 
-fn draw_background_at(buf: &mut [u64], x: f32, y: f32, w: f32, h: f32, bg: u32, tw: u16, th: u16) {
-    let x_start = x as u16;
-    let y_start = y as u16;
-    let x_end = (x + w).min(tw as f32) as u16;
-    let y_end = (y + h).min(th as f32) as u16;
-
-    for row in y_start..y_end {
-        for col in x_start..x_end {
-            set_buffer_cell(buf, col, row, ' ', DEFAULT_FG, bg, 0, tw, th);
-        }
-    }
-}
-
-fn draw_text_at(buf: &mut [u64], x: f32, y: f32, text: &str, fg: u32, bg: u32, tw: u16, th: u16) {
-    let x_start = x as u16;
-    let y_row = y as u16;
-
-    if y_row >= th {
+fn set_buffer_cell_clipped(
+    buf: &mut [u64],
+    clip: ClipRect,
+    col: u16,
+    row: u16,
+    ch: char,
+    fg: u32,
+    bg: u32,
+    attrs: u8,
+    tw: u16,
+    th: u16,
+) {
+    if !clip.contains(col, row) {
         return;
     }
-
-    for (i, ch) in text.chars().enumerate() {
-        let col = x_start + i as u16;
-        if col >= tw {
-            break;
-        }
-        set_buffer_cell(buf, col, y_row, ch, fg, bg, 0, tw, th);
-    }
+    set_buffer_cell(buf, col, row, ch, fg, bg, attrs, tw, th);
 }
 
-fn draw_styled_text_at(
+fn draw_background_at(
     buf: &mut [u64],
-    x: f32,
-    y: f32,
-    text: &str,
-    spans: &[TextSpanData],
-    fg: u32,
+    clip: ClipRect,
+    x: u16,
+    y: u16,
+    w: u16,
+    h: u16,
     bg: u32,
     tw: u16,
     th: u16,
 ) {
-    // Spans are pre-sorted/non-overlapping, so painting can walk text once with a
-    // single forward-moving span pointer.
-    let x_start = x as u16;
-    let y_row = y as u16;
-
-    if y_row >= th {
-        return;
-    }
-
-    let mut span_index = 0usize;
-    for (char_index, (byte_start, ch)) in text.char_indices().enumerate() {
-        let col = x_start + char_index as u16;
-        if col >= tw {
-            break;
+    for row in y..y.saturating_add(h) {
+        for col in x..x.saturating_add(w) {
+            set_buffer_cell_clipped(buf, clip, col, row, ' ', DEFAULT_FG, bg, 0, tw, th);
         }
-
-        while span_index < spans.len() && spans[span_index].end_byte <= byte_start {
-            span_index += 1;
-        }
-
-        let mut resolved_fg = fg;
-        let mut resolved_bg = bg;
-        let mut attrs = 0u8;
-
-        if let Some(span) = spans.get(span_index) {
-            if byte_start >= span.start_byte && byte_start < span.end_byte {
-                resolved_fg = span.foreground.unwrap_or(fg);
-                resolved_bg = span.background.unwrap_or(bg);
-                attrs = span.attr_flags();
-            }
-        }
-
-        set_buffer_cell(buf, col, y_row, ch, resolved_fg, resolved_bg, attrs, tw, th);
     }
 }
 
 fn set_border_cell(
     buf: &mut [u64],
+    clip: ClipRect,
     col: u16,
     row: u16,
     ch: char,
@@ -381,25 +433,28 @@ fn set_border_cell(
     tw: u16,
     th: u16,
 ) {
-    set_buffer_cell(buf, col, row, ch, color, bg, 0, tw, th);
+    set_buffer_cell_clipped(buf, clip, col, row, ch, color, bg, 0, tw, th);
 }
 
 fn draw_uniform_border_at(
     buf: &mut [u64],
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
+    clip: ClipRect,
+    x: u16,
+    y: u16,
+    w: u16,
+    h: u16,
     color: u32,
     bg: u32,
     style: BorderStyle,
     tw: u16,
     th: u16,
 ) {
-    let x_start = x as u16;
-    let y_start = y as u16;
-    let x_end = ((x + w) as u16).saturating_sub(1).min(tw.saturating_sub(1));
-    let y_end = ((y + h) as u16).saturating_sub(1).min(th.saturating_sub(1));
+    if w == 0 || h == 0 {
+        return;
+    }
+
+    let x_end = x.saturating_add(w).saturating_sub(1);
+    let y_end = y.saturating_add(h).saturating_sub(1);
 
     let (tl, tr, bl, br, h_line, v_line) = match style {
         BorderStyle::Rounded => ('╭', '╮', '╰', '╯', '─', '│'),
@@ -407,45 +462,44 @@ fn draw_uniform_border_at(
         BorderStyle::None => return,
     };
 
-    set_border_cell(buf, x_start, y_start, tl, color, bg, tw, th);
-    set_border_cell(buf, x_end, y_start, tr, color, bg, tw, th);
-    set_border_cell(buf, x_start, y_end, bl, color, bg, tw, th);
-    set_border_cell(buf, x_end, y_end, br, color, bg, tw, th);
+    set_border_cell(buf, clip, x, y, tl, color, bg, tw, th);
+    set_border_cell(buf, clip, x_end, y, tr, color, bg, tw, th);
+    set_border_cell(buf, clip, x, y_end, bl, color, bg, tw, th);
+    set_border_cell(buf, clip, x_end, y_end, br, color, bg, tw, th);
 
-    for col in (x_start + 1)..x_end {
-        set_border_cell(buf, col, y_start, h_line, color, bg, tw, th);
-        set_border_cell(buf, col, y_end, h_line, color, bg, tw, th);
+    for col in x.saturating_add(1)..x_end {
+        set_border_cell(buf, clip, col, y, h_line, color, bg, tw, th);
+        set_border_cell(buf, clip, col, y_end, h_line, color, bg, tw, th);
     }
-    for row in (y_start + 1)..y_end {
-        set_border_cell(buf, x_start, row, v_line, color, bg, tw, th);
-        set_border_cell(buf, x_end, row, v_line, color, bg, tw, th);
+    for row in y.saturating_add(1)..y_end {
+        set_border_cell(buf, clip, x, row, v_line, color, bg, tw, th);
+        set_border_cell(buf, clip, x_end, row, v_line, color, bg, tw, th);
     }
 }
 
 fn draw_resolved_border_at(
     buf: &mut [u64],
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
+    clip: ClipRect,
+    x: u16,
+    y: u16,
+    w: u16,
+    h: u16,
     border: ResolvedBorder,
     bg: u32,
     tw: u16,
     th: u16,
 ) {
-    if !border.has_any_visible_side() {
+    if w == 0 || h == 0 || !border.has_any_visible_side() {
         return;
     }
 
     if let Some((color, style)) = border.is_uniform_full_box() {
-        draw_uniform_border_at(buf, x, y, w, h, color, bg, style, tw, th);
+        draw_uniform_border_at(buf, clip, x, y, w, h, color, bg, style, tw, th);
         return;
     }
 
-    let x_start = x as u16;
-    let y_start = y as u16;
-    let x_end = ((x + w) as u16).saturating_sub(1).min(tw.saturating_sub(1));
-    let y_end = ((y + h) as u16).saturating_sub(1).min(th.saturating_sub(1));
+    let x_end = x.saturating_add(w).saturating_sub(1);
+    let y_end = y.saturating_add(h).saturating_sub(1);
 
     let top = border.top.is_visible();
     let right = border.right.is_visible();
@@ -453,54 +507,137 @@ fn draw_resolved_border_at(
     let left = border.left.is_visible();
 
     if top {
-        for col in x_start..=x_end {
-            set_border_cell(buf, col, y_start, '─', border.top.color, bg, tw, th);
+        for col in x..=x_end {
+            set_border_cell(buf, clip, col, y, '─', border.top.color, bg, tw, th);
         }
     }
     if bottom {
-        for col in x_start..=x_end {
-            set_border_cell(buf, col, y_end, '─', border.bottom.color, bg, tw, th);
+        for col in x..=x_end {
+            set_border_cell(buf, clip, col, y_end, '─', border.bottom.color, bg, tw, th);
         }
     }
     if left {
-        for row in y_start..=y_end {
-            set_border_cell(buf, x_start, row, '│', border.left.color, bg, tw, th);
+        for row in y..=y_end {
+            set_border_cell(buf, clip, x, row, '│', border.left.color, bg, tw, th);
         }
     }
     if right {
-        for row in y_start..=y_end {
-            set_border_cell(buf, x_end, row, '│', border.right.color, bg, tw, th);
+        for row in y..=y_end {
+            set_border_cell(buf, clip, x_end, row, '│', border.right.color, bg, tw, th);
         }
     }
 
     if top && left {
-        set_border_cell(buf, x_start, y_start, '┌', border.top.color, bg, tw, th);
+        set_border_cell(buf, clip, x, y, '┌', border.top.color, bg, tw, th);
     }
     if top && right {
-        set_border_cell(buf, x_end, y_start, '┐', border.top.color, bg, tw, th);
+        set_border_cell(buf, clip, x_end, y, '┐', border.top.color, bg, tw, th);
     }
     if bottom && left {
-        set_border_cell(buf, x_start, y_end, '└', border.bottom.color, bg, tw, th);
+        set_border_cell(buf, clip, x, y_end, '└', border.bottom.color, bg, tw, th);
     }
     if bottom && right {
-        set_border_cell(buf, x_end, y_end, '┘', border.bottom.color, bg, tw, th);
+        set_border_cell(
+            buf,
+            clip,
+            x_end,
+            y_end,
+            '┘',
+            border.bottom.color,
+            bg,
+            tw,
+            th,
+        );
     }
 }
 
-fn draw_cursor_at(
+fn paint_text_layout(
     buf: &mut [u64],
-    x: f32,
-    y: f32,
-    text_len: f32,
-    fg: u32,
-    bg: u32,
+    clip: ClipRect,
+    x: u16,
+    y: u16,
+    request: TextLayoutRequest<'_>,
     tw: u16,
     th: u16,
 ) {
-    let col = (x + text_len) as u16;
-    let row = y as u16;
+    let result = layout_text(&request);
 
-    set_buffer_cell(buf, col, row, '█', fg, bg, 0, tw, th);
+    for (row_index, line) in result.lines.iter().enumerate() {
+        let abs_row = y.saturating_add(row_index as u16);
+        if abs_row >= th {
+            break;
+        }
+
+        for cell in &line.cells {
+            let abs_col = x.saturating_add(cell.display_col);
+            if cell.width == 2 {
+                let Some(continuation_col) = abs_col.checked_add(1) else {
+                    continue;
+                };
+
+                if !clip.contains(abs_col, abs_row)
+                    || !clip.contains(continuation_col, abs_row)
+                    || continuation_col >= tw
+                {
+                    continue;
+                }
+
+                set_buffer_cell(
+                    buf,
+                    abs_col,
+                    abs_row,
+                    cell.ch,
+                    cell.foreground,
+                    cell.background,
+                    cell.attrs,
+                    tw,
+                    th,
+                );
+                set_buffer_cell(
+                    buf,
+                    continuation_col,
+                    abs_row,
+                    CONTINUATION_CELL,
+                    cell.foreground,
+                    cell.background,
+                    cell.attrs,
+                    tw,
+                    th,
+                );
+                continue;
+            }
+
+            set_buffer_cell_clipped(
+                buf,
+                clip,
+                abs_col,
+                abs_row,
+                cell.ch,
+                cell.foreground,
+                cell.background,
+                cell.attrs,
+                tw,
+                th,
+            );
+        }
+    }
+
+    if let Some(cursor) = result.cursor {
+        let abs_col = x.saturating_add(cursor.col);
+        let abs_row = y.saturating_add(cursor.row);
+        set_buffer_cell_clipped(
+            buf,
+            clip,
+            abs_col,
+            abs_row,
+            '█',
+            request.default_fg,
+            request.default_bg,
+            0,
+            tw,
+            th,
+        );
+    }
 }
 
 fn paint_taffy_node(
@@ -511,18 +648,33 @@ fn paint_taffy_node(
     abs_y: f32,
     parent_fg: u32,
     parent_bg: u32,
+    inherited_clip: ClipRect,
     tw: u16,
     th: u16,
 ) {
     let layout = taffy.layout(node_id).unwrap();
-    let x = abs_x + layout.location.x;
-    let y = abs_y + layout.location.y;
-    let w = layout.size.width;
-    let h = layout.size.height;
+    let x = quantize_origin(abs_x + layout.location.x);
+    let y = quantize_origin(abs_y + layout.location.y);
+    let w = quantize_size(layout.size.width);
+    let h = quantize_size(layout.size.height);
 
-    // Content box position (inside border + padding)
-    let content_x = abs_x + layout.content_box_x();
-    let content_y = abs_y + layout.content_box_y();
+    let content_x = quantize_origin(abs_x + layout.content_box_x());
+    let content_y = quantize_origin(abs_y + layout.content_box_y());
+    let content_w = quantize_size(layout.content_box_width());
+    let content_h = quantize_size(layout.content_box_height());
+
+    let node_clip = inherited_clip.intersect(ClipRect {
+        left: x,
+        top: y,
+        right: x.saturating_add(w),
+        bottom: y.saturating_add(h),
+    });
+    let content_clip = inherited_clip.intersect(ClipRect {
+        left: content_x,
+        top: content_y,
+        right: content_x.saturating_add(content_w),
+        bottom: content_y.saturating_add(content_h),
+    });
 
     let (fg, bg) = match taffy.get_node_context(node_id) {
         Some(NodeContext::Text {
@@ -530,11 +682,31 @@ fn paint_taffy_node(
             spans,
             fg,
             bg,
+            wrap,
+            overflow,
         }) => {
-            let fg = if *fg != 0 { *fg } else { parent_fg };
-            let bg = if *bg != 0 { *bg } else { parent_bg };
-            draw_background_at(buf, x, y, w, h, bg, tw, th);
-            draw_styled_text_at(buf, content_x, content_y, content, spans, fg, bg, tw, th);
+            let fg = resolved_default_fg(*fg, parent_fg);
+            let bg = resolved_default_bg(*bg, parent_bg);
+            draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
+            paint_text_layout(
+                buf,
+                content_clip,
+                content_x,
+                content_y,
+                TextLayoutRequest {
+                    text: content,
+                    spans,
+                    max_width: Some(content_w),
+                    wrap: *wrap,
+                    overflow: *overflow,
+                    cursor: None,
+                    show_cursor: false,
+                    default_fg: fg,
+                    default_bg: bg,
+                },
+                tw,
+                th,
+            );
             (fg, bg)
         }
         Some(NodeContext::Button {
@@ -542,12 +714,32 @@ fn paint_taffy_node(
             fg,
             bg,
             border,
+            wrap,
+            overflow,
         }) => {
-            let fg = if *fg != 0 { *fg } else { parent_fg };
-            let bg = if *bg != 0 { *bg } else { parent_bg };
-            draw_background_at(buf, x, y, w, h, bg, tw, th);
-            draw_resolved_border_at(buf, x, y, w, h, *border, bg, tw, th);
-            draw_text_at(buf, content_x, content_y, label, fg, bg, tw, th);
+            let fg = resolved_default_fg(*fg, parent_fg);
+            let bg = resolved_default_bg(*bg, parent_bg);
+            draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
+            draw_resolved_border_at(buf, node_clip, x, y, w, h, *border, bg, tw, th);
+            paint_text_layout(
+                buf,
+                content_clip,
+                content_x,
+                content_y,
+                TextLayoutRequest {
+                    text: label,
+                    spans: &[],
+                    max_width: Some(content_w),
+                    wrap: *wrap,
+                    overflow: *overflow,
+                    cursor: None,
+                    show_cursor: false,
+                    default_fg: fg,
+                    default_bg: bg,
+                },
+                tw,
+                th,
+            );
             (fg, bg)
         }
         Some(NodeContext::Input {
@@ -555,19 +747,33 @@ fn paint_taffy_node(
             fg,
             bg,
             border,
+            wrap,
+            cursor_visible,
         }) => {
-            let fg = if *fg != 0 { *fg } else { parent_fg };
-            let bg = if *bg != 0 { *bg } else { parent_bg };
-            draw_background_at(buf, x, y, w, h, bg, tw, th);
-            draw_resolved_border_at(buf, x, y, w, h, *border, bg, tw, th);
-            draw_text_at(buf, content_x, content_y, content, fg, bg, tw, th);
-            draw_cursor_at(
+            let fg = resolved_default_fg(*fg, parent_fg);
+            let bg = resolved_default_bg(*bg, parent_bg);
+            draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
+            draw_resolved_border_at(buf, node_clip, x, y, w, h, *border, bg, tw, th);
+            paint_text_layout(
                 buf,
+                content_clip,
                 content_x,
                 content_y,
-                content.chars().count() as f32,
-                fg,
-                bg,
+                TextLayoutRequest {
+                    text: content,
+                    spans: &[],
+                    max_width: Some(content_w),
+                    wrap: *wrap,
+                    overflow: TextOverflow::Clip,
+                    cursor: if *cursor_visible {
+                        Some(content.len())
+                    } else {
+                        None
+                    },
+                    show_cursor: *cursor_visible,
+                    default_fg: fg,
+                    default_bg: bg,
+                },
                 tw,
                 th,
             );
@@ -575,17 +781,28 @@ fn paint_taffy_node(
         }
         Some(NodeContext::Row { fg, bg, border })
         | Some(NodeContext::Column { fg, bg, border }) => {
-            let fg = if *fg != 0 { *fg } else { parent_fg };
-            let bg = if *bg != 0 { *bg } else { parent_bg };
-            draw_background_at(buf, x, y, w, h, bg, tw, th);
-            draw_resolved_border_at(buf, x, y, w, h, *border, bg, tw, th);
+            let fg = resolved_default_fg(*fg, parent_fg);
+            let bg = resolved_default_bg(*bg, parent_bg);
+            draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
+            draw_resolved_border_at(buf, node_clip, x, y, w, h, *border, bg, tw, th);
             (fg, bg)
         }
         None => (parent_fg, parent_bg),
     };
 
     for child in taffy.children(node_id).unwrap() {
-        paint_taffy_node(taffy, child, buf, x, y, fg, bg, tw, th);
+        paint_taffy_node(
+            taffy,
+            child,
+            buf,
+            abs_x + layout.location.x,
+            abs_y + layout.location.y,
+            fg,
+            bg,
+            content_clip,
+            tw,
+            th,
+        );
     }
 }
 
@@ -607,7 +824,6 @@ pub extern "C" fn render() -> c_int {
             None => return 0,
         };
 
-        // Force root to fill terminal
         let mut root_style = taffy.style(taffy_root).unwrap().clone();
         root_style.size = Size {
             width: length(tw),
@@ -645,13 +861,121 @@ pub extern "C" fn render() -> c_int {
         let mut cb = CURRENT_BUFFER.lock().unwrap();
         if let Some(ref mut buf) = *cb {
             paint_taffy_node(
-                taffy, taffy_root, buf, 0.0, 0.0, parent_fg, parent_bg, tw, th,
+                taffy,
+                taffy_root,
+                buf,
+                0.0,
+                0.0,
+                parent_fg,
+                parent_bg,
+                ClipRect {
+                    left: 0,
+                    top: 0,
+                    right: tw,
+                    bottom: th,
+                },
+                tw,
+                th,
             );
         }
 
         taffy.clear();
         1
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tree::{NodeData, NodeStyle};
+
+    fn make_node(kind: NodeType) -> NodeData {
+        NodeData {
+            kind,
+            parent: None,
+            children: Vec::new(),
+            text: String::new(),
+            text_spans: Vec::new(),
+            style: NodeStyle::default_for_kind(kind),
+        }
+    }
+
+    fn cell_code(buf: &[u64], width: u16, col: u16, row: u16) -> u64 {
+        let idx = (width * row + col) as usize * CELL_STRIDE;
+        buf[idx]
+    }
+
+    #[test]
+    fn multiline_input_defaults_to_word_wrap() {
+        let mut node = make_node(NodeType::Input);
+        node.style.multiline = true;
+
+        assert_eq!(effective_wrap(NodeType::Input, &node), TextWrap::Word);
+    }
+
+    #[test]
+    fn partially_clipped_wide_glyph_is_skipped() {
+        let mut buf = vec![0u64; 4 * CELL_STRIDE];
+        paint_text_layout(
+            &mut buf,
+            ClipRect {
+                left: 1,
+                top: 0,
+                right: 4,
+                bottom: 1,
+            },
+            0,
+            0,
+            TextLayoutRequest {
+                text: "🙂",
+                spans: &[],
+                max_width: Some(4),
+                wrap: TextWrap::None,
+                overflow: TextOverflow::Clip,
+                cursor: None,
+                show_cursor: false,
+                default_fg: DEFAULT_FG,
+                default_bg: DEFAULT_BG,
+            },
+            4,
+            1,
+        );
+
+        assert_eq!(cell_code(&buf, 4, 0, 0), 0);
+        assert_eq!(cell_code(&buf, 4, 1, 0), 0);
+    }
+
+    #[test]
+    fn fully_visible_wide_glyph_writes_lead_and_continuation_cells() {
+        let mut buf = vec![0u64; 4 * CELL_STRIDE];
+        paint_text_layout(
+            &mut buf,
+            ClipRect {
+                left: 0,
+                top: 0,
+                right: 4,
+                bottom: 1,
+            },
+            0,
+            0,
+            TextLayoutRequest {
+                text: "🙂",
+                spans: &[],
+                max_width: Some(4),
+                wrap: TextWrap::None,
+                overflow: TextOverflow::Clip,
+                cursor: None,
+                show_cursor: false,
+                default_fg: DEFAULT_FG,
+                default_bg: DEFAULT_BG,
+            },
+            4,
+            1,
+        );
+
+        assert_eq!(cell_code(&buf, 4, 0, 0), '🙂' as u64);
+        assert_eq!(cell_code(&buf, 4, 1, 0), CONTINUATION_CELL as u64);
+    }
 }
 
 #[unsafe(no_mangle)]

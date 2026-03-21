@@ -1,5 +1,5 @@
 import { $, type Signal } from "./signals";
-import { normalizeStyledText } from "./text-spans";
+import { normalizeStyledText, prepareTextInput } from "./text-spans";
 import { NODE_TYPE } from "./types";
 import type {
   Frame,
@@ -17,6 +17,8 @@ import type {
   Direction,
   StyledText,
   NormalizedStyledText,
+  TextWrap,
+  TextOverflow,
   _StyleProps,
   _BoxProps,
   _TextProps,
@@ -38,6 +40,8 @@ export type {
   AlignItems,
   JustifyContent,
   FlexWrap,
+  TextWrap,
+  TextOverflow,
   BorderStyle,
   BorderProps,
   BorderSideProps,
@@ -108,7 +112,7 @@ function resolveTextValue(input: string | StyledText): {
 } {
   if (typeof input === "string") {
     return {
-      text: input,
+      text: prepareTextInput(input).text,
       styledText: undefined,
     };
   }
@@ -122,7 +126,7 @@ function resolveTextValue(input: string | StyledText): {
 
 function setTextSignals(props: _TextProps, input: string | StyledText): void {
   if (typeof input === "string") {
-    props.text(input);
+    props.text(prepareTextInput(input).text);
     props.styledText(undefined);
     return;
   }
@@ -139,16 +143,24 @@ function createTextSignals(input: TextProps): _TextProps {
     ...createStyleSignals(input),
     text: $(resolved.text),
     styledText: $(resolved.styledText),
+    wrap: $(input.wrap),
+    textOverflow: $(input.textOverflow),
   };
 }
 
 function createInputSignals(
-  input: { placeholder?: string } & StyleProps,
+  input: {
+    placeholder?: string;
+    multiline?: boolean;
+    wrap?: Exclude<TextWrap, "none">;
+  } & StyleProps,
 ): _InputProps {
   return {
     ...createStyleSignals(input),
     text: $(""),
     placeholder: $(input.placeholder),
+    multiline: $(input.multiline),
+    wrap: $(input.wrap),
   };
 }
 
@@ -157,7 +169,7 @@ function createButtonSignals(
 ): _ButtonProps {
   return {
     ...createStyleSignals(input),
-    text: $(input.text),
+    text: $(prepareTextInput(input.text).text),
   };
 }
 
@@ -188,9 +200,14 @@ function directionToBoxKind(direction: Direction | undefined): BoxKind {
 // =============================================================================
 
 let focusedNode: Node | null = null;
+const focusVersion = $(0);
 
 export function getFocusedNode(): Node | null {
   return focusedNode;
+}
+
+export function getFocusVersion(): number {
+  return focusVersion();
 }
 
 export function focusNode(node: Node): void {
@@ -199,11 +216,13 @@ export function focusNode(node: Node): void {
   if (focusedNode) {
     const prev = focusedNode;
     focusedNode = null;
+    focusVersion(focusVersion() + 1);
     const handler = (prev.handlers as any).onBlur;
     if (handler) handler(prev);
   }
 
   focusedNode = node;
+  focusVersion(focusVersion() + 1);
   const handler = (node.handlers as any).onFocus;
   if (handler) handler(node);
 }
@@ -211,6 +230,7 @@ export function focusNode(node: Node): void {
 function blurNode(node: Node): void {
   if (focusedNode !== node) return;
   focusedNode = null;
+  focusVersion(focusVersion() + 1);
   const handler = (node.handlers as any).onBlur;
   if (handler) handler(node);
 }
@@ -307,7 +327,7 @@ export function Input(input: InputProps): InputNode {
     children: undefined,
     setChildren: undefined,
     setStyle: makeSetStyle(props),
-    setText: (v) => props.text(v),
+    setText: (v) => props.text(prepareTextInput(v).text),
     focus: () => focusNode(node),
     blur: () => blurNode(node),
     isFocused: () => focusedNode === node,
@@ -334,7 +354,7 @@ export function Button(input: ButtonProps, children: Node[] = []): ButtonNode {
     children: childrenSignal,
     setChildren: (nodes) => childrenSignal(nodes),
     setStyle: makeSetStyle(props),
-    setText: (v) => props.text(v),
+    setText: (v) => props.text(prepareTextInput(v).text),
     focus: () => focusNode(node),
     blur: () => blurNode(node),
     isFocused: () => focusedNode === node,
@@ -343,7 +363,7 @@ export function Button(input: ButtonProps, children: Node[] = []): ButtonNode {
   return node;
 }
 
-export { normalizeStyledText } from "./text-spans";
+export { normalizeStyledText, prepareTextInput } from "./text-spans";
 
 // Re-export runtime
 export { run, onKey } from "./runtime";

@@ -3,7 +3,8 @@ import { mkdirSync, writeFileSync } from "fs";
 import { dirname } from "path";
 import api from "./ffi";
 import { $, ff, type Signal } from "./signals";
-import { getFocusedNode } from "./components";
+import { getFocusedNode, getFocusVersion } from "./components";
+import { dispatchInputChunk } from "./input-dispatch";
 import {
   NODE_TYPE,
   type Node,
@@ -286,6 +287,25 @@ function readSentStyleState(node: Node): SentStyleState {
     style.flexWrap = flexWrap;
   }
 
+  const wrap = props.wrap?.();
+  if (wrap !== undefined) {
+    style.wrap = wrap;
+  }
+
+  const textOverflow = props.textOverflow?.();
+  if (textOverflow !== undefined) {
+    style.textOverflow = textOverflow;
+  }
+
+  const multiline = props.multiline?.();
+  if (multiline === true) {
+    style.multiline = 1;
+  }
+
+  if (node.type === NODE_TYPE.Input && node.isFocused()) {
+    style.cursorVisible = 1;
+  }
+
   return style;
 }
 
@@ -553,33 +573,16 @@ function updateNodeFrames(root: Node): void {
 
 function dispatchToNode(node: Node, data: string): boolean {
   if (node.type === NODE_TYPE.Input) {
-    const handlers = node.handlers;
-    const currentText = (node.props as any).text();
-
-    // Backspace
-    if (data === "\x7f") {
-      node.setText!(currentText.slice(0, -1));
-      handlers.onChange?.(node.props.text());
-      return true;
-    }
-
-    // Enter (Handle \r, \n, or \r\n)
-    if (data.includes("\r") || data.includes("\n")) {
-      handlers.onSubmit?.(currentText);
-      return true;
-    }
-
-    // Printable characters
-    if (data.length === 1) {
-      const code = data.charCodeAt(0);
-      if (code >= 32 && code <= 126) {
-        node.setText!(currentText + data);
-        handlers.onChange?.((node.props as any).text());
-        return true;
-      }
-    }
-
-    return false;
+    return dispatchInputChunk(
+      {
+        getText: () => node.props.text(),
+        setText: (value) => node.setText(value),
+        multiline: node.props.multiline() === true,
+        onChange: node.handlers.onChange,
+        onSubmit: node.handlers.onSubmit,
+      },
+      data,
+    );
   }
 
   if (node.type === NODE_TYPE.Button) {
@@ -800,6 +803,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     // Subscribe to terminal size changes (triggers re-render on resize)
     terminalWidth();
     terminalHeight();
+    getFocusVersion();
 
     const frameStart = options?.debug ? startFrame() : 0;
 

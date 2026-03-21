@@ -19,6 +19,43 @@ type IndexedTextSpan = TextSpan & {
 type PreparedTextSpan = NormalizedTextSpan & {
   sourceIndex: number;
 };
+type PreparedTextInput = {
+  text: string;
+  boundaryMap: (number | null)[];
+};
+
+export function prepareTextInput(text: string): PreparedTextInput {
+  const chars = Array.from(text);
+  const normalizedChars: string[] = [];
+  const boundaryMap = new Array<number | null>(chars.length + 1).fill(null);
+
+  let oldIndex = 0;
+  let newIndex = 0;
+  boundaryMap[0] = 0;
+
+  while (oldIndex < chars.length) {
+    const ch = chars[oldIndex]!;
+
+    if (ch === "\r" && chars[oldIndex + 1] === "\n") {
+      normalizedChars.push("\n");
+      newIndex += 1;
+      boundaryMap[oldIndex + 1] = null;
+      oldIndex += 2;
+      boundaryMap[oldIndex] = newIndex;
+      continue;
+    }
+
+    normalizedChars.push(ch === "\r" ? "\n" : ch === "\t" ? " " : ch);
+    newIndex += 1;
+    oldIndex += 1;
+    boundaryMap[oldIndex] = newIndex;
+  }
+
+  return {
+    text: normalizedChars.join(""),
+    boundaryMap,
+  };
+}
 
 function compareSpans(a: IndexedTextSpan, b: IndexedTextSpan): number {
   if (a.start !== b.start) {
@@ -64,20 +101,60 @@ function getCodePointMetadata(text: string): {
   };
 }
 
+function mapSourceBoundary(
+  boundaryMap: readonly (number | null)[],
+  index: number,
+  sourceIndex: number,
+  label: "start" | "end",
+): number {
+  if (!Number.isInteger(index) || index < 0 || index >= boundaryMap.length) {
+    throw new Error(
+      `Invalid TextSpan at index ${sourceIndex}: ${label} must be an integer between 0 and ${boundaryMap.length - 1}`,
+    );
+  }
+
+  const mapped = boundaryMap[index];
+  if (mapped === null || mapped === undefined) {
+    throw new Error(
+      `Invalid TextSpan at index ${sourceIndex}: ${label} splits a normalized CRLF sequence`,
+    );
+  }
+
+  return mapped;
+}
+
 function toIndexedSpan(
   span: unknown,
   sourceIndex: number,
-  _textLength: number,
+  boundaryMap: readonly (number | null)[],
 ): IndexedTextSpan | null {
   const candidate = span as TextSpan;
+  const start = mapSourceBoundary(
+    boundaryMap,
+    candidate.start,
+    sourceIndex,
+    "start",
+  );
+  const end = mapSourceBoundary(
+    boundaryMap,
+    candidate.end,
+    sourceIndex,
+    "end",
+  );
 
-  if (candidate.start === candidate.end) {
+  if (start > end) {
+    throw new Error(
+      `Invalid TextSpan at index ${sourceIndex}: start must be <= end`,
+    );
+  }
+
+  if (start === end) {
     return null;
   }
 
   return {
-    start: candidate.start,
-    end: candidate.end,
+    start,
+    end,
     foreground: candidate.foreground,
     background: candidate.background,
     bold: candidate.bold,
@@ -89,11 +166,11 @@ function toIndexedSpan(
 
 function prepareSpans(
   spansInput: readonly TextSpan[],
-  textLength: number,
   byteOffsets: number[],
+  boundaryMap: readonly (number | null)[],
 ): PreparedTextSpan[] {
   const spans = spansInput
-    .map((span, sourceIndex) => toIndexedSpan(span, sourceIndex, textLength))
+    .map((span, sourceIndex) => toIndexedSpan(span, sourceIndex, boundaryMap))
     .filter((span): span is IndexedTextSpan => span !== null)
     .sort(compareSpans);
 
@@ -135,13 +212,18 @@ export function normalizeStyledText(input: StyledText): NormalizedStyledText {
     throw new Error("Invalid StyledText: spans must be an array");
   }
 
-  const { length, byteLength, byteOffsets } = getCodePointMetadata(input.text);
-  const spans = prepareSpans(input.spans, length, byteOffsets).map(
-    ({ sourceIndex: _sourceIndex, ...span }) => span,
+  const preparedText = prepareTextInput(input.text);
+  const { length, byteLength, byteOffsets } = getCodePointMetadata(
+    preparedText.text,
   );
+  const spans = prepareSpans(
+    input.spans,
+    byteOffsets,
+    preparedText.boundaryMap,
+  ).map(({ sourceIndex: _sourceIndex, ...span }) => span);
 
   return {
-    text: input.text,
+    text: preparedText.text,
     spans,
     length,
     byteLength,

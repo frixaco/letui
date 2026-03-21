@@ -1,6 +1,6 @@
 use crate::shared::{
-    CELL_STRIDE, CURRENT_BUFFER, FIRST_DIFF, LAST_BUFFER, TERMINAL_SIZE, TEXT_ATTR_ALL,
-    TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
+    CELL_STRIDE, CONTINUATION_CELL, CURRENT_BUFFER, FIRST_DIFF, LAST_BUFFER, TERMINAL_SIZE,
+    TEXT_ATTR_ALL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
 };
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
@@ -128,6 +128,12 @@ fn queue_text_attribute_delta(stdout: &mut Stdout, previous: u8, current: u8) {
     }
 }
 
+fn push_render_char(char_seq: &mut String, ch: char) {
+    if ch != CONTINUATION_CELL {
+        char_seq.push(ch);
+    }
+}
+
 fn first_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64]) {
     if w == 0 || h == 0 {
         return;
@@ -160,7 +166,7 @@ fn first_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64]) {
             let curr_attrs = buf[idx + 3] as u8;
 
             if curr_fg == prev_fg && curr_bg == prev_bg && curr_attrs == prev_attrs {
-                char_seq.push(curr_char);
+                push_render_char(&mut char_seq, curr_char);
                 continue;
             }
 
@@ -205,7 +211,7 @@ fn first_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64]) {
             prev_attrs = curr_attrs;
 
             char_seq.clear();
-            char_seq.push(curr_char);
+            push_render_char(&mut char_seq, curr_char);
         }
         queue!(stdout, Print(&char_seq)).unwrap();
     }
@@ -253,7 +259,7 @@ fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]
                 if char_seq.is_empty() {
                     batch_start_x = x;
                 }
-                char_seq.push(curr_char);
+                push_render_char(&mut char_seq, curr_char);
                 batch_cells = batch_cells.saturating_add(1);
                 continue;
             }
@@ -290,7 +296,7 @@ fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]
             prev_attrs = curr_attrs;
 
             char_seq.clear();
-            char_seq.push(curr_char);
+            push_render_char(&mut char_seq, curr_char);
             batch_start_x = x;
             batch_cells = 1;
         }

@@ -365,14 +365,8 @@ const promptSlots = Array.from({ length: 7 }, () =>
   Text({
     text: "",
     foreground: THEME.text,
-    paddingX: 1,
-  }),
-);
-
-const transcriptLines = Array.from({ length: 15 }, () =>
-  Text({
-    text: "",
-    foreground: THEME.text,
+    padding: "1 0",
+    wrap: "word",
   }),
 );
 
@@ -388,6 +382,7 @@ const headerTitle = Text({
 const headerMeta = Text({
   text: "",
   foreground: THEME.muted,
+  wrap: "word",
 });
 
 const threadBadge = Text({
@@ -409,13 +404,15 @@ const sidebarHint = Text({
     { text: "j/k", foreground: THEME.lime, bold: true },
     { text: " or ", foreground: THEME.muted },
     { text: "arrows", foreground: THEME.blue, bold: true },
-    { text: " navigate   ", foreground: THEME.muted },
+    { text: " navigate wrapped labels", foreground: THEME.muted },
+    { text: "\n", foreground: THEME.muted },
     { text: "Tab", foreground: THEME.accent, bold: true },
-    { text: " focuses composer", foreground: THEME.muted },
+    { text: " focuses multiline composer", foreground: THEME.muted },
   ]),
+  wrap: "word",
 });
 
-const promptViewport = Column({ gap: 1, flexGrow: 1 }, promptSlots);
+const promptViewport = Column({ gap: 1, flexGrow: 1, minHeight: 0 }, promptSlots);
 
 const sidebar = Column(
   {
@@ -425,6 +422,7 @@ const sidebar = Column(
     flexGrow: 1,
     flexBasis: 30,
     minWidth: 28,
+    minHeight: 0,
   },
   [
     Text({ text: "PROMPT HISTORY", foreground: THEME.blue }),
@@ -439,43 +437,60 @@ const transcriptHeader = Text({
 });
 
 const transcriptSubhead = Text({
-  text: "dense transcript view with stable node identity and wrapped panes",
+  text:
+    "dense transcript view with stable node identity, wrapped panes, and longer explanatory copy that keeps flowing under narrow widths",
   foreground: THEME.muted,
+  wrap: "word",
 });
 
-const transcriptViewport = Column({ gap: 0, flexGrow: 1 }, transcriptLines);
+const transcriptBody = Text({
+  text: "",
+  foreground: THEME.text,
+  wrap: "word",
+});
+
+const transcriptViewport = Column({ gap: 0, flexGrow: 1, minHeight: 0 }, [transcriptBody]);
 
 const transcriptPanel = Column(
   {
     gap: 1,
     padding: "1 1",
     flexGrow: 1,
+    minHeight: 0,
   },
   [transcriptHeader, transcriptSubhead, transcriptViewport],
 );
 
 const composerHint = Text({
-  text: "Enter does nothing here; demo is about layout, focus, and dense context",
+  text:
+    "multiline composer demo: Enter inserts a newline, while Tab keeps the focus jump visible against the wrapped sidebar and transcript content",
   foreground: THEME.muted,
+  wrap: "word",
 });
 
 const composer = Input({
   placeholder: "Type follow-up...",
   border: idleBorder,
-  padding: "1 0",
+  padding: "0 0",
   foreground: THEME.text,
+  multiline: true,
+  wrap: "word",
+  height: 5,
+  maxHeight: 5,
   onSubmit: () => {},
   onFocus: (self) => self.setStyle({ border: focusBorder }),
   onBlur: (self) => self.setStyle({ border: idleBorder }),
 });
 
 if (composer.type === NODE_TYPE.Input) {
-  composer.setText("Summarize rollout risk and rollback criteria.");
+  composer.setText(
+    "Summarize rollout risk and rollback criteria.\nCall out the trigger metric, owner, and the exact rollback command path.",
+  );
 }
 
 const composerRow = Row(
   {
-    minHeight: 3,
+    minHeight: 5,
     alignItems: "stretch",
   },
   [composer],
@@ -495,6 +510,7 @@ const rightPane = Column(
     flexGrow: 2,
     flexBasis: 54,
     minWidth: 42,
+    minHeight: 0,
     gap: 1,
     justifyContent: "spaceBetween",
   },
@@ -504,6 +520,7 @@ const rightPane = Column(
 const body = Row(
   {
     flexGrow: 1,
+    minHeight: 0,
     gap: 0,
     alignItems: "stretch",
   },
@@ -555,145 +572,45 @@ function wrapIndex(next: number): number {
   return next;
 }
 
-function truncate(text: string, width: number): string {
-  if (width <= 0) return "";
-  if (text.length <= width) return text;
-  if (width === 1) return "…";
-  return `${text.slice(0, width - 1)}…`;
-}
-
-function sectionHeadingLine(section: PromptSection): StyledText {
-  return styledLine([
-    { text: section.heading.toUpperCase(), foreground: sectionToneColor(section.tone), bold: true },
-  ]);
-}
-
-function cloneSegments(segments: readonly StyledSegment[]): StyledSegment[] {
-  return segments.map((segment) => ({ ...segment }));
-}
-
-function segmentsWidth(segments: readonly StyledSegment[]): number {
-  let width = 0;
-
-  for (const segment of segments) {
-    width += textLength(segment.text);
-  }
-
-  return width;
-}
-
-function trimTrailingWhitespace(segments: StyledSegment[]): StyledSegment[] {
-  const trimmed = cloneSegments(segments);
-
-  while (trimmed.length > 0) {
-    const last = trimmed[trimmed.length - 1];
-    if (!last) break;
-    if (!/\s+$/.test(last.text)) break;
-
-    const nextText = last.text.replace(/\s+$/g, "");
-    if (nextText.length === 0) {
-      trimmed.pop();
-      continue;
-    }
-
-    last.text = nextText;
-    break;
-  }
-
-  return trimmed;
-}
-
-function paragraphTokens(paragraph: PromptParagraph): StyledSegment[] {
-  const tokens: StyledSegment[] = [];
+function paragraphSegments(
+  paragraph: PromptParagraph,
+  prefix = "  ",
+): StyledSegment[] {
+  const segments: StyledSegment[] = [
+    { text: prefix, foreground: THEME.muted },
+  ];
 
   for (const segment of paragraph) {
-    const parts = segment.text.split(/(\s+)/).filter(Boolean);
-    for (const part of parts) {
-      tokens.push({
-        text: part,
-        foreground: inlineToneColor(segment.tone),
-        bold: segment.bold,
-        italic: segment.italic,
-        underline: segment.underline,
+    segments.push({
+      text: segment.text,
+      foreground: inlineToneColor(segment.tone),
+      bold: segment.bold,
+      italic: segment.italic,
+      underline: segment.underline,
+    });
+  }
+
+  return segments;
+}
+
+function joinStyledBlocks(blocks: readonly StyledText[]): StyledText {
+  let text = "";
+  let cursor = 0;
+  const spans: TextSpan[] = [];
+
+  for (const block of blocks) {
+    text += block.text;
+    for (const span of block.spans) {
+      spans.push({
+        ...span,
+        start: span.start + cursor,
+        end: span.end + cursor,
       });
     }
+    cursor = textLength(text);
   }
 
-  return tokens;
-}
-
-function wrapParagraphLines(
-  paragraph: PromptParagraph,
-  width: number,
-  firstPrefix: readonly StyledSegment[] = [],
-  continuationPrefix: readonly StyledSegment[] = [],
-): StyledText[] {
-  const tokens = paragraphTokens(paragraph);
-  const lines: StyledText[] = [];
-  let current = cloneSegments(firstPrefix);
-  let prefixWidth = segmentsWidth(current);
-  let currentWidth = prefixWidth;
-
-  const resetLine = (prefix: readonly StyledSegment[]) => {
-    current = cloneSegments(prefix);
-    prefixWidth = segmentsWidth(current);
-    currentWidth = prefixWidth;
-  };
-
-  for (const token of tokens) {
-    const isWhitespace = /^\s+$/.test(token.text);
-    const tokenWidth = textLength(token.text);
-
-    if (isWhitespace && currentWidth === prefixWidth) {
-      continue;
-    }
-
-    if (currentWidth + tokenWidth <= width) {
-      current.push({ ...token });
-      currentWidth += tokenWidth;
-      continue;
-    }
-
-    if (isWhitespace) {
-      lines.push(styledLine(trimTrailingWhitespace(current)));
-      resetLine(continuationPrefix);
-      continue;
-    }
-
-    if (currentWidth > prefixWidth) {
-      lines.push(styledLine(trimTrailingWhitespace(current)));
-      resetLine(continuationPrefix);
-    }
-
-    const available = Math.max(1, width - currentWidth);
-    const tokenText = truncate(token.text, available);
-    current.push({ ...token, text: tokenText });
-    currentWidth += textLength(tokenText);
-  }
-
-  if (current.length > 0) {
-    lines.push(styledLine(trimTrailingWhitespace(current)));
-  }
-
-  return lines;
-}
-
-function wrappedPromptLines(prompt: string, width: number): StyledText[] {
-  const prefix = "USER> ";
-  return wrapParagraphLines(
-    [{ text: prompt, tone: "amber" }],
-    width,
-    [{ text: prefix, foreground: THEME.blue, bold: true }],
-    [{ text: " ".repeat(textLength(prefix)), foreground: THEME.muted }],
-  );
-}
-
-function promptTextWidth(): number {
-  return Math.max(18, Math.floor(promptViewport.frameWidth()) - 4);
-}
-
-function transcriptTextWidth(): number {
-  return Math.max(28, Math.floor(transcriptViewport.frameWidth()) - 2);
+  return { text, spans };
 }
 
 function syncPromptWindow(): void {
@@ -707,7 +624,6 @@ function syncPromptWindow(): void {
 
 function renderPromptSlots(): void {
   syncPromptWindow();
-  const width = promptTextWidth();
 
   for (let slotIndex = 0; slotIndex < promptSlots.length; slotIndex++) {
     const threadIndex = promptWindowStart + slotIndex;
@@ -724,27 +640,26 @@ function renderPromptSlots(): void {
     }
 
     const active = threadIndex === selectedIndex;
-    const marker = active ? "● " : "○ ";
-    const title = truncate(thread.title, Math.max(1, width - textLength(marker)));
-
-    if (active) {
-      slot.setText(
-        styledLine([
-          {
-            text: `${marker}${title}`,
-            foreground: THEME.badgeFg,
-            bold: true,
-          },
-        ]),
-      );
-    } else {
-      slot.setText(
-        styledLine([
-          { text: marker, foreground: THEME.muted },
-          { text: title, foreground: THEME.text },
-        ]),
-      );
-    }
+    slot.setText(
+      styledLine([
+        {
+          text: active ? "● " : "○ ",
+          foreground: active ? THEME.badgeFg : THEME.muted,
+          bold: active,
+        },
+        {
+          text: thread.title,
+          foreground: active ? THEME.badgeFg : THEME.text,
+          bold: true,
+        },
+        { text: "\n", foreground: active ? THEME.badgeFg : THEME.muted },
+        {
+          text: thread.userPrompt,
+          foreground: active ? THEME.badgeFg : THEME.muted,
+          italic: !active,
+        },
+      ]),
+    );
 
     slot.setStyle({
       foreground: THEME.text,
@@ -754,56 +669,57 @@ function renderPromptSlots(): void {
   }
 }
 
-function buildTranscriptLines(thread: PromptThread): Array<string | StyledText> {
-  const width = transcriptTextWidth();
-  const lines: Array<string | StyledText> = [];
-
-  lines.push(...wrappedPromptLines(thread.userPrompt, width));
-  lines.push("");
+function buildTranscriptText(thread: PromptThread): StyledText {
+  const blocks: StyledText[] = [
+    styledLine([
+      { text: "USER> ", foreground: THEME.blue, bold: true },
+      { text: thread.userPrompt, foreground: THEME.amber },
+      { text: "\n\n" },
+    ]),
+  ];
 
   for (const section of thread.sections) {
-    lines.push(sectionHeadingLine(section));
+    blocks.push(
+      styledLine([
+        { text: section.heading.toUpperCase(), foreground: sectionToneColor(section.tone), bold: true },
+        { text: "\n" },
+      ]),
+    );
 
     for (const paragraph of section.paragraphs) {
-      lines.push(
-        ...wrapParagraphLines(
-          paragraph,
-          width,
-          [{ text: "  ", foreground: THEME.muted }],
-          [{ text: "  ", foreground: THEME.muted }],
-        ),
+      blocks.push(
+        styledLine([
+          ...paragraphSegments(paragraph),
+          { text: "\n" },
+        ]),
       );
     }
 
-    lines.push("");
+    blocks.push(styledLine([{ text: "\n" }]));
   }
 
-  lines.push(sectionHeadingLine({ heading: "Renderer Notes", tone: "blue", paragraphs: [] }));
-  lines.push(
-    ...wrapParagraphLines(
-      [
-        { text: "The demo still runs through ", tone: "text" },
-        { text: "bun + rust ffi", tone: "blue", bold: true, underline: true },
-        { text: " so text styling exercises the same render path as the rest of the library.", tone: "text" },
-      ],
-      width,
-      [{ text: "  ", foreground: THEME.muted }],
-      [{ text: "  ", foreground: THEME.muted }],
-    ),
+  blocks.push(
+    styledLine([
+      { text: "RENDERER NOTES", foreground: THEME.blue, bold: true },
+      { text: "\n" },
+    ]),
   );
-  lines.push(
-    ...wrapParagraphLines(
-      [
-        { text: "Layout stays ", tone: "text" },
-        { text: "wrapped", tone: "lime", bold: true },
-        { text: " and keyboard-first, while the composer can take focus without losing sidebar context.", tone: "text" },
-      ],
-      width,
-      [{ text: "  ", foreground: THEME.muted }],
-      [{ text: "  ", foreground: THEME.muted }],
-    ),
+  blocks.push(
+    styledLine([
+      { text: "  The demo still runs through ", foreground: THEME.text },
+      { text: "bun + rust ffi", foreground: THEME.blue, bold: true, underline: true },
+      { text: " so text styling exercises the same render path as the rest of the library.\n", foreground: THEME.text },
+    ]),
   );
-  return lines;
+  blocks.push(
+    styledLine([
+      { text: "  Layout stays ", foreground: THEME.text },
+      { text: "wrapped", foreground: THEME.lime, bold: true },
+      { text: " and keyboard-first, while the composer can take focus without losing sidebar context.", foreground: THEME.text },
+    ]),
+  );
+
+  return joinStyledBlocks(blocks);
 }
 
 function renderTranscript(): void {
@@ -829,11 +745,18 @@ function renderTranscript(): void {
         text: `${Math.floor(promptViewport.frameWidth())}w`,
         foreground: THEME.lime,
       },
-      { text: "   transcript viewport ", foreground: THEME.muted },
+      { text: "\ntranscript viewport ", foreground: THEME.muted },
       {
         text: `${Math.floor(transcriptViewport.frameWidth())}w`,
         foreground: THEME.lime,
       },
+      { text: "   composer lines ", foreground: THEME.muted },
+      {
+        text: `${composer.props.text().split("\n").length}`,
+        foreground: THEME.accent,
+        bold: true,
+      },
+      { text: " lines", foreground: THEME.muted },
     ]),
   );
   threadBadge.setText(
@@ -848,10 +771,7 @@ function renderTranscript(): void {
     ]),
   );
 
-  const lines = buildTranscriptLines(thread);
-  for (let i = 0; i < transcriptLines.length; i++) {
-    transcriptLines[i]?.setText(lines[i] !== undefined ? lines[i]! : "");
-  }
+  transcriptBody.setText(buildTranscriptText(thread));
 }
 
 function refreshView(): void {
@@ -867,6 +787,7 @@ function moveSelection(delta: number): void {
 ff(() => {
   promptViewport.frameWidth();
   transcriptViewport.frameWidth();
+  composer.props.text();
   refreshView();
 });
 

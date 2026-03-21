@@ -43,6 +43,8 @@ export type JustifyContent =
   | "spaceEvenly"
   | "spaceAround";
 export type FlexWrap = "noWrap" | "wrap" | "wrapReverse";
+export type TextWrap = "none" | "word" | "char";
+export type TextOverflow = "clip" | "ellipsis";
 
 export type TextSpan = {
   start: number;
@@ -112,11 +114,15 @@ export type _BoxProps = _StyleProps & {
 export type _TextProps = _StyleProps & {
   text: Signal<string>;
   styledText: Signal<NormalizedStyledText | undefined>;
+  wrap: Signal<TextWrap | undefined>;
+  textOverflow: Signal<TextOverflow | undefined>;
 };
 
 export type _InputProps = _StyleProps & {
   text: Signal<string>;
   placeholder: Signal<string | undefined>;
+  multiline: Signal<boolean | undefined>;
+  wrap: Signal<Exclude<TextWrap, "none"> | undefined>;
 };
 
 export type _ButtonProps = _StyleProps & {
@@ -163,10 +169,14 @@ export type BoxProps = StyleProps & {
 
 export type TextProps = StyleProps & {
   text: string | StyledText;
+  wrap?: TextWrap;
+  textOverflow?: TextOverflow;
 };
 
 export type InputProps = StyleProps & {
   placeholder?: string;
+  multiline?: boolean;
+  wrap?: Exclude<TextWrap, "none">;
   onChange?: (value: string) => void;
   onSubmit?: (value: string) => void;
   onFocus?: (self: Node) => void;
@@ -263,7 +273,7 @@ export type TextNode = NodeBase<typeof NODE_TYPE.Text> &
   LeafNode & {
     props: _TextProps;
     handlers: TextHandlers;
-    setStyle: (p: Partial<StyleProps>) => void;
+    setStyle: (p: Partial<StyleProps & { wrap?: TextWrap; textOverflow?: TextOverflow }>) => void;
     setText: (v: string | StyledText) => void;
   };
 
@@ -271,7 +281,7 @@ export type InputNode = NodeBase<typeof NODE_TYPE.Input> &
   LeafNode & {
     props: _InputProps;
     handlers: InputHandlers;
-    setStyle: (p: Partial<StyleProps & { placeholder?: string }>) => void;
+    setStyle: (p: Partial<StyleProps & { placeholder?: string; multiline?: boolean; wrap?: Exclude<TextWrap, "none"> }>) => void;
     setText: (v: string) => void;
   };
 

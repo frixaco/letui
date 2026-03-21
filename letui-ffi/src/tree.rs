@@ -48,22 +48,6 @@ pub(crate) struct TextSpanData {
     pub(crate) underline: bool,
 }
 
-impl TextSpanData {
-    pub(crate) fn attr_flags(&self) -> u8 {
-        let mut flags = 0;
-        if self.bold {
-            flags |= TEXT_ATTR_BOLD;
-        }
-        if self.italic {
-            flags |= TEXT_ATTR_ITALIC;
-        }
-        if self.underline {
-            flags |= TEXT_ATTR_UNDERLINE;
-        }
-        flags
-    }
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct NodeData {
     pub(crate) kind: NodeType,
@@ -166,6 +150,23 @@ pub(crate) struct NodeStyle {
     pub(crate) flex_shrink: f32,
     pub(crate) flex_basis: StyleDimension,
     pub(crate) flex_wrap: FlexWrap,
+    pub(crate) text_wrap: TextWrap,
+    pub(crate) text_overflow: TextOverflow,
+    pub(crate) multiline: bool,
+    pub(crate) cursor_visible: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum TextWrap {
+    None,
+    Word,
+    Char,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum TextOverflow {
+    Clip,
+    Ellipsis,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -199,6 +200,14 @@ impl NodeStyle {
             flex_shrink: 1.0,
             flex_basis: StyleDimension::Auto,
             flex_wrap: FlexWrap::NoWrap,
+            text_wrap: match kind {
+                NodeType::Text => TextWrap::Word,
+                NodeType::Input | NodeType::Button => TextWrap::None,
+                NodeType::Row | NodeType::Column => TextWrap::None,
+            },
+            text_overflow: TextOverflow::Clip,
+            multiline: false,
+            cursor_visible: false,
         }
     }
 }
@@ -319,6 +328,23 @@ fn parse_border_style(value: &str) -> Option<BorderStyle> {
         "none" => Some(BorderStyle::None),
         "rounded" => Some(BorderStyle::Rounded),
         "square" => Some(BorderStyle::Squared),
+        _ => None,
+    }
+}
+
+fn parse_text_wrap(value: &str) -> Option<TextWrap> {
+    match value {
+        "none" => Some(TextWrap::None),
+        "word" => Some(TextWrap::Word),
+        "char" => Some(TextWrap::Char),
+        _ => None,
+    }
+}
+
+fn parse_text_overflow(value: &str) -> Option<TextOverflow> {
+    match value {
+        "clip" => Some(TextOverflow::Clip),
+        "ellipsis" => Some(TextOverflow::Ellipsis),
         _ => None,
     }
 }
@@ -460,6 +486,16 @@ fn apply_style_reset(node: &mut NodeData, prop_name: &str) -> bool {
         "flexShrink" => node.style.flex_shrink = 1.0,
         "flexBasis" => node.style.flex_basis = StyleDimension::Auto,
         "flexWrap" => node.style.flex_wrap = FlexWrap::NoWrap,
+        "wrap" => {
+            node.style.text_wrap = match node.kind {
+                NodeType::Text => TextWrap::Word,
+                NodeType::Input | NodeType::Button => TextWrap::None,
+                NodeType::Row | NodeType::Column => return false,
+            }
+        }
+        "textOverflow" => node.style.text_overflow = TextOverflow::Clip,
+        "multiline" => node.style.multiline = false,
+        "cursorVisible" => node.style.cursor_visible = false,
         _ => return false,
     }
 
@@ -578,6 +614,8 @@ fn apply_style_number(node: &mut NodeData, prop_name: &str, value: f64) -> bool 
             Some(value) => node.style.flex_basis = StyleDimension::Points(value),
             None => return false,
         },
+        "multiline" => node.style.multiline = value != 0.0,
+        "cursorVisible" => node.style.cursor_visible = value != 0.0,
         _ => return false,
     }
 
@@ -628,6 +666,14 @@ fn apply_style_string(node: &mut NodeData, prop_name: &str, value: &str) -> bool
         },
         "flexWrap" => match parse_flex_wrap(value) {
             Some(value) => node.style.flex_wrap = value,
+            None => return false,
+        },
+        "wrap" => match parse_text_wrap(value) {
+            Some(value) => node.style.text_wrap = value,
+            None => return false,
+        },
+        "textOverflow" => match parse_text_overflow(value) {
+            Some(value) => node.style.text_overflow = value,
             None => return false,
         },
         _ => return false,

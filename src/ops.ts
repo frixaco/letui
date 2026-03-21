@@ -76,7 +76,11 @@ export type StylePropName =
   | "alignSelf"
   | "flexShrink"
   | "flexBasis"
-  | "flexWrap";
+  | "flexWrap"
+  | "wrap"
+  | "textOverflow"
+  | "multiline"
+  | "cursorVisible";
 
 export type StylePropValue = number | string | undefined;
 
@@ -113,6 +117,10 @@ export const EMITTED_STYLE_PROPS = [
   "flexShrink",
   "flexBasis",
   "flexWrap",
+  "wrap",
+  "textOverflow",
+  "multiline",
+  "cursorVisible",
 ] as const satisfies readonly StylePropName[];
 
 function encodeShortString(value: string) {

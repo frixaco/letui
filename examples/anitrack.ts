@@ -248,8 +248,86 @@ let visibleStartIndex = 0;
 let lastResultsSnapshot: ScrapeResultItem[] | null = null;
 const resultHeights = new Map<number, number>();
 
-function resultLabel(item: ScrapeResultItem, isActive: boolean): string {
-  return `${isActive ? "▶ " : "  "}${item.title}`;
+type ResultRow = {
+  button: ReturnType<typeof Button>;
+  title: ReturnType<typeof Text>;
+  meta: ReturnType<typeof Text>;
+  setItem: (item: ScrapeResultItem, globalIdx: number, isActive: boolean) => void;
+};
+
+const resultRows: ResultRow[] = [];
+
+function createResultRow(): ResultRow {
+  let globalIdx = 0;
+  let magnet = "";
+
+  const title = Text({
+    text: "",
+    wrap: "word",
+    foreground: COLORS.default.fg,
+  });
+  const meta = Text({
+    text: "",
+    wrap: "word",
+    foreground: COLORS.default.grey,
+  });
+
+  const button = Button(
+    {
+      text: "",
+      border: undefined,
+      padding: "1 0",
+      foreground: COLORS.default.fg,
+      onFocus: () => {
+        if (focusTarget() !== "results") {
+          focusTarget("results");
+        }
+        if (selectedIndex() !== globalIdx) {
+          selectedIndex(globalIdx);
+        }
+      },
+      onClick: () => {
+        if (focusTarget() !== "results") {
+          focusTarget("results");
+        }
+        if (selectedIndex() !== globalIdx) {
+          selectedIndex(globalIdx);
+        }
+        if (magnet.length > 0) {
+          streamResult(magnet);
+        }
+      },
+    },
+    [Column({ gap: 0 }, [title, meta])],
+  );
+
+  return {
+    button,
+    title,
+    meta,
+    setItem: (item, nextGlobalIdx, isActive) => {
+      globalIdx = nextGlobalIdx;
+      magnet = item.magnet;
+
+      button.setStyle({
+        foreground: isActive ? COLORS.default.green : COLORS.default.fg,
+      });
+      title.setText(`${isActive ? "▶ " : "  "}${item.title}`);
+      title.setStyle({
+        foreground: isActive ? COLORS.default.green : COLORS.default.fg,
+      });
+      meta.setText(`${item.size}   ${item.date}`);
+      meta.setStyle({
+        foreground: isActive ? COLORS.default.cyan : COLORS.default.grey,
+      });
+    },
+  };
+}
+
+function ensureResultRows(count: number): void {
+  while (resultRows.length < count) {
+    resultRows.push(createResultRow());
+  }
 }
 
 // --- Reactive effects ---
@@ -367,26 +445,13 @@ ff(() => {
 
   const visible = all.slice(start, end);
   visibleStartIndex = start;
-
+  ensureResultRows(visible.length);
   resultButtons = visible.map((item, i) => {
     const globalIdx = start + i;
     const isActive = globalIdx === selected;
-    return Button({
-      text: resultLabel(item, isActive),
-      border: undefined,
-      foreground: isActive ? COLORS.default.green : COLORS.default.fg,
-      onFocus: () => {
-        focusTarget("results");
-        if (selectedIndex() !== globalIdx) {
-          selectedIndex(globalIdx);
-        }
-      },
-      onClick: () => {
-        focusTarget("results");
-        selectedIndex(globalIdx);
-        streamResult(item.magnet);
-      },
-    });
+    const row = resultRows[i]!;
+    row.setItem(item, globalIdx, isActive);
+    return row.button;
   });
 
   resultsList.setChildren?.(resultButtons);

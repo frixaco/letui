@@ -14,22 +14,27 @@ Button(input: ButtonProps, children?: Node[]): Node
 ## Required vs optional props
 
 - `TextProps`
-- required: `text` (`string | StyledText`)
-- optional: all `StyleProps`
+  - required: `text` (`string | StyledText`)
+  - optional: `wrap` (`"none" | "word" | "char"`)
+  - optional: `textOverflow` (`"clip" | "ellipsis"`)
+  - optional: all `StyleProps`
 
 - `InputProps`
-- optional: `placeholder`, `onChange`, `onSubmit`, `onFocus`, `onBlur`
-- optional: all `StyleProps`
+  - optional: `placeholder` (`string`)
+  - optional: `multiline` (`boolean`)
+  - optional: `wrap` (`"word" | "char"`) — note: `"none"` not allowed for inputs
+  - optional: `onChange`, `onSubmit`, `onFocus`, `onBlur`
+  - optional: all `StyleProps`
 
 - `ButtonProps`
-- required: `text`, `onClick`
-- optional: `onKeyDown`, `onFocus`, `onBlur`
-- optional: all `StyleProps`
+  - required: `text`, `onClick`
+  - optional: `onKeyDown`, `onFocus`, `onBlur`
+  - optional: all `StyleProps`
 
 - `BoxProps`
-- optional: `gap`
-- optional: `direction` (`"row" | "column" | "rowReverse" | "columnReverse"`)
-- optional: all `StyleProps`
+  - optional: `gap` (`number`)
+  - optional: `direction` (`"row" | "column" | "rowReverse" | "columnReverse"`)
+  - optional: all `StyleProps`
 
 ## Shared style fields (`StyleProps`)
 
@@ -81,6 +86,32 @@ Rule: pass numeric hex colors (`0xRRGGBB`), not CSS strings.
 - `setText(nextText)` on `Text`, `Input`, `Button`
 - `setChildren(nextChildren)` on `Box`, `Button`
 - `focus()`, `blur()`, `isFocused()` on all nodes
+
+## Text styling with `StyledText`
+
+For rich text with multiple colors and styles within a single `Text` node, use `StyledText`:
+
+```ts
+import type { StyledText, TextSpan } from "@frixaco/letui";
+
+const styled: StyledText = {
+  text: "bold red text and normal text",
+  spans: [
+    { start: 0, end: 14, foreground: 0xff0000, bold: true },
+    { start: 19, end: 30, foreground: 0xcccccc },
+  ],
+};
+
+const node = Text({ text: styled });
+```
+
+Each `TextSpan` supports:
+- `start`, `end`: character positions in the text
+- `foreground?: number` — text color (hex)
+- `background?: number` — background color (hex)
+- `bold?: boolean`
+- `italic?: boolean`
+- `underline?: boolean`
 
 ## Practical pattern
 

@@ -6,4 +6,5 @@
 mod render;
 mod shared;
 mod terminal;
+mod text_layout;
 mod tree;
