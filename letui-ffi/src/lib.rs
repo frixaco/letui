@@ -7,21 +7,21 @@ use crossterm::{
     cursor::{Hide, MoveTo, Show},
     event::{DisableMouseCapture, EnableMouseCapture},
     execute, queue,
-    style::{Color, Print, SetBackgroundColor, SetForegroundColor},
+    style::{Attribute, Color, Print, SetAttribute, SetBackgroundColor, SetForegroundColor},
     terminal::{
-        disable_raw_mode, enable_raw_mode, size, BeginSynchronizedUpdate, Clear, ClearType,
-        EndSynchronizedUpdate, EnterAlternateScreen, LeaveAlternateScreen,
+        BeginSynchronizedUpdate, Clear, ClearType, EndSynchronizedUpdate, EnterAlternateScreen,
+        LeaveAlternateScreen, disable_raw_mode, enable_raw_mode, size,
     },
 };
 use std::{
     cell::RefCell,
     collections::HashMap,
-    io::{stdout, Stdout, Write},
+    io::{Stdout, Write, stdout},
     os::raw::c_int,
     slice,
     sync::{LazyLock, Mutex},
 };
-use taffy::{prelude::*, Overflow, Point};
+use taffy::{Overflow, Point, prelude::*};
 
 static LAST_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
 static CURRENT_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
@@ -33,10 +33,19 @@ thread_local! {
     static TREE: RefCell<TaffyTree<NodeContext>> = RefCell::new(TaffyTree::new());
 }
 
-
-
 const DEFAULT_BG: u32 = 0x16181a;
 const DEFAULT_FG: u32 = 0xffffff;
+// Each terminal cell stores: <char><fg><bg><attrs>.
+const CELL_STRIDE: usize = 4;
+// Text attrs are packed into one byte so flush can cheaply diff/toggle ANSI state.
+const TEXT_ATTR_BOLD: u8 = 1 << 0;
+const TEXT_ATTR_ITALIC: u8 = 1 << 1;
+const TEXT_ATTR_UNDERLINE: u8 = 1 << 2;
+const TEXT_ATTR_ALL: u8 = TEXT_ATTR_BOLD | TEXT_ATTR_ITALIC | TEXT_ATTR_UNDERLINE;
+// Separate bitfield for optional span colors; values may be zero, so presence must
+// be tracked independently from the color payload itself.
+const TEXT_SPAN_COLOR_FOREGROUND: u8 = 1 << 0;
+const TEXT_SPAN_COLOR_BACKGROUND: u8 = 1 << 1;
 
 const STYLE_VALUE_RESET: u8 = 0;
 const STYLE_VALUE_NUMBER: u8 = 1;
@@ -45,7 +54,7 @@ const STYLE_VALUE_STRING: u8 = 2;
 #[unsafe(no_mangle)]
 pub extern "C" fn init_buffer() -> c_int {
     let (w, h) = size().unwrap();
-    let buffer_size = (w as usize) * (h as usize) * 3;
+    let buffer_size = (w as usize) * (h as usize) * CELL_STRIDE;
 
     let mut term_size = TERMINAL_SIZE.lock().unwrap();
     *term_size = (w, h);
@@ -89,6 +98,7 @@ pub extern "C" fn deinit_letui() -> c_int {
         EndSynchronizedUpdate,
         Show,
         DisableMouseCapture,
+        SetAttribute(Attribute::Reset),
         SetBackgroundColor(Color::Reset),
         SetForegroundColor(Color::Reset),
         LeaveAlternateScreen
@@ -121,6 +131,37 @@ fn hex_to_color(hex: u64) -> Color {
     }
 }
 
+fn queue_text_attribute_delta(stdout: &mut Stdout, previous: u8, current: u8) {
+    // Terminal attrs are sticky state. Diff the previous/current bitfields and emit
+    // only the ANSI toggles needed to reach the next style.
+    let previous = previous & TEXT_ATTR_ALL;
+    let current = current & TEXT_ATTR_ALL;
+
+    if previous == current {
+        return;
+    }
+
+    if (previous & TEXT_ATTR_BOLD) != 0 && (current & TEXT_ATTR_BOLD) == 0 {
+        queue!(stdout, SetAttribute(Attribute::NormalIntensity)).unwrap();
+    }
+    if (previous & TEXT_ATTR_ITALIC) != 0 && (current & TEXT_ATTR_ITALIC) == 0 {
+        queue!(stdout, SetAttribute(Attribute::NoItalic)).unwrap();
+    }
+    if (previous & TEXT_ATTR_UNDERLINE) != 0 && (current & TEXT_ATTR_UNDERLINE) == 0 {
+        queue!(stdout, SetAttribute(Attribute::NoUnderline)).unwrap();
+    }
+
+    if (previous & TEXT_ATTR_BOLD) == 0 && (current & TEXT_ATTR_BOLD) != 0 {
+        queue!(stdout, SetAttribute(Attribute::Bold)).unwrap();
+    }
+    if (previous & TEXT_ATTR_ITALIC) == 0 && (current & TEXT_ATTR_ITALIC) != 0 {
+        queue!(stdout, SetAttribute(Attribute::Italic)).unwrap();
+    }
+    if (previous & TEXT_ATTR_UNDERLINE) == 0 && (current & TEXT_ATTR_UNDERLINE) != 0 {
+        queue!(stdout, SetAttribute(Attribute::Underlined)).unwrap();
+    }
+}
+
 fn first_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64]) {
     if w == 0 || h == 0 {
         return;
@@ -129,26 +170,30 @@ fn first_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64]) {
     let mut char_seq = String::with_capacity(w as usize);
 
     for y in 0..h {
-        let row_start = (w * y) as usize * 3;
+        let row_start = (w * y) as usize * CELL_STRIDE;
         let first_idx = row_start;
         let mut prev_fg = buf[first_idx + 1];
         let mut prev_bg = buf[first_idx + 2];
+        let mut prev_attrs = buf[first_idx + 3] as u8;
         char_seq.clear();
         queue!(
             stdout,
             MoveTo(0, y),
+            SetAttribute(Attribute::Reset),
             SetForegroundColor(hex_to_color(prev_fg)),
             SetBackgroundColor(hex_to_color(prev_bg))
         )
         .unwrap();
+        queue_text_attribute_delta(stdout, 0, prev_attrs);
 
         for x in 0..w {
-            let idx = row_start + x as usize * 3;
+            let idx = row_start + x as usize * CELL_STRIDE;
             let curr_char = char::from_u32(buf[idx] as u32).unwrap();
             let curr_fg = buf[idx + 1];
             let curr_bg = buf[idx + 2];
+            let curr_attrs = buf[idx + 3] as u8;
 
-            if curr_fg == prev_fg && curr_bg == prev_bg {
+            if curr_fg == prev_fg && curr_bg == prev_bg && curr_attrs == prev_attrs {
                 char_seq.push(curr_char);
                 continue;
             }
@@ -167,26 +212,23 @@ fn first_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64]) {
                     .unwrap();
                 }
                 (true, false) => {
-                    queue!(
-                        stdout,
-                        Print(&char_seq),
-                        SetForegroundColor(hex_to_color(curr_fg))
-                    )
-                    .unwrap();
+                    queue!(stdout, Print(&char_seq), SetForegroundColor(hex_to_color(curr_fg)))
+                        .unwrap();
                 }
                 (false, true) => {
-                    queue!(
-                        stdout,
-                        Print(&char_seq),
-                        SetBackgroundColor(hex_to_color(curr_bg))
-                    )
-                    .unwrap();
+                    queue!(stdout, Print(&char_seq), SetBackgroundColor(hex_to_color(curr_bg)))
+                        .unwrap();
                 }
-                (false, false) => {}
+                (false, false) => {
+                    queue!(stdout, Print(&char_seq)).unwrap();
+                }
             }
+
+            queue_text_attribute_delta(stdout, prev_attrs, curr_attrs);
 
             prev_fg = curr_fg;
             prev_bg = curr_bg;
+            prev_attrs = curr_attrs;
 
             char_seq.clear();
             char_seq.push(curr_char);
@@ -198,6 +240,9 @@ fn first_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64]) {
 fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]) {
     let mut prev_fg = u64::MAX;
     let mut prev_bg = u64::MAX;
+    let mut prev_attrs = 0u8;
+
+    queue!(stdout, SetAttribute(Attribute::Reset)).unwrap();
 
     for y in 0..h {
         let mut char_seq = String::with_capacity(w as usize);
@@ -207,14 +252,16 @@ fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]
         let mut batch_cells = 0u16;
 
         for x in 0..w {
-            let idx = (w * y + x) as usize * 3;
+            let idx = (w * y + x) as usize * CELL_STRIDE;
             let curr_code = buf[idx];
             let curr_fg = buf[idx + 1];
             let curr_bg = buf[idx + 2];
+            let curr_attrs = buf[idx + 3] as u8;
 
             if buf[idx] == last_buf[idx]
                 && buf[idx + 1] == last_buf[idx + 1]
                 && buf[idx + 2] == last_buf[idx + 2]
+                && buf[idx + 3] == last_buf[idx + 3]
             {
                 continue;
             }
@@ -228,7 +275,7 @@ fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]
                 batch_start_x = x;
             }
 
-            if curr_fg == prev_fg && curr_bg == prev_bg {
+            if curr_fg == prev_fg && curr_bg == prev_bg && curr_attrs == prev_attrs {
                 if char_seq.is_empty() {
                     batch_start_x = x;
                 }
@@ -236,23 +283,42 @@ fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]
                 batch_cells = batch_cells.saturating_add(1);
                 continue;
             }
-            if curr_fg != prev_fg || curr_bg != prev_bg {
-                queue!(
-                    stdout,
-                    MoveTo(batch_start_x, y),
-                    Print(&char_seq),
-                    SetForegroundColor(hex_to_color(curr_fg)),
-                    SetBackgroundColor(hex_to_color(curr_bg))
-                )
-                .unwrap();
-                prev_fg = curr_fg;
-                prev_bg = curr_bg;
 
-                char_seq.clear();
-                char_seq.push(curr_char);
-                batch_start_x = x;
-                batch_cells = 1;
+            if !char_seq.is_empty() {
+                queue!(stdout, MoveTo(batch_start_x, y), Print(&char_seq)).unwrap();
             }
+
+            let fg_changed = curr_fg != prev_fg;
+            let bg_changed = curr_bg != prev_bg;
+
+            match (fg_changed, bg_changed) {
+                (true, true) => {
+                    queue!(
+                        stdout,
+                        SetForegroundColor(hex_to_color(curr_fg)),
+                        SetBackgroundColor(hex_to_color(curr_bg))
+                    )
+                    .unwrap();
+                }
+                (true, false) => {
+                    queue!(stdout, SetForegroundColor(hex_to_color(curr_fg))).unwrap();
+                }
+                (false, true) => {
+                    queue!(stdout, SetBackgroundColor(hex_to_color(curr_bg))).unwrap();
+                }
+                (false, false) => {}
+            }
+
+            queue_text_attribute_delta(stdout, prev_attrs, curr_attrs);
+
+            prev_fg = curr_fg;
+            prev_bg = curr_bg;
+            prev_attrs = curr_attrs;
+
+            char_seq.clear();
+            char_seq.push(curr_char);
+            batch_start_x = x;
+            batch_cells = 1;
         }
         if !char_seq.is_empty() {
             queue!(stdout, MoveTo(batch_start_x, y), Print(&char_seq)).unwrap();
@@ -319,6 +385,7 @@ pub extern "C" fn free_buffer() -> c_int {
 
     execute!(
         stdout(),
+        SetAttribute(Attribute::Reset),
         SetBackgroundColor(Color::Reset),
         SetForegroundColor(Color::Reset),
         Clear(ClearType::All)
@@ -349,11 +416,40 @@ struct TreeState {
 }
 
 #[derive(Debug, Clone)]
+struct TextSpanData {
+    // Stored in byte offsets because Rust string slicing / validation is byte-based.
+    start_byte: usize,
+    end_byte: usize,
+    foreground: Option<u32>,
+    background: Option<u32>,
+    bold: bool,
+    italic: bool,
+    underline: bool,
+}
+
+impl TextSpanData {
+    fn attr_flags(&self) -> u8 {
+        let mut flags = 0;
+        if self.bold {
+            flags |= TEXT_ATTR_BOLD;
+        }
+        if self.italic {
+            flags |= TEXT_ATTR_ITALIC;
+        }
+        if self.underline {
+            flags |= TEXT_ATTR_UNDERLINE;
+        }
+        flags
+    }
+}
+
+#[derive(Debug, Clone)]
 struct NodeData {
     kind: NodeType,
     parent: Option<u32>,
     children: Vec<u32>,
     text: String,
+    text_spans: Vec<TextSpanData>,
     style: NodeStyle,
 }
 
@@ -497,6 +593,9 @@ enum OpType {
     UpdateStyle = 5,
     SetRoot = 6,
     AppendChild = 7,
+    // Replaces the full span table for a Text node; text bytes still flow through
+    // SetText/DeleteTextRange ops.
+    SetTextSpans = 8,
 }
 
 const OP_SIZE: usize = 1;
@@ -504,6 +603,13 @@ const ID_SIZE: usize = 4;
 const KIND_SIZE: usize = 1;
 const LEN_SIZE: usize = 4;
 const RECORD_HEADER_SIZE: usize = OP_SIZE + ID_SIZE + LEN_SIZE;
+// Serialized span payload layout:
+// <count:u32><startByte:u32><endByte:u32><attrFlags:u8><colorFlags:u8><fg:u32><bg:u32>...
+const TEXT_SPAN_COUNT_SIZE: usize = 4;
+const TEXT_SPAN_ATTR_FLAGS_SIZE: usize = 1;
+const TEXT_SPAN_COLOR_FLAGS_SIZE: usize = 1;
+const TEXT_SPAN_RECORD_SIZE: usize =
+    ID_SIZE * 2 + TEXT_SPAN_ATTR_FLAGS_SIZE + TEXT_SPAN_COLOR_FLAGS_SIZE + ID_SIZE * 2;
 
 impl OpType {
     fn from_u8(value: u8) -> Option<Self> {
@@ -515,6 +621,7 @@ impl OpType {
             5 => Some(OpType::UpdateStyle),
             6 => Some(OpType::SetRoot),
             7 => Some(OpType::AppendChild),
+            8 => Some(OpType::SetTextSpans),
             _ => None,
         }
     }
@@ -624,6 +731,82 @@ fn parse_style_u32(value: f64) -> Option<u32> {
     } else {
         None
     }
+}
+
+fn parse_text_spans(payload: &[u8], text: &str) -> Option<Vec<TextSpanData>> {
+    // JS already normalized spans, but Rust still validates the binary payload and
+    // byte ranges before accepting it into persistent tree state.
+    let count_bytes: [u8; TEXT_SPAN_COUNT_SIZE] =
+        payload.get(..TEXT_SPAN_COUNT_SIZE)?.try_into().ok()?;
+    let count = u32::from_le_bytes(count_bytes) as usize;
+    let expected_len = TEXT_SPAN_COUNT_SIZE + count * TEXT_SPAN_RECORD_SIZE;
+    if payload.len() != expected_len {
+        return None;
+    }
+
+    let mut spans = Vec::with_capacity(count);
+    let mut previous_end = 0usize;
+    let mut offset = TEXT_SPAN_COUNT_SIZE;
+
+    for _ in 0..count {
+        let start_byte =
+            u32::from_le_bytes(payload[offset..offset + ID_SIZE].try_into().ok()?) as usize;
+        offset += ID_SIZE;
+        let end_byte =
+            u32::from_le_bytes(payload[offset..offset + ID_SIZE].try_into().ok()?) as usize;
+        offset += ID_SIZE;
+
+        let attr_flags = payload[offset];
+        offset += TEXT_SPAN_ATTR_FLAGS_SIZE;
+        if attr_flags & !TEXT_ATTR_ALL != 0 {
+            return None;
+        }
+
+        let color_flags = payload[offset];
+        offset += TEXT_SPAN_COLOR_FLAGS_SIZE;
+        if color_flags & !(TEXT_SPAN_COLOR_FOREGROUND | TEXT_SPAN_COLOR_BACKGROUND) != 0 {
+            return None;
+        }
+
+        let foreground_value =
+            u32::from_le_bytes(payload[offset..offset + ID_SIZE].try_into().ok()?);
+        offset += ID_SIZE;
+        let background_value =
+            u32::from_le_bytes(payload[offset..offset + ID_SIZE].try_into().ok()?);
+        offset += ID_SIZE;
+
+        if start_byte > end_byte || end_byte > text.len() {
+            return None;
+        }
+        if start_byte < previous_end {
+            return None;
+        }
+        if !text.is_char_boundary(start_byte) || !text.is_char_boundary(end_byte) {
+            return None;
+        }
+
+        spans.push(TextSpanData {
+            start_byte,
+            end_byte,
+            foreground: if (color_flags & TEXT_SPAN_COLOR_FOREGROUND) != 0 {
+                Some(foreground_value)
+            } else {
+                None
+            },
+            background: if (color_flags & TEXT_SPAN_COLOR_BACKGROUND) != 0 {
+                Some(background_value)
+            } else {
+                None
+            },
+            bold: (attr_flags & TEXT_ATTR_BOLD) != 0,
+            italic: (attr_flags & TEXT_ATTR_ITALIC) != 0,
+            underline: (attr_flags & TEXT_ATTR_UNDERLINE) != 0,
+        });
+
+        previous_end = end_byte;
+    }
+
+    Some(spans)
 }
 
 fn apply_style_reset(node: &mut NodeData, prop_name: &str) -> bool {
@@ -918,6 +1101,7 @@ pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
                         parent: None,
                         children: Vec::new(),
                         text: String::new(),
+                        text_spans: Vec::new(),
                         style: NodeStyle::default_for_kind(kind),
                     },
                 );
@@ -973,6 +1157,25 @@ pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
                 }
 
                 node.text.replace_range(start_byte..end_byte, "");
+            }
+            OpType::SetTextSpans => {
+                // Span metadata is stored separately from the text buffer so compatible
+                // frames can diff text bytes and styling independently.
+                let node = match state.nodes.get_mut(&node_id) {
+                    Some(node) => node,
+                    None => return 0,
+                };
+
+                if node.kind != NodeType::Text {
+                    return 0;
+                }
+
+                let spans = match parse_text_spans(payload, &node.text) {
+                    Some(spans) => spans,
+                    None => return 0,
+                };
+
+                node.text_spans = spans;
             }
             OpType::SetRoot => {
                 if !payload.is_empty() || !state.nodes.contains_key(&node_id) {
@@ -1166,8 +1369,7 @@ enum BorderStyle {
     Squared = 2,
 }
 
-impl BorderStyle {
-}
+impl BorderStyle {}
 
 fn style_dimension_to_taffy(dim: StyleDimension) -> Dimension {
     match dim {
@@ -1266,6 +1468,7 @@ fn node_data_to_context(data: &NodeData) -> NodeContext {
         },
         NodeType::Text => NodeContext::Text {
             content: data.text.clone(),
+            spans: data.text_spans.clone(),
             fg: s.fg,
             bg: s.bg,
         },
@@ -1334,6 +1537,7 @@ fn build_frames_array(
 enum NodeContext {
     Text {
         content: String,
+        spans: Vec<TextSpanData>,
         fg: u32,
         bg: u32,
     },
@@ -1426,6 +1630,33 @@ fn measure_function(
     }
 }
 
+fn set_buffer_cell(
+    buf: &mut [u64],
+    col: u16,
+    row: u16,
+    ch: char,
+    fg: u32,
+    bg: u32,
+    attrs: u8,
+    tw: u16,
+    th: u16,
+) {
+    // Single write path for the 4-slot cell layout: char + fg + bg + text attrs.
+    if col >= tw || row >= th {
+        return;
+    }
+
+    let idx = (tw * row + col) as usize * CELL_STRIDE;
+    if idx + (CELL_STRIDE - 1) >= buf.len() {
+        return;
+    }
+
+    buf[idx] = ch as u64;
+    buf[idx + 1] = fg as u64;
+    buf[idx + 2] = bg as u64;
+    buf[idx + 3] = attrs as u64;
+}
+
 fn draw_background_at(buf: &mut [u64], x: f32, y: f32, w: f32, h: f32, bg: u32, tw: u16, th: u16) {
     let x_start = x as u16;
     let y_start = y as u16;
@@ -1434,11 +1665,7 @@ fn draw_background_at(buf: &mut [u64], x: f32, y: f32, w: f32, h: f32, bg: u32, 
 
     for row in y_start..y_end {
         for col in x_start..x_end {
-            let idx = (tw * row + col) as usize * 3;
-            if idx + 2 < buf.len() {
-                buf[idx] = ' ' as u64;
-                buf[idx + 2] = bg as u64;
-            }
+            set_buffer_cell(buf, col, row, ' ', DEFAULT_FG, bg, 0, tw, th);
         }
     }
 }
@@ -1456,10 +1683,54 @@ fn draw_text_at(buf: &mut [u64], x: f32, y: f32, text: &str, fg: u32, bg: u32, t
         if col >= tw {
             break;
         }
-        let idx = (tw * y_row + col) as usize * 3;
-        buf[idx] = ch as u64;
-        buf[idx + 1] = fg as u64;
-        buf[idx + 2] = bg as u64;
+        set_buffer_cell(buf, col, y_row, ch, fg, bg, 0, tw, th);
+    }
+}
+
+fn draw_styled_text_at(
+    buf: &mut [u64],
+    x: f32,
+    y: f32,
+    text: &str,
+    spans: &[TextSpanData],
+    fg: u32,
+    bg: u32,
+    tw: u16,
+    th: u16,
+) {
+    // Spans are pre-sorted/non-overlapping, so painting can walk text once with a
+    // single forward-moving span pointer.
+    let x_start = x as u16;
+    let y_row = y as u16;
+
+    if y_row >= th {
+        return;
+    }
+
+    let mut span_index = 0usize;
+    for (char_index, (byte_start, ch)) in text.char_indices().enumerate() {
+        let col = x_start + char_index as u16;
+        if col >= tw {
+            break;
+        }
+
+        while span_index < spans.len() && spans[span_index].end_byte <= byte_start {
+            span_index += 1;
+        }
+
+        let mut resolved_fg = fg;
+        let mut resolved_bg = bg;
+        let mut attrs = 0u8;
+
+        if let Some(span) = spans.get(span_index) {
+            if byte_start >= span.start_byte && byte_start < span.end_byte {
+                resolved_fg = span.foreground.unwrap_or(fg);
+                resolved_bg = span.background.unwrap_or(bg);
+                attrs = span.attr_flags();
+            }
+        }
+
+        set_buffer_cell(buf, col, y_row, ch, resolved_fg, resolved_bg, attrs, tw, th);
     }
 }
 
@@ -1473,12 +1744,7 @@ fn set_border_cell(
     tw: u16,
     th: u16,
 ) {
-    if col < tw && row < th {
-        let idx = (tw * row + col) as usize * 3;
-        buf[idx] = ch as u64;
-        buf[idx + 1] = color as u64;
-        buf[idx + 2] = bg as u64;
-    }
+    set_buffer_cell(buf, col, row, ch, color, bg, 0, tw, th);
 }
 
 fn draw_uniform_border_at(
@@ -1597,14 +1863,7 @@ fn draw_cursor_at(
     let col = (x + text_len) as u16;
     let row = y as u16;
 
-    if col < tw && row < th {
-        let idx = (tw * row + col) as usize * 3;
-        if idx + 2 < buf.len() {
-            buf[idx] = '█' as u64;
-            buf[idx + 1] = fg as u64;
-            buf[idx + 2] = bg as u64;
-        }
-    }
+    set_buffer_cell(buf, col, row, '█', fg, bg, 0, tw, th);
 }
 
 fn paint_taffy_node(
@@ -1629,11 +1888,16 @@ fn paint_taffy_node(
     let content_y = abs_y + layout.content_box_y();
 
     let (fg, bg) = match taffy.get_node_context(node_id) {
-        Some(NodeContext::Text { content, fg, bg }) => {
+        Some(NodeContext::Text {
+            content,
+            spans,
+            fg,
+            bg,
+        }) => {
             let fg = if *fg != 0 { *fg } else { parent_fg };
             let bg = if *bg != 0 { *bg } else { parent_bg };
             draw_background_at(buf, x, y, w, h, bg, tw, th);
-            draw_text_at(buf, content_x, content_y, content, fg, bg, tw, th);
+            draw_styled_text_at(buf, content_x, content_y, content, spans, fg, bg, tw, th);
             (fg, bg)
         }
         Some(NodeContext::Button {
@@ -1672,16 +1936,8 @@ fn paint_taffy_node(
             );
             (fg, bg)
         }
-        Some(NodeContext::Row {
-            fg,
-            bg,
-            border,
-        })
-        | Some(NodeContext::Column {
-            fg,
-            bg,
-            border,
-        }) => {
+        Some(NodeContext::Row { fg, bg, border })
+        | Some(NodeContext::Column { fg, bg, border }) => {
             let fg = if *fg != 0 { *fg } else { parent_fg };
             let bg = if *bg != 0 { *bg } else { parent_bg };
             draw_background_at(buf, x, y, w, h, bg, tw, th);
@@ -1751,7 +2007,9 @@ pub extern "C" fn render() -> c_int {
 
         let mut cb = CURRENT_BUFFER.lock().unwrap();
         if let Some(ref mut buf) = *cb {
-            paint_taffy_node(taffy, taffy_root, buf, 0.0, 0.0, parent_fg, parent_bg, tw, th);
+            paint_taffy_node(
+                taffy, taffy_root, buf, 0.0, 0.0, parent_fg, parent_bg, tw, th,
+            );
         }
 
         taffy.clear();

@@ -1,4 +1,5 @@
 import { $, type Signal } from "./signals";
+import { normalizeStyledText } from "./text-spans";
 import { NODE_TYPE } from "./types";
 import type {
   Frame,
@@ -14,6 +15,8 @@ import type {
   StyleProps,
   BoxKind,
   Direction,
+  StyledText,
+  NormalizedStyledText,
   _StyleProps,
   _BoxProps,
   _TextProps,
@@ -38,6 +41,10 @@ export type {
   BorderStyle,
   BorderProps,
   BorderSideProps,
+  TextSpan,
+  StyledText,
+  NormalizedTextSpan,
+  NormalizedStyledText,
 } from "./types";
 export { NODE_TYPE } from "./types";
 
@@ -95,10 +102,43 @@ function createBoxSignals(input: BoxProps): _BoxProps {
   };
 }
 
+function resolveTextValue(input: string | StyledText): {
+  text: string;
+  styledText: NormalizedStyledText | undefined;
+} {
+  if (typeof input === "string") {
+    return {
+      text: input,
+      styledText: undefined,
+    };
+  }
+
+  const styledText = normalizeStyledText(input);
+  return {
+    text: styledText.text,
+    styledText,
+  };
+}
+
+function setTextSignals(props: _TextProps, input: string | StyledText): void {
+  if (typeof input === "string") {
+    props.text(input);
+    props.styledText(undefined);
+    return;
+  }
+
+  const styledText = normalizeStyledText(input);
+  props.text(styledText.text);
+  props.styledText(styledText);
+}
+
 function createTextSignals(input: TextProps): _TextProps {
+  const resolved = resolveTextValue(input.text);
+
   return {
     ...createStyleSignals(input),
-    text: $(input.text),
+    text: $(resolved.text),
+    styledText: $(resolved.styledText),
   };
 }
 
@@ -241,7 +281,7 @@ export function Text(input: TextProps): TextNode {
     children: undefined,
     setChildren: undefined,
     setStyle: makeSetStyle(props),
-    setText: (v) => props.text(v),
+    setText: (v) => setTextSignals(props, v),
     focus: () => focusNode(node),
     blur: () => blurNode(node),
     isFocused: () => focusedNode === node,
@@ -302,6 +342,8 @@ export function Button(input: ButtonProps, children: Node[] = []): ButtonNode {
 
   return node;
 }
+
+export { normalizeStyledText } from "./text-spans";
 
 // Re-export runtime
 export { run, onKey } from "./runtime";

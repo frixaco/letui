@@ -44,6 +44,33 @@ export type JustifyContent =
   | "spaceAround";
 export type FlexWrap = "noWrap" | "wrap" | "wrapReverse";
 
+export type TextSpan = {
+  start: number;
+  end: number;
+  foreground?: number;
+  background?: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+};
+
+export type StyledText = {
+  text: string;
+  spans: readonly TextSpan[];
+};
+
+export type NormalizedTextSpan = TextSpan & {
+  startByte: number;
+  endByte: number;
+};
+
+export type NormalizedStyledText = {
+  text: string;
+  spans: readonly NormalizedTextSpan[];
+  length: number;
+  byteLength: number;
+};
+
 // =============================================================================
 // INTERNAL PROP TYPES (signal-based, used inside nodes)
 // =============================================================================
@@ -84,6 +111,7 @@ export type _BoxProps = _StyleProps & {
 
 export type _TextProps = _StyleProps & {
   text: Signal<string>;
+  styledText: Signal<NormalizedStyledText | undefined>;
 };
 
 export type _InputProps = _StyleProps & {
@@ -134,7 +162,7 @@ export type BoxProps = StyleProps & {
 };
 
 export type TextProps = StyleProps & {
-  text: string;
+  text: string | StyledText;
 };
 
 export type InputProps = StyleProps & {
@@ -236,7 +264,7 @@ export type TextNode = NodeBase<typeof NODE_TYPE.Text> &
     props: _TextProps;
     handlers: TextHandlers;
     setStyle: (p: Partial<StyleProps>) => void;
-    setText: (v: string) => void;
+    setText: (v: string | StyledText) => void;
   };
 
 export type InputNode = NodeBase<typeof NODE_TYPE.Input> &

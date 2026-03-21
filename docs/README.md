@@ -4,7 +4,7 @@
 
 1. Read `docs/getting-started.md`
 2. Run `bun run build-ffi`
-3. Start with `bun run dev`, `bun run anitrack`, or `examples/mission-control.ts`
+3. Start with `bun run dev`, `bun run anitrack`, `examples/snake.ts`, or `examples/typing-speed.ts`
 4. Use `docs/components-and-styling.md` for current public props
 5. Use `docs/state-events-lifecycle.md` for signals, focus, input, and cleanup
 6. Use `docs/releasing.md` when cutting a new npm release
@@ -29,7 +29,8 @@
 
 - `examples/smoke.ts`: deterministic PTY smoke target for CI and agents
 - `examples/anitrack.ts`: interactive torrent-search demo
-- `examples/mission-control.ts`: static dashboard-style showcase
+- `examples/snake.ts`: keyboard-driven snake game with stable grid nodes
+- `examples/typing-speed.ts`: centered Colemak Mod-DH typing tester
 - `examples/ai-agent.ts`: keyboard-driven split-pane demo
 - `examples/visualizer.ts`: metrics-friendly animated renderer stress demo
 

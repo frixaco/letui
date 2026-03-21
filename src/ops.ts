@@ -1,4 +1,9 @@
-import { NODE_KIND_ID, type NodeKind, type NodeKindNum } from "./types";
+import {
+  NODE_KIND_ID,
+  type NodeKind,
+  type NodeKindNum,
+  type NormalizedTextSpan,
+} from "./types";
 
 enum OpEnum {
   SetText = 1,
@@ -8,6 +13,9 @@ enum OpEnum {
   UpdateStyle = 5,
   SetRoot = 6,
   AppendChild = 7,
+  // Full span payload for a Text node. Sent separately from SetText so
+  // plain-text updates keep their old lightweight path.
+  SetTextSpans = 8,
 }
 
 const OP_SIZE = 1;
@@ -16,10 +24,23 @@ const KIND_SIZE = 1;
 const LEN_SIZE = 4;
 const RECORD_HEADER_SIZE = OP_SIZE + ID_SIZE + LEN_SIZE;
 const DELETE_TEXT_RANGE_PAYLOAD_SIZE = ID_SIZE * 2;
+// Span payload layout:
+// <count:u32><startByte:u32><endByte:u32><attrFlags:u8><colorFlags:u8><fg:u32><bg:u32>...
+const TEXT_SPAN_COUNT_SIZE = 4;
+const TEXT_SPAN_ATTR_FLAGS_SIZE = 1;
+const TEXT_SPAN_COLOR_FLAGS_SIZE = 1;
+const TEXT_SPAN_RECORD_SIZE =
+  ID_SIZE * 2 + TEXT_SPAN_ATTR_FLAGS_SIZE + TEXT_SPAN_COLOR_FLAGS_SIZE + ID_SIZE * 2;
 
 const STYLE_VALUE_RESET = 0;
 const STYLE_VALUE_NUMBER = 1;
 const STYLE_VALUE_STRING = 2;
+
+const TEXT_SPAN_ATTR_BOLD = 1 << 0;
+const TEXT_SPAN_ATTR_ITALIC = 1 << 1;
+const TEXT_SPAN_ATTR_UNDERLINE = 1 << 2;
+const TEXT_SPAN_COLOR_FOREGROUND = 1 << 0;
+const TEXT_SPAN_COLOR_BACKGROUND = 1 << 1;
 
 const textEncoder = new TextEncoder();
 
@@ -123,6 +144,60 @@ function encodeStyleValue(value: StylePropValue) {
   const buffer = new Uint8Array(1 + stringBuffer.length);
   buffer[0] = STYLE_VALUE_STRING;
   buffer.set(stringBuffer, 1);
+  return buffer;
+}
+
+function encodeTextSpanAttrFlags(span: NormalizedTextSpan): number {
+  // Booleans get packed into one byte so Rust can decode attrs cheaply per span.
+  let flags = 0;
+  if (span.bold) {
+    flags |= TEXT_SPAN_ATTR_BOLD;
+  }
+  if (span.italic) {
+    flags |= TEXT_SPAN_ATTR_ITALIC;
+  }
+  if (span.underline) {
+    flags |= TEXT_SPAN_ATTR_UNDERLINE;
+  }
+  return flags;
+}
+
+function encodeTextSpanColorFlags(span: NormalizedTextSpan): number {
+  // Colors are optional; flags tell Rust whether fg/bg values are meaningful.
+  let flags = 0;
+  if (span.foreground !== undefined) {
+    flags |= TEXT_SPAN_COLOR_FOREGROUND;
+  }
+  if (span.background !== undefined) {
+    flags |= TEXT_SPAN_COLOR_BACKGROUND;
+  }
+  return flags;
+}
+
+function encodeTextSpans(spans: readonly NormalizedTextSpan[]): Uint8Array {
+  // Spans already come in normalized byte-offset form, so serialization here is
+  // just a flat binary pack step — no sorting/merging/validation work.
+  const payloadLength = TEXT_SPAN_COUNT_SIZE + spans.length * TEXT_SPAN_RECORD_SIZE;
+  const buffer = new Uint8Array(payloadLength);
+  const view = new DataView(buffer.buffer);
+  view.setUint32(0, spans.length, true);
+
+  let offset = TEXT_SPAN_COUNT_SIZE;
+  for (const span of spans) {
+    view.setUint32(offset, span.startByte, true);
+    offset += ID_SIZE;
+    view.setUint32(offset, span.endByte, true);
+    offset += ID_SIZE;
+    view.setUint8(offset, encodeTextSpanAttrFlags(span));
+    offset += TEXT_SPAN_ATTR_FLAGS_SIZE;
+    view.setUint8(offset, encodeTextSpanColorFlags(span));
+    offset += TEXT_SPAN_COLOR_FLAGS_SIZE;
+    view.setUint32(offset, span.foreground ?? 0, true);
+    offset += ID_SIZE;
+    view.setUint32(offset, span.background ?? 0, true);
+    offset += ID_SIZE;
+  }
+
   return buffer;
 }
 
@@ -231,6 +306,20 @@ export class OpQueue {
     view.setUint32(OP_SIZE + ID_SIZE, payloadLength, true);
     buffer.set(propBuffer, RECORD_HEADER_SIZE);
     buffer.set(valueBuffer, RECORD_HEADER_SIZE + propBuffer.length);
+
+    this.chunks.push(buffer);
+  }
+
+  setTextSpans(id: number, spans: readonly NormalizedTextSpan[]) {
+    // Replaces the node's full span table. Text bytes still flow through SetText /
+    // DeleteTextRange; spans are metadata layered on top of that text.
+    const payload = encodeTextSpans(spans);
+    const buffer = new Uint8Array(RECORD_HEADER_SIZE + payload.length);
+    const view = new DataView(buffer.buffer);
+    view.setUint8(0, OpEnum.SetTextSpans);
+    view.setUint32(OP_SIZE, id, true);
+    view.setUint32(OP_SIZE + ID_SIZE, payload.length, true);
+    buffer.set(payload, RECORD_HEADER_SIZE);
 
     this.chunks.push(buffer);
   }

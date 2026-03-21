@@ -4,7 +4,12 @@ import { dirname } from "path";
 import api from "./ffi";
 import { $, ff, type Signal } from "./signals";
 import { getFocusedNode } from "./components";
-import { NODE_TYPE, type Node, type NodeKind } from "./types";
+import {
+  NODE_TYPE,
+  type Node,
+  type NodeKind,
+  type NormalizedStyledText,
+} from "./types";
 import {
   EMITTED_STYLE_PROPS,
   OpQueue,
@@ -49,6 +54,7 @@ type SentNodeState = {
   type: NodeKind;
   style: SentStyleState;
   text: string;
+  styledText: NormalizedStyledText | undefined;
   children: SentNodeState[];
 };
 
@@ -290,6 +296,8 @@ function buildSentNodeState(node: Node): SentNodeState {
     node.type === NODE_TYPE.Button
       ? ((node.props as any).text?.() ?? "")
       : "";
+  const styledText =
+    node.type === NODE_TYPE.Text ? (node.props as any).styledText?.() : undefined;
   const children = node.children?.() ?? [];
 
   return {
@@ -297,6 +305,7 @@ function buildSentNodeState(node: Node): SentNodeState {
     type: node.type,
     style: readSentStyleState(node),
     text,
+    styledText,
     children: children.map(buildSentNodeState),
   };
 }
@@ -324,6 +333,10 @@ function queueFullTreeInsert(node: SentNodeState, textStats: TextOpStats): void 
   if (node.text.length > 0) {
     ops.setText(node.id, node.text);
     recordTextSet(textStats, node.text);
+  }
+
+  if (node.type === NODE_TYPE.Text && node.styledText !== undefined) {
+    ops.setTextSpans(node.id, node.styledText.spans);
   }
 
   for (const child of node.children) {
@@ -409,6 +422,66 @@ function syncNodeText(
   }
 }
 
+function hasSameStyledText(
+  previous: NormalizedStyledText | undefined,
+  current: NormalizedStyledText | undefined,
+): boolean {
+  if (previous === current) {
+    return true;
+  }
+
+  if (previous === undefined || current === undefined) {
+    return false;
+  }
+
+  if (
+    previous.text !== current.text ||
+    previous.length !== current.length ||
+    previous.byteLength !== current.byteLength ||
+    previous.spans.length !== current.spans.length
+  ) {
+    return false;
+  }
+
+  for (let i = 0; i < previous.spans.length; i++) {
+    const left = previous.spans[i];
+    const right = current.spans[i];
+    if (
+      !left ||
+      !right ||
+      left.start !== right.start ||
+      left.end !== right.end ||
+      left.startByte !== right.startByte ||
+      left.endByte !== right.endByte ||
+      left.foreground !== right.foreground ||
+      left.background !== right.background ||
+      left.bold !== right.bold ||
+      left.italic !== right.italic ||
+      left.underline !== right.underline
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function syncNodeTextSpans(
+  node: SentNodeState,
+  previous: NormalizedStyledText | undefined,
+  current: NormalizedStyledText | undefined,
+): void {
+  if (node.type !== NODE_TYPE.Text) {
+    return;
+  }
+
+  if (hasSameStyledText(previous, current)) {
+    return;
+  }
+
+  ops.setTextSpans(node.id, current?.spans ?? []);
+}
+
 function syncRenderTree(
   previous: SentNodeState,
   current: SentNodeState,
@@ -416,6 +489,7 @@ function syncRenderTree(
 ): void {
   syncNodeStyle(current.id, previous.style, current.style);
   syncNodeText(current.id, previous.text, current.text, textStats);
+  syncNodeTextSpans(current, previous.styledText, current.styledText);
 
   for (let i = 0; i < current.children.length; i++) {
     const previousChild = previous.children[i];
