@@ -29,7 +29,7 @@ More examples:
 
 ```bash
 bun run dev
-bun run examples/mission-control.ts
+bun run examples/snake.ts
 bun run examples/ai-agent.ts
 bun run examples/visualizer.ts
 bun run examples/progress-bar.ts
@@ -145,7 +145,7 @@ Mid-stage, active development. Core reactive runtime, persistent Rust tree state
 
 ## TODO
 
-- [ ] Globals ops queue (see `./docs/FULL_RUST_AUTHORITY_SPEC.md`)
+- [x] Globals ops queue (see `./docs/FULL_RUST_AUTHORITY_SPEC.md`)
 - [ ] Text styling: markdown and syntax highlighting API
 - [ ] Safer quit/cleanup when used as a library
 - [ ] Responsive examples for smaller terminal sizes
