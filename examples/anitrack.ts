@@ -1,7 +1,5 @@
-// TORRENT SEARCH APP
-// - Search input with loading bar
-// - Virtual windowing results list
-// - Keyboard navigation (j/k/h/l/tab)
+// ANITRACK — torrent search + stream staging
+// keyboard-first (j/k/h/l/tab/enter) with mouse support
 
 import { existsSync } from "fs";
 import { COLORS } from "@/colors";
@@ -9,6 +7,61 @@ import { Button, Column, Input, Row, Text, run, onKey } from "@/components";
 import { LoadingBar } from "./progress-bar";
 import { $, ff } from "@/signals";
 import { saveMetrics } from "@/metrics";
+import type { StyledText, TextSpan } from "@/types";
+
+// --- Theme ---
+const T = {
+  bg: COLORS.default.bg,
+  bgAlt: COLORS.default.bg_alt,
+  bgHi: COLORS.default.bg_highlight,
+  fg: COLORS.default.fg,
+  muted: COLORS.default.grey,
+  accent: COLORS.default.cyan,
+  active: COLORS.default.green,
+  warn: COLORS.default.yellow,
+  dim: COLORS.default.grey,
+  border: COLORS.default.bg_highlight,
+  pink: COLORS.default.pink,
+  purple: COLORS.default.purple,
+  orange: COLORS.default.orange,
+  badgeFg: COLORS.default.bg,
+} as const;
+
+// --- Styled text helpers ---
+type StyledSegment = Omit<TextSpan, "start" | "end"> & { text: string };
+
+function textLength(text: string): number {
+  return Array.from(text).length;
+}
+
+function styled(segments: readonly StyledSegment[]): StyledText {
+  let text = "";
+  let cursor = 0;
+  const spans: TextSpan[] = [];
+  for (const seg of segments) {
+    const start = cursor;
+    text += seg.text;
+    cursor += textLength(seg.text);
+    if (
+      seg.foreground !== undefined ||
+      seg.background !== undefined ||
+      seg.bold !== undefined ||
+      seg.italic !== undefined ||
+      seg.underline !== undefined
+    ) {
+      spans.push({
+        start,
+        end: cursor,
+        foreground: seg.foreground,
+        background: seg.background,
+        bold: seg.bold,
+        italic: seg.italic,
+        underline: seg.underline,
+      });
+    }
+  }
+  return { text, spans };
+}
 
 // --- Types ---
 type ScrapeResultItem = {
@@ -25,12 +78,13 @@ const selectedIndex = $(0);
 const focusTarget = $<"input" | "results">("input");
 const MPV_SOCKET_WAIT_MS = 5000;
 
-// --- Loading Bars ---
+// --- Loading Bar ---
 const loadingBar = LoadingBar({
-  dotColor: COLORS.default.cyan,
-  trackColor: COLORS.default.bg_highlight,
+  dotColor: T.accent,
+  trackColor: T.border,
 });
 
+// --- Parsers ---
 function toScrapeResults(payload: unknown): ScrapeResultItem[] {
   const rawResults =
     payload && typeof payload === "object" ? (payload as any).results : undefined;
@@ -39,7 +93,6 @@ function toScrapeResults(payload: unknown): ScrapeResultItem[] {
   const normalized: ScrapeResultItem[] = [];
   for (const item of rawResults) {
     if (!item || typeof item !== "object") continue;
-
     normalized.push({
       title: String((item as any).title ?? ""),
       size: String((item as any).size ?? ""),
@@ -54,18 +107,10 @@ function toStreamTarget(payload: unknown): { infoHash: string; fileIndex: number
   if (!payload || typeof payload !== "object") return null;
   const details = (payload as any).details;
   if (!details || typeof details !== "object") return null;
-
   const infoHash = details.info_hash;
   const files = details.files;
-
-  if (typeof infoHash !== "string" || !Array.isArray(files) || files.length === 0) {
-    return null;
-  }
-
-  return {
-    infoHash,
-    fileIndex: files.length - 1,
-  };
+  if (typeof infoHash !== "string" || !Array.isArray(files) || files.length === 0) return null;
+  return { infoHash, fileIndex: files.length - 1 };
 }
 
 function resetResultsToInput(): void {
@@ -78,14 +123,11 @@ function resetResultsToInput(): void {
 async function fetchResults(query: string) {
   loading(true);
   loadingBar.start();
-
   try {
     const response = await fetch(
       `https://scrape.anitrack.frixaco.com/scrape?q=${encodeURIComponent(query)}`,
     );
-    if (!response.ok) {
-      throw new Error(`Search failed with status ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`Search failed with status ${response.status}`);
     const payload = await response.json();
     const parsedResults = toScrapeResults(payload);
     results(parsedResults);
@@ -101,85 +143,93 @@ async function fetchResults(query: string) {
 
 async function streamResult(magnet: string) {
   loadingBar.start();
-
   try {
     const response = await fetch("https://rqbit.anitrack.frixaco.com/torrents", {
       method: "post",
       body: magnet,
     });
-    if (!response.ok) {
-      throw new Error(`Stream failed with status ${response.status}`);
-    }
-
+    if (!response.ok) throw new Error(`Stream failed with status ${response.status}`);
     const payload = await response.json();
     const target = toStreamTarget(payload);
     if (!target) return;
-
     const streamUrl = `https://rqbit.anitrack.frixaco.com/torrents/${target.infoHash}/stream/${target.fileIndex}`;
-
     const ipcPath = `/tmp/mpv-socket-${Date.now()}`;
     Bun.spawn({
       cmd: ["mpv", `--input-ipc-server=${ipcPath}`, streamUrl],
       stdout: "ignore",
       stderr: "ignore",
     });
-
-    // Poll until socket exists (mpv fully initialized), but avoid infinite waits.
     const deadline = Date.now() + MPV_SOCKET_WAIT_MS;
     while (!existsSync(ipcPath) && Date.now() < deadline) {
       await Bun.sleep(50);
     }
   } catch {
-    // Keep UI alive even when backend endpoints are unavailable.
+    // keep UI alive
   } finally {
     loadingBar.stop();
   }
 }
 
-// --- Styles ---
-const borderStyle = {
-  color: COLORS.default.fg,
-  style: "square" as const,
-};
+// --- Borders ---
+const idleBorder = { color: T.border, style: "rounded" as const };
+const focusBorder = { color: T.active, style: "rounded" as const };
 
-const focusedBorderStyle = {
-  color: COLORS.default.green,
-  style: "rounded" as const,
-};
-
-const titleLine = Text({
-  text: "ANITRACK // TORRENT SEARCH + STREAM STAGING",
-  foreground: COLORS.default.cyan,
+// --- Header ---
+const headerTitle = Text({
+  text: styled([
+    { text: "ANITRACK", foreground: T.accent, bold: true },
+    { text: " // ", foreground: T.muted },
+    { text: "TORRENT SEARCH", foreground: T.fg, bold: true },
+  ]),
 });
 
-const subtitleLine = Text({
-  text: "keyboard-first flow with wrapped panels and live result status",
-  foreground: COLORS.default.grey,
-});
-
-const searchStatusLine = Text({
+const headerMeta = Text({
   text: "",
-  foreground: COLORS.default.fg,
+  foreground: T.muted,
+  wrap: "word",
 });
 
-const resultsSummaryLine = Text({
+const statusBadge = Text({
+  text: " idle ",
+  foreground: T.badgeFg,
+  background: T.muted,
+  paddingX: 1,
+});
+
+const countBadge = Text({
   text: "",
-  foreground: COLORS.default.fg,
+  foreground: T.badgeFg,
+  background: T.accent,
+  paddingX: 1,
 });
 
-const helpLine = Text({
-  text: "/ focus input   Tab switch pane   j/k navigate   Enter stream   q quit",
-  foreground: COLORS.default.grey,
-});
+const header = Column(
+  {
+    padding: "1 1",
+    borderBottom: { color: T.border },
+  },
+  [
+    Row(
+      {
+        justifyContent: "spaceBetween",
+        alignItems: "center",
+        gap: 1,
+        flexWrap: "wrap",
+      },
+      [
+        Column({ gap: 0 }, [headerTitle, headerMeta]),
+        Row({ gap: 1, flexWrap: "wrap" }, [statusBadge, countBadge]),
+      ],
+    ),
+  ],
+);
 
-// --- Nodes ---
+// --- Search Panel ---
 const searchInput = Input({
-  placeholder: "Search torrents...",
-  border: undefined,
-  padding: "1 0",
-  foreground: COLORS.default.fg,
-  height: 3,
-  minWidth: 28,
+  placeholder: "search torrents...",
+  border: idleBorder,
+  padding: "1 1",
+  foreground: T.fg,
   onSubmit: (val) => {
     const query = val.trim();
     if (query.length === 0) {
@@ -190,59 +240,84 @@ const searchInput = Input({
   },
   onFocus: (self) => {
     focusTarget("input");
-    self.setStyle({ border: focusedBorderStyle });
+    self.setStyle({ border: focusBorder });
   },
-  onBlur: (self) => self.setStyle({ border: undefined }),
+  onBlur: (self) => self.setStyle({ border: idleBorder }),
 });
 
-const loadingBars = Row({}, [loadingBar.node]);
-const searchInputRow = Row({ minHeight: 3, alignItems: "stretch" }, [searchInput]);
-
-const resultsList = Column({ padding: "1 0", flexGrow: 1 }, []);
+const searchHint = Text({
+  text: styled([
+    { text: "Enter", foreground: T.accent, bold: true },
+    { text: " search", foreground: T.muted },
+    { text: "   ", foreground: T.muted },
+    { text: "Tab", foreground: T.accent, bold: true },
+    { text: " results", foreground: T.muted },
+  ]),
+});
 
 const searchPanel = Column(
   {
     gap: 1,
-    padding: "0 0",
-    flexGrow: 1,
-    flexBasis: 32,
-    minWidth: 28,
+    padding: "1 1",
+    borderBottom: { color: T.border },
+    flexShrink: 0,
   },
-  [titleLine, subtitleLine, searchInputRow, loadingBars, searchStatusLine],
+  [
+    Row({ gap: 1, alignItems: "center", flexWrap: "wrap" }, [
+      Text({ text: "SEARCH", foreground: T.accent }),
+      searchHint,
+    ]),
+    Row({ alignItems: "stretch" }, [searchInput]),
+    Row({}, [loadingBar.node]),
+  ],
 );
+
+// --- Results Panel ---
+const resultsSummary = Text({
+  text: "",
+  foreground: T.muted,
+});
+
+const resultsList = Column({ padding: "0 0", flexGrow: 1, gap: 0 }, []);
+
+const helpLine = Text({
+  text: styled([
+    { text: "/", foreground: T.accent, bold: true },
+    { text: " search", foreground: T.muted },
+    { text: "  ", foreground: T.muted },
+    { text: "j/k", foreground: T.active, bold: true },
+    { text: " navigate", foreground: T.muted },
+    { text: "  ", foreground: T.muted },
+    { text: "h/l", foreground: T.active, bold: true },
+    { text: " jump", foreground: T.muted },
+    { text: "  ", foreground: T.muted },
+    { text: "Enter", foreground: T.orange, bold: true },
+    { text: " stream", foreground: T.muted },
+    { text: "  ", foreground: T.muted },
+    { text: "q", foreground: T.pink, bold: true },
+    { text: " quit", foreground: T.muted },
+  ]),
+});
 
 const resultsPanel = Column(
   {
     gap: 1,
-    padding: "0 0",
-    flexGrow: 2,
-    flexBasis: 50,
-    minWidth: 40,
-    minHeight: 14,
-  },
-  [resultsSummaryLine, resultsList, helpLine],
-);
-
-const root = Column(
-  {
-    flexGrow: 1,
-    gap: 1,
     padding: "1 1",
+    flexGrow: 1,
+    minHeight: 0,
   },
   [
-    Row(
-      {
-        flexGrow: 1,
-        gap: 1,
-        flexWrap: "wrap",
-        alignItems: "stretch",
-      },
-      [searchPanel, resultsPanel],
-    ),
+    Text({ text: "RESULTS", foreground: T.accent }),
+    resultsSummary,
+    resultsList,
+    helpLine,
   ],
 );
 
-// --- Keep track of result buttons for focus management ---
+// --- Layout ---
+const root = Column({ flexGrow: 1 }, [header, searchPanel, resultsPanel]);
+
+// --- Result Row Pool ---
 let resultButtons: ReturnType<typeof Button>[] = [];
 let visibleStartIndex = 0;
 let lastResultsSnapshot: ScrapeResultItem[] | null = null;
@@ -264,38 +339,28 @@ function createResultRow(): ResultRow {
   const title = Text({
     text: "",
     wrap: "word",
-    foreground: COLORS.default.fg,
+    foreground: T.fg,
   });
   const meta = Text({
     text: "",
     wrap: "word",
-    foreground: COLORS.default.grey,
+    foreground: T.muted,
   });
 
   const button = Button(
     {
       text: "",
       border: undefined,
-      padding: "1 0",
-      foreground: COLORS.default.fg,
+      padding: "0 1",
+      foreground: T.fg,
       onFocus: () => {
-        if (focusTarget() !== "results") {
-          focusTarget("results");
-        }
-        if (selectedIndex() !== globalIdx) {
-          selectedIndex(globalIdx);
-        }
+        if (focusTarget() !== "results") focusTarget("results");
+        if (selectedIndex() !== globalIdx) selectedIndex(globalIdx);
       },
       onClick: () => {
-        if (focusTarget() !== "results") {
-          focusTarget("results");
-        }
-        if (selectedIndex() !== globalIdx) {
-          selectedIndex(globalIdx);
-        }
-        if (magnet.length > 0) {
-          streamResult(magnet);
-        }
+        if (focusTarget() !== "results") focusTarget("results");
+        if (selectedIndex() !== globalIdx) selectedIndex(globalIdx);
+        if (magnet.length > 0) streamResult(magnet);
       },
     },
     [Column({ gap: 0 }, [title, meta])],
@@ -309,16 +374,22 @@ function createResultRow(): ResultRow {
       globalIdx = nextGlobalIdx;
       magnet = item.magnet;
 
+      const marker = isActive ? "▸ " : "  ";
+      title.setText(
+        styled([
+          { text: marker, foreground: isActive ? T.active : T.muted },
+          { text: item.title, foreground: isActive ? T.active : T.fg, bold: isActive },
+        ]),
+      );
+      meta.setText(
+        styled([
+          { text: `  ${item.size}`, foreground: isActive ? T.accent : T.muted },
+          { text: "  ·  ", foreground: T.border },
+          { text: item.date, foreground: isActive ? T.accent : T.muted, italic: true },
+        ]),
+      );
       button.setStyle({
-        foreground: isActive ? COLORS.default.green : COLORS.default.fg,
-      });
-      title.setText(`${isActive ? "▶ " : "  "}${item.title}`);
-      title.setStyle({
-        foreground: isActive ? COLORS.default.green : COLORS.default.fg,
-      });
-      meta.setText(`${item.size}   ${item.date}`);
-      meta.setStyle({
-        foreground: isActive ? COLORS.default.cyan : COLORS.default.grey,
+        background: isActive ? T.bgAlt : undefined,
       });
     },
   };
@@ -331,45 +402,59 @@ function ensureResultRows(count: number): void {
 }
 
 // --- Reactive effects ---
-
-// Update results list with virtual windowing
 ff(() => {
   const all = results();
   const selected = selectedIndex();
   const isLoading = loading();
   const activePane = focusTarget();
 
-  titleLine.setStyle({
-    foreground:
-      activePane === "input" ? COLORS.default.green : COLORS.default.cyan,
+  // Header badges
+  if (isLoading) {
+    statusBadge.setText(" searching ");
+    statusBadge.setStyle({ background: T.warn });
+  } else if (all.length > 0) {
+    statusBadge.setText(" ready ");
+    statusBadge.setStyle({ background: T.active });
+  } else {
+    statusBadge.setText(" idle ");
+    statusBadge.setStyle({ background: T.muted });
+  }
+
+  countBadge.setText(all.length > 0 ? ` ${all.length} results ` : "");
+  countBadge.setStyle({
+    background: all.length > 0 ? T.accent : undefined,
   });
-  searchStatusLine.setText(
-    isLoading
-      ? "status: searching remote scrape endpoint..."
-      : activePane === "input"
-        ? "status: input armed; submit query to populate results"
-      : "status: results active; input still available with /",
+
+  // Header meta
+  headerMeta.setText(
+    styled([
+      { text: "focus ", foreground: T.muted },
+      {
+        text: activePane,
+        foreground: activePane === "input" ? T.active : T.accent,
+        bold: true,
+      },
+      ...(all.length > 0
+        ? [
+            { text: "   viewing ", foreground: T.muted },
+            {
+              text: `${Math.min(all.length, selected + 1)}/${all.length}`,
+              foreground: T.accent,
+              bold: true as const,
+            },
+          ]
+        : []),
+    ]),
   );
-  searchStatusLine.setStyle({
-    foreground:
-      isLoading
-        ? COLORS.default.yellow
-        : activePane === "input"
-          ? COLORS.default.green
-          : COLORS.default.grey,
-  });
-  resultsSummaryLine.setText(
+
+  // Results summary
+  resultsSummary.setText(
     all.length === 0
-      ? "results: empty"
-      : `results: ${all.length} items   selected: ${Math.min(all.length, selected + 1)}/${all.length}`,
+      ? "no results — enter a query to search"
+      : `${all.length} results · navigating with ${activePane === "results" ? "keyboard" : "mouse"}`,
   );
-  resultsSummaryLine.setStyle({
-    foreground:
-      all.length === 0
-        ? COLORS.default.grey
-        : activePane === "results"
-          ? COLORS.default.green
-          : COLORS.default.cyan,
+  resultsSummary.setStyle({
+    foreground: all.length === 0 ? T.muted : activePane === "results" ? T.active : T.accent,
   });
 
   if (all !== lastResultsSnapshot) {
@@ -388,9 +473,7 @@ ff(() => {
     visibleStartIndex = 0;
     resultButtons = [];
     resultsList.setChildren?.([]);
-    if (focusTarget() === "results") {
-      focusInput();
-    }
+    if (focusTarget() === "results") focusInput();
     return;
   }
 
@@ -400,7 +483,7 @@ ff(() => {
     return;
   }
 
-  // Use actual computed frame height from Taffy
+  // Virtual windowing
   const availableHeight = Math.max(1, Math.floor(resultsList.frameHeight()));
   const fallbackHeight = Math.max(
     1,
@@ -418,9 +501,7 @@ ff(() => {
   while (start >= 0) {
     const height = itemHeightAt(start);
     if (usedHeight + height > availableHeight) {
-      if (usedHeight > 0) {
-        start += 1;
-      }
+      if (usedHeight > 0) start += 1;
       break;
     }
     usedHeight += height;
@@ -434,9 +515,7 @@ ff(() => {
   while (end < all.length) {
     const height = itemHeightAt(end);
     if (windowHeight + height > availableHeight) {
-      if (end === start) {
-        end += 1;
-      }
+      if (end === start) end += 1;
       break;
     }
     windowHeight += height;
@@ -456,24 +535,21 @@ ff(() => {
 
   resultsList.setChildren?.(resultButtons);
 
-  // Focus selected result only when results pane is active target.
-  if (focusTarget() === "results") {
-    focusSelectedResult();
-  }
+  if (focusTarget() === "results") focusSelectedResult();
 });
 
 // --- Keyboard navigation ---
 onKey("/", () => focusInput());
 onKey("\t", () => toggleFocusTarget());
-onKey("\x1b[Z", () => toggleFocusTarget()); // Shift+Tab
+onKey("\x1b[Z", () => toggleFocusTarget());
 onKey("j", () => selectNext());
-onKey("\x1b[B", () => selectNext()); // Arrow Down
+onKey("\x1b[B", () => selectNext());
 onKey("k", () => selectPrev());
-onKey("\x1b[A", () => selectPrev()); // Arrow Up
+onKey("\x1b[A", () => selectPrev());
 onKey("l", () => selectLast());
-onKey("\x1b[C", () => selectLast()); // Arrow Right - jump to end
+onKey("\x1b[C", () => selectLast());
 onKey("h", () => selectFirst());
-onKey("\x1b[D", () => selectFirst()); // Arrow Left - jump to start
+onKey("\x1b[D", () => selectFirst());
 
 onKey("q", () => {
   saveMetrics();
@@ -483,16 +559,12 @@ onKey("q", () => {
 function selectNext() {
   if (focusTarget() !== "results") return;
   const max = results().length - 1;
-  if (selectedIndex() < max) {
-    selectedIndex(selectedIndex() + 1);
-  }
+  if (selectedIndex() < max) selectedIndex(selectedIndex() + 1);
 }
 
 function selectPrev() {
   if (focusTarget() !== "results") return;
-  if (selectedIndex() > 0) {
-    selectedIndex(selectedIndex() - 1);
-  }
+  if (selectedIndex() > 0) selectedIndex(selectedIndex() - 1);
 }
 
 function selectFirst() {
@@ -503,9 +575,7 @@ function selectFirst() {
 function selectLast() {
   if (focusTarget() !== "results") return;
   const max = results().length - 1;
-  if (max >= 0) {
-    selectedIndex(max);
-  }
+  if (max >= 0) selectedIndex(max);
 }
 
 function focusInput() {
@@ -540,9 +610,6 @@ function toggleFocusTarget() {
   }
 }
 
-// --- Start app ---
-const app = run(root, {
-  debug: true,
-});
-
+// --- Start ---
+const app = run(root, { debug: true });
 focusInput();

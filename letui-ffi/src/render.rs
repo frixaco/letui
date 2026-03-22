@@ -38,7 +38,19 @@ fn resolved_default_bg(bg: u32, parent_bg: u32) -> u32 {
     if bg != 0 { bg } else { parent_bg }
 }
 
-fn node_data_to_style(data: &NodeData) -> Style {
+fn input_should_default_to_flex_grow(data: &NodeData, parent_kind: Option<NodeType>) -> bool {
+    if data.kind != NodeType::Input || data.style.flex_grow != 0.0 {
+        return false;
+    }
+
+    if !matches!(data.style.width, StyleDimension::Auto) {
+        return false;
+    }
+
+    matches!(parent_kind, Some(NodeType::Row))
+}
+
+fn node_data_to_style(data: &NodeData, parent_kind: Option<NodeType>) -> Style {
     let s = &data.style;
     let mut style = Style {
         gap: Size {
@@ -102,12 +114,12 @@ fn node_data_to_style(data: &NodeData) -> Style {
                 y: Overflow::Hidden,
             };
         }
-        NodeType::Input => {
-            if s.flex_grow == 0.0 {
-                style.flex_grow = 1.0;
-            }
-        }
+        NodeType::Input => {}
         _ => {}
+    }
+
+    if input_should_default_to_flex_grow(data, parent_kind) {
+        style.flex_grow = 1.0;
     }
 
     style
@@ -222,7 +234,11 @@ fn build_taffy_from_state(
     taffy_parent: Option<NodeId>,
 ) -> Option<NodeId> {
     let data = state.nodes.get(&node_id)?;
-    let style = node_data_to_style(data);
+    let parent_kind = data
+        .parent
+        .and_then(|parent_id| state.nodes.get(&parent_id))
+        .map(|parent| parent.kind);
+    let style = node_data_to_style(data, parent_kind);
     let context = node_data_to_context(data);
     let taffy_node = taffy.new_leaf_with_context(style, context).unwrap();
 
@@ -911,6 +927,15 @@ mod tests {
         node.style.multiline = true;
 
         assert_eq!(effective_wrap(NodeType::Input, &node), TextWrap::Word);
+    }
+
+    #[test]
+    fn input_defaults_to_flex_grow_inside_rows_only() {
+        let input = make_node(NodeType::Input);
+
+        assert_eq!(node_data_to_style(&input, Some(NodeType::Row)).flex_grow, 1.0);
+        assert_eq!(node_data_to_style(&input, Some(NodeType::Column)).flex_grow, 0.0);
+        assert_eq!(node_data_to_style(&input, None).flex_grow, 0.0);
     }
 
     #[test]

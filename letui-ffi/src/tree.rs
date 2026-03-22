@@ -273,7 +273,7 @@ fn parse_axis_pair(value: &str) -> Option<(f32, f32)> {
     let (first, second) = value.split_once(' ')?;
     let first = first.trim().parse::<f32>().ok()?;
     let second = second.trim().parse::<f32>().ok()?;
-    Some((first, second))
+    Some((second, first))
 }
 
 fn parse_align_items(value: &str) -> Option<AlignItems> {

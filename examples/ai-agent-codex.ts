@@ -1121,13 +1121,12 @@ const composer = Input({
   border: idleBorder,
   padding: "1 0",
   foreground: THEME.text,
-  minHeight: 3,
   onSubmit: submitPrompt,
   onFocus: (self) => self.setStyle({ border: focusBorder }),
   onBlur: (self) => self.setStyle({ border: idleBorder }),
 });
 
-const composerRow = Row({ minHeight: 3, alignItems: "stretch" }, [composer]);
+const composerRow = Row({ alignItems: "stretch" }, [composer]);
 
 const composerPanel = Column(
   {

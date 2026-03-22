@@ -1,6 +1,6 @@
 import { prepareTextInput } from "./text-spans";
 
-const IGNORED_INPUT_CONTROL_PATTERN = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
+const IGNORED_INPUT_CONTROL_PATTERN = /[\x00-\x09\x0B\x0C\x0E-\x1F]/;
 
 type InputChunkOp =
   | { type: "insert"; text: string }
