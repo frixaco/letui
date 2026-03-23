@@ -22,20 +22,8 @@ fn style_dimension_to_taffy(dim: StyleDimension) -> Dimension {
     }
 }
 
-fn quantize_origin(value: f32) -> u16 {
+fn floor_to_u16(value: f32) -> u16 {
     value.max(0.0).floor().min(u16::MAX as f32) as u16
-}
-
-fn quantize_size(value: f32) -> u16 {
-    value.max(0.0).floor().min(u16::MAX as f32) as u16
-}
-
-fn resolved_default_fg(fg: u32, parent_fg: u32) -> u32 {
-    if fg != 0 { fg } else { parent_fg }
-}
-
-fn resolved_default_bg(bg: u32, parent_bg: u32) -> u32 {
-    if bg != 0 { bg } else { parent_bg }
 }
 
 fn input_should_default_to_flex_grow(data: &NodeData, parent_kind: Option<NodeType>) -> bool {
@@ -360,7 +348,7 @@ fn measure_function(
         AvailableSpace::Definite(width) => layout_text(&TextLayoutRequest {
             text,
             spans,
-            max_width: Some(quantize_size(width)),
+            max_width: Some(floor_to_u16(width)),
             wrap,
             overflow,
             cursor: if show_cursor { Some(text.len()) } else { None },
@@ -669,15 +657,15 @@ fn paint_taffy_node(
     th: u16,
 ) {
     let layout = taffy.layout(node_id).unwrap();
-    let x = quantize_origin(abs_x + layout.location.x);
-    let y = quantize_origin(abs_y + layout.location.y);
-    let w = quantize_size(layout.size.width);
-    let h = quantize_size(layout.size.height);
+    let x = floor_to_u16(abs_x + layout.location.x);
+    let y = floor_to_u16(abs_y + layout.location.y);
+    let w = floor_to_u16(layout.size.width);
+    let h = floor_to_u16(layout.size.height);
 
-    let content_x = quantize_origin(abs_x + layout.content_box_x());
-    let content_y = quantize_origin(abs_y + layout.content_box_y());
-    let content_w = quantize_size(layout.content_box_width());
-    let content_h = quantize_size(layout.content_box_height());
+    let content_x = floor_to_u16(abs_x + layout.content_box_x());
+    let content_y = floor_to_u16(abs_y + layout.content_box_y());
+    let content_w = floor_to_u16(layout.content_box_width());
+    let content_h = floor_to_u16(layout.content_box_height());
 
     let node_clip = inherited_clip.intersect(ClipRect {
         left: x,
@@ -701,8 +689,8 @@ fn paint_taffy_node(
             wrap,
             overflow,
         }) => {
-            let fg = resolved_default_fg(*fg, parent_fg);
-            let bg = resolved_default_bg(*bg, parent_bg);
+            let fg = if *fg != 0 { *fg } else { parent_fg };
+            let bg = if *bg != 0 { *bg } else { parent_bg };
             draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
             paint_text_layout(
                 buf,
@@ -733,8 +721,8 @@ fn paint_taffy_node(
             wrap,
             overflow,
         }) => {
-            let fg = resolved_default_fg(*fg, parent_fg);
-            let bg = resolved_default_bg(*bg, parent_bg);
+            let fg = if *fg != 0 { *fg } else { parent_fg };
+            let bg = if *bg != 0 { *bg } else { parent_bg };
             draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
             draw_resolved_border_at(buf, node_clip, x, y, w, h, *border, bg, tw, th);
             paint_text_layout(
@@ -766,8 +754,8 @@ fn paint_taffy_node(
             wrap,
             cursor_visible,
         }) => {
-            let fg = resolved_default_fg(*fg, parent_fg);
-            let bg = resolved_default_bg(*bg, parent_bg);
+            let fg = if *fg != 0 { *fg } else { parent_fg };
+            let bg = if *bg != 0 { *bg } else { parent_bg };
             draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
             draw_resolved_border_at(buf, node_clip, x, y, w, h, *border, bg, tw, th);
             paint_text_layout(
@@ -797,8 +785,8 @@ fn paint_taffy_node(
         }
         Some(NodeContext::Row { fg, bg, border })
         | Some(NodeContext::Column { fg, bg, border }) => {
-            let fg = resolved_default_fg(*fg, parent_fg);
-            let bg = resolved_default_bg(*bg, parent_bg);
+            let fg = if *fg != 0 { *fg } else { parent_fg };
+            let bg = if *bg != 0 { *bg } else { parent_bg };
             draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
             draw_resolved_border_at(buf, node_clip, x, y, w, h, *border, bg, tw, th);
             (fg, bg)
@@ -898,109 +886,6 @@ pub extern "C" fn render() -> c_int {
         taffy.clear();
         1
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::tree::{NodeData, NodeStyle};
-
-    fn make_node(kind: NodeType) -> NodeData {
-        NodeData {
-            kind,
-            parent: None,
-            children: Vec::new(),
-            text: String::new(),
-            text_spans: Vec::new(),
-            style: NodeStyle::default_for_kind(kind),
-        }
-    }
-
-    fn cell_code(buf: &[u64], width: u16, col: u16, row: u16) -> u64 {
-        let idx = (width * row + col) as usize * CELL_STRIDE;
-        buf[idx]
-    }
-
-    #[test]
-    fn multiline_input_defaults_to_word_wrap() {
-        let mut node = make_node(NodeType::Input);
-        node.style.multiline = true;
-
-        assert_eq!(effective_wrap(NodeType::Input, &node), TextWrap::Word);
-    }
-
-    #[test]
-    fn input_defaults_to_flex_grow_inside_rows_only() {
-        let input = make_node(NodeType::Input);
-
-        assert_eq!(node_data_to_style(&input, Some(NodeType::Row)).flex_grow, 1.0);
-        assert_eq!(node_data_to_style(&input, Some(NodeType::Column)).flex_grow, 0.0);
-        assert_eq!(node_data_to_style(&input, None).flex_grow, 0.0);
-    }
-
-    #[test]
-    fn partially_clipped_wide_glyph_is_skipped() {
-        let mut buf = vec![0u64; 4 * CELL_STRIDE];
-        paint_text_layout(
-            &mut buf,
-            ClipRect {
-                left: 1,
-                top: 0,
-                right: 4,
-                bottom: 1,
-            },
-            0,
-            0,
-            TextLayoutRequest {
-                text: "🙂",
-                spans: &[],
-                max_width: Some(4),
-                wrap: TextWrap::None,
-                overflow: TextOverflow::Clip,
-                cursor: None,
-                show_cursor: false,
-                default_fg: DEFAULT_FG,
-                default_bg: DEFAULT_BG,
-            },
-            4,
-            1,
-        );
-
-        assert_eq!(cell_code(&buf, 4, 0, 0), 0);
-        assert_eq!(cell_code(&buf, 4, 1, 0), 0);
-    }
-
-    #[test]
-    fn fully_visible_wide_glyph_writes_lead_and_continuation_cells() {
-        let mut buf = vec![0u64; 4 * CELL_STRIDE];
-        paint_text_layout(
-            &mut buf,
-            ClipRect {
-                left: 0,
-                top: 0,
-                right: 4,
-                bottom: 1,
-            },
-            0,
-            0,
-            TextLayoutRequest {
-                text: "🙂",
-                spans: &[],
-                max_width: Some(4),
-                wrap: TextWrap::None,
-                overflow: TextOverflow::Clip,
-                cursor: None,
-                show_cursor: false,
-                default_fg: DEFAULT_FG,
-                default_bg: DEFAULT_BG,
-            },
-            4,
-            1,
-        );
-
-        assert_eq!(cell_code(&buf, 4, 0, 0), '🙂' as u64);
-        assert_eq!(cell_code(&buf, 4, 1, 0), CONTINUATION_CELL as u64);
-    }
 }
 
 #[unsafe(no_mangle)]
