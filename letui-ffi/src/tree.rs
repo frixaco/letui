@@ -2,7 +2,7 @@ use crate::shared::{
     DEFAULT_BG, DEFAULT_FG, TEXT_ATTR_ALL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     os::raw::c_int,
     slice,
     sync::{LazyLock, Mutex},
@@ -34,6 +34,10 @@ const TEXT_SPAN_RECORD_SIZE: usize =
 pub(crate) struct TreeState {
     pub(crate) root_id: Option<u32>,
     pub(crate) nodes: HashMap<u32, NodeData>,
+    // Topology edits (add/delete/reparent/root changes) require rebuilding Taffy structure.
+    pub(crate) topology_dirty: bool,
+    // Style/text edits can update existing Taffy nodes in place.
+    pub(crate) dirty_nodes: HashSet<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -253,6 +257,7 @@ fn remove_subtree(state: &mut TreeState, node_id: u32) {
     }
 
     state.nodes.remove(&node_id);
+    state.dirty_nodes.remove(&node_id);
 }
 
 fn parse_style_number(payload: &[u8]) -> Option<f64> {
@@ -687,6 +692,8 @@ pub extern "C" fn clear_tree_state() -> c_int {
     let mut state = TREE_STATE.lock().unwrap();
     state.root_id = None;
     state.nodes.clear();
+    state.topology_dirty = true;
+    state.dirty_nodes.clear();
     1
 }
 
@@ -765,6 +772,7 @@ pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
                         style: NodeStyle::default_for_kind(kind),
                     },
                 );
+                state.topology_dirty = true;
             }
             OpType::SetText => {
                 let appended_text = match std::str::from_utf8(payload) {
@@ -782,6 +790,7 @@ pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
                 }
 
                 node.text.push_str(appended_text);
+                state.dirty_nodes.insert(node_id);
             }
             OpType::DeleteTextRange => {
                 if payload.len() != ID_SIZE * 2 {
@@ -817,6 +826,7 @@ pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
                 }
 
                 node.text.replace_range(start_byte..end_byte, "");
+                state.dirty_nodes.insert(node_id);
             }
             OpType::SetTextSpans => {
                 // Span metadata is stored separately from the text buffer so compatible
@@ -836,12 +846,14 @@ pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
                 };
 
                 node.text_spans = spans;
+                state.dirty_nodes.insert(node_id);
             }
             OpType::SetRoot => {
                 if !payload.is_empty() || !state.nodes.contains_key(&node_id) {
                     return 0;
                 }
                 state.root_id = Some(node_id);
+                state.topology_dirty = true;
             }
             OpType::DeleteNode => {
                 if !payload.is_empty() || !state.nodes.contains_key(&node_id) {
@@ -860,6 +872,7 @@ pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
                 }
 
                 remove_subtree(&mut state, node_id);
+                state.topology_dirty = true;
             }
             OpType::AppendChild => {
                 if payload.len() != ID_SIZE {
@@ -913,6 +926,7 @@ pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
                 } else {
                     return 0;
                 }
+                state.topology_dirty = true;
             }
             OpType::UpdateStyle => {
                 if payload.len() < 2 {
@@ -965,6 +979,8 @@ pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
                 if !success {
                     return 0;
                 }
+
+                state.dirty_nodes.insert(node_id);
             }
         }
 

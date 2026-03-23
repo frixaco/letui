@@ -144,7 +144,7 @@ Benchmark snapshot (`2026-02-20`, `terminal-rerender`, `full` profile, PTY mode)
 
 - [x] Globals ops queue (see `./docs/FULL_RUST_AUTHORITY_SPEC.md`)
 - [x] Text styling: markdown and syntax highlighting API
-- [ ] Multi-line text input, text overflow and wrapping
+- [x] Multi-line text input, text overflow and wrapping
 - [ ] Vertical and horizontal scrolling
 - [ ] Safer quit/cleanup when used as a library
 - [ ] Responsive examples for smaller terminal sizes

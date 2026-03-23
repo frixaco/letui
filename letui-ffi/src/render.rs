@@ -8,11 +8,16 @@ use crate::tree::{
     BorderStyle, Direction, NodeData, NodeType, ResolvedBorder, StyleDimension, TREE_STATE,
     TextOverflow, TextSpanData, TextWrap, TreeState,
 };
-use std::{cell::RefCell, os::raw::c_int};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    os::raw::c_int,
+};
 use taffy::{Overflow, Point, prelude::*};
 
 thread_local! {
     static TREE: RefCell<TaffyTree<NodeContext>> = RefCell::new(TaffyTree::new());
+    static NODE_MAP: RefCell<HashMap<u32, NodeId>> = RefCell::new(HashMap::new());
 }
 
 fn style_dimension_to_taffy(dim: StyleDimension) -> Dimension {
@@ -220,6 +225,7 @@ fn build_taffy_from_state(
     state: &TreeState,
     node_id: u32,
     taffy_parent: Option<NodeId>,
+    node_map: &mut HashMap<u32, NodeId>,
 ) -> Option<NodeId> {
     let data = state.nodes.get(&node_id)?;
     let parent_kind = data
@@ -229,16 +235,53 @@ fn build_taffy_from_state(
     let style = node_data_to_style(data, parent_kind);
     let context = node_data_to_context(data);
     let taffy_node = taffy.new_leaf_with_context(style, context).unwrap();
+    node_map.insert(node_id, taffy_node);
 
     if let Some(parent) = taffy_parent {
         taffy.add_child(parent, taffy_node).unwrap();
     }
 
     for &child_id in &data.children {
-        build_taffy_from_state(taffy, state, child_id, Some(taffy_node));
+        build_taffy_from_state(taffy, state, child_id, Some(taffy_node), node_map);
     }
 
     Some(taffy_node)
+}
+
+fn rebuild_taffy_tree(
+    taffy: &mut TaffyTree<NodeContext>,
+    node_map: &mut HashMap<u32, NodeId>,
+    state: &TreeState,
+    root_id: u32,
+) -> Option<NodeId> {
+    taffy.clear();
+    node_map.clear();
+    build_taffy_from_state(taffy, state, root_id, None, node_map)
+}
+
+fn sync_dirty_nodes(
+    taffy: &mut TaffyTree<NodeContext>,
+    node_map: &HashMap<u32, NodeId>,
+    state: &TreeState,
+    dirty_nodes: &HashSet<u32>,
+) {
+    for node_id in dirty_nodes {
+        let Some(data) = state.nodes.get(node_id) else {
+            continue;
+        };
+        let Some(taffy_id) = node_map.get(node_id).copied() else {
+            continue;
+        };
+
+        let parent_kind = data
+            .parent
+            .and_then(|parent_id| state.nodes.get(&parent_id))
+            .map(|parent| parent.kind);
+        let style = node_data_to_style(data, parent_kind);
+        let context = node_data_to_context(data);
+        let _ = taffy.set_style(taffy_id, style);
+        let _ = taffy.set_node_context(taffy_id, Some(context));
+    }
 }
 
 fn build_frames_array(
@@ -812,79 +855,104 @@ fn paint_taffy_node(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn render() -> c_int {
-    let state = TREE_STATE.lock().unwrap();
-    let root_id = match state.root_id {
-        Some(id) => id,
-        None => return 0,
+    let (root_id, root_fg, root_bg, topology_dirty, dirty_nodes) = {
+        let mut state = TREE_STATE.lock().unwrap();
+        let Some(root_id) = state.root_id else {
+            return 0;
+        };
+        let root_style = state.nodes.get(&root_id).map(|d| d.style.clone());
+        let dirty_nodes = std::mem::take(&mut state.dirty_nodes);
+        let topology_dirty = state.topology_dirty;
+        state.topology_dirty = false;
+
+        let (root_fg, root_bg) = match root_style {
+            Some(style) => (style.fg, style.bg),
+            None => (DEFAULT_FG, DEFAULT_BG),
+        };
+
+        (root_id, root_fg, root_bg, topology_dirty, dirty_nodes)
     };
 
     TREE.with_borrow_mut(|taffy| {
-        let term_size = TERMINAL_SIZE.lock().unwrap();
-        let (tw, th) = *term_size;
-        drop(term_size);
+        NODE_MAP.with_borrow_mut(|node_map| {
+            let state = TREE_STATE.lock().unwrap();
+            let term_size = TERMINAL_SIZE.lock().unwrap();
+            let (tw, th) = *term_size;
+            drop(term_size);
 
-        let taffy_root = match build_taffy_from_state(taffy, &state, root_id, None) {
-            Some(id) => id,
-            None => return 0,
-        };
+            let should_rebuild = topology_dirty
+                || !node_map.contains_key(&root_id)
+                || node_map.len() != state.nodes.len();
 
-        let mut root_style = taffy.style(taffy_root).unwrap().clone();
-        root_style.size = Size {
-            width: length(tw),
-            height: length(th),
-        };
-        taffy.set_style(taffy_root, root_style).unwrap();
+            let taffy_root = if should_rebuild {
+                match rebuild_taffy_tree(taffy, node_map, &state, root_id) {
+                    Some(id) => id,
+                    None => return 0,
+                }
+            } else {
+                sync_dirty_nodes(taffy, node_map, &state, &dirty_nodes);
+                match node_map.get(&root_id).copied() {
+                    Some(id) => id,
+                    None => match rebuild_taffy_tree(taffy, node_map, &state, root_id) {
+                        Some(id) => id,
+                        None => return 0,
+                    },
+                }
+            };
 
-        let _ = taffy.compute_layout_with_measure(
-            taffy_root,
-            Size {
+            let mut root_style = taffy.style(taffy_root).unwrap().clone();
+            root_style.size = Size {
                 width: length(tw),
                 height: length(th),
-            },
-            |known_dimensions, available_space, node_id, node_context, style| {
-                measure_function(
-                    known_dimensions,
-                    available_space,
-                    node_id,
-                    node_context,
-                    style,
-                )
-            },
-        );
+            };
+            taffy.set_style(taffy_root, root_style).unwrap();
 
-        let mut frame_lock = FRAMES.lock().unwrap();
-        let frames_vec = frame_lock.get_or_insert_with(Vec::new);
-        frames_vec.clear();
-        build_frames_array(taffy, taffy_root, frames_vec, 0.0, 0.0);
-        drop(frame_lock);
-
-        let root_data = state.nodes.get(&root_id);
-        let parent_fg = root_data.map_or(DEFAULT_FG, |d| d.style.fg);
-        let parent_bg = root_data.map_or(DEFAULT_BG, |d| d.style.bg);
-
-        let mut cb = CURRENT_BUFFER.lock().unwrap();
-        if let Some(ref mut buf) = *cb {
-            paint_taffy_node(
-                taffy,
+            let _ = taffy.compute_layout_with_measure(
                 taffy_root,
-                buf,
-                0.0,
-                0.0,
-                parent_fg,
-                parent_bg,
-                ClipRect {
-                    left: 0,
-                    top: 0,
-                    right: tw,
-                    bottom: th,
+                Size {
+                    width: length(tw),
+                    height: length(th),
                 },
-                tw,
-                th,
+                |known_dimensions, available_space, node_id, node_context, style| {
+                    measure_function(
+                        known_dimensions,
+                        available_space,
+                        node_id,
+                        node_context,
+                        style,
+                    )
+                },
             );
-        }
 
-        taffy.clear();
-        1
+            let mut frame_lock = FRAMES.lock().unwrap();
+            let frames_vec = frame_lock.get_or_insert_with(Vec::new);
+            frames_vec.clear();
+            build_frames_array(taffy, taffy_root, frames_vec, 0.0, 0.0);
+            drop(frame_lock);
+
+            let mut cb = CURRENT_BUFFER.lock().unwrap();
+            if let Some(ref mut buf) = *cb {
+                paint_taffy_node(
+                    taffy,
+                    taffy_root,
+                    buf,
+                    0.0,
+                    0.0,
+                    root_fg,
+                    root_bg,
+                    ClipRect {
+                        left: 0,
+                        top: 0,
+                        right: tw,
+                        bottom: th,
+                    },
+                    tw,
+                    th,
+                );
+            }
+
+            1
+        })
     })
 }
 
