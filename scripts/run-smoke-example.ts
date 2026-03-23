@@ -1,6 +1,8 @@
 import { mkdirSync, writeFileSync } from "fs";
 import { dirname } from "path";
 
+const SMOKE_KILL_SIGNAL = process.platform === "win32" ? "SIGTERM" : "SIGKILL";
+
 export type SmokeRunOptions = {
   cols?: number;
   rows?: number;
@@ -82,7 +84,7 @@ export async function runSmokeExample(
       },
       terminal,
       timeout: 5000,
-      killSignal: "SIGKILL",
+      killSignal: SMOKE_KILL_SIGNAL,
     },
   );
 

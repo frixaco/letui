@@ -27,7 +27,7 @@ export function parseInputCommands(data: string): EditorCommand[] {
   const buffer: string[] = [];
 
   for (const ch of normalized) {
-    if (ch === "\x7f") {
+    if (ch === "\x08" || ch === "\x7f") {
       pushInsertCommand(ops, buffer);
       ops.push({ type: "deleteBackward" });
       continue;
