@@ -1,6 +1,6 @@
 {
   "name": "@frixaco/letui",
-  "version": "0.0.13",
+  "version": "0.1.0",
   "license": "MIT",
   "module": "index.ts",
   "type": "module",
@@ -27,9 +27,9 @@
     "scripts/build-npm.ts"
   ],
   "optionalDependencies": {
-    "@frixaco/letui-darwin-arm64": "0.0.13",
-    "@frixaco/letui-linux-x64": "0.0.13",
-    "@frixaco/letui-win32-x64": "0.0.13"
+    "@frixaco/letui-darwin-arm64": "0.1.0",
+    "@frixaco/letui-linux-x64": "0.1.0",
+    "@frixaco/letui-win32-x64": "0.1.0"
   },
   "dependencies": {
     "@openai/codex-sdk": "^0.116.0",
