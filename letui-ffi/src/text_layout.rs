@@ -97,11 +97,11 @@ impl ClipRect {
     }
 }
 
-fn saturating_usize_to_u16(value: usize) -> u16 {
+fn floor_usize_to_u16(value: usize) -> u16 {
     value.min(u16::MAX as usize) as u16
 }
 
-fn saturating_u32_to_u16(value: u32) -> u16 {
+fn floor_u32_to_u16(value: u32) -> u16 {
     value.min(u16::MAX as u32) as u16
 }
 
@@ -187,14 +187,6 @@ fn build_explicit_lines(request: &TextLayoutRequest<'_>) -> Vec<ExplicitLine> {
         break_end: None,
     });
 
-    if lines.is_empty() {
-        lines.push(ExplicitLine {
-            units: Vec::new(),
-            break_start: None,
-            break_end: None,
-        });
-    }
-
     lines
 }
 
@@ -243,6 +235,10 @@ fn push_visible_unit(line: &mut VisualLine, unit: &SourceUnit) {
     line.display_width = line.display_width.saturating_add(unit.width as u16);
 }
 
+fn units_display_width(units: &[SourceUnit]) -> u16 {
+    floor_u32_to_u16(units.iter().map(|unit| unit.width as u32).sum())
+}
+
 fn empty_line() -> VisualLine {
     VisualLine {
         display_width: 0,
@@ -253,7 +249,7 @@ fn empty_line() -> VisualLine {
 
 fn line_end_cursor(row: usize, line: &VisualLine) -> CursorPlacement {
     CursorPlacement {
-        row: saturating_usize_to_u16(row),
+        row: floor_usize_to_u16(row),
         col: line.display_width,
     }
 }
@@ -267,7 +263,7 @@ fn place_cursor_if_matches(
 ) {
     if placement.is_none() && cursor == Some(byte_index) {
         *placement = Some(CursorPlacement {
-            row: saturating_usize_to_u16(row),
+            row: floor_usize_to_u16(row),
             col,
         });
     }
@@ -340,6 +336,57 @@ impl LineBuilder {
     }
 }
 
+fn mark_boundaries_at(builder: &mut LineBuilder, units: &[SourceUnit], row: usize, col: u16) {
+    for unit in units {
+        builder.mark_boundary_at(unit.byte_start, row, col);
+        builder.mark_boundary_at(unit.byte_end, row, col);
+    }
+}
+
+fn append_units_without_wrap(builder: &mut LineBuilder, units: &[SourceUnit]) {
+    for unit in units {
+        builder.mark_boundary(unit.byte_start);
+        builder.push_unit(unit);
+        builder.mark_boundary(unit.byte_end);
+    }
+}
+
+#[derive(Clone, Copy)]
+enum OversizeUnitPolicy {
+    Skip,
+    FinishLine,
+}
+
+fn append_wrapped_unit(
+    builder: &mut LineBuilder,
+    unit: &SourceUnit,
+    max_width: u16,
+    oversize_policy: OversizeUnitPolicy,
+) {
+    builder.mark_boundary(unit.byte_start);
+
+    if unit.width == 0 {
+        builder.mark_boundary(unit.byte_end);
+        return;
+    }
+
+    if builder.current_width() > 0 && !builder.can_fit(unit.width as u16, max_width) {
+        builder.finish_line();
+        builder.mark_boundary(unit.byte_start);
+    }
+
+    if builder.current_width() == 0 && unit.width as u16 > max_width {
+        builder.mark_boundary(unit.byte_end);
+        if matches!(oversize_policy, OversizeUnitPolicy::FinishLine) {
+            builder.finish_line();
+        }
+        return;
+    }
+
+    builder.push_unit(unit);
+    builder.mark_boundary(unit.byte_end);
+}
+
 fn ellipsis_cell(source: Option<&SourceUnit>, request: &TextLayoutRequest<'_>) -> VisualCell {
     let foreground = source.map_or(request.default_fg, |unit| unit.foreground);
     let background = source.map_or(request.default_bg, |unit| unit.background);
@@ -361,20 +408,12 @@ fn layout_no_wrap_clip(
     builder: &mut LineBuilder,
 ) {
     let Some(max_width) = request.max_width else {
-        for unit in units {
-            builder.mark_boundary(unit.byte_start);
-            builder.push_unit(unit);
-            builder.mark_boundary(unit.byte_end);
-        }
+        append_units_without_wrap(builder, units);
         return;
     };
 
     if max_width == 0 {
-        let row = builder.current_row();
-        for unit in units {
-            builder.mark_boundary_at(unit.byte_start, row, 0);
-            builder.mark_boundary_at(unit.byte_end, row, 0);
-        }
+        mark_boundaries_at(builder, units, builder.current_row(), 0);
         return;
     }
 
@@ -406,11 +445,7 @@ fn layout_no_wrap_ellipsis(
     };
 
     if max_width == 0 {
-        let row = builder.current_row();
-        for unit in units {
-            builder.mark_boundary_at(unit.byte_start, row, 0);
-            builder.mark_boundary_at(unit.byte_end, row, 0);
-        }
+        mark_boundaries_at(builder, units, builder.current_row(), 0);
         return;
     };
 
@@ -421,10 +456,7 @@ fn layout_no_wrap_ellipsis(
         }
 
         let col = builder.current_width().min(1);
-        for unit in units {
-            builder.mark_boundary_at(unit.byte_start, builder.current_row(), col);
-            builder.mark_boundary_at(unit.byte_end, builder.current_row(), col);
-        }
+        mark_boundaries_at(builder, units, builder.current_row(), col);
         return;
     }
 
@@ -446,7 +478,7 @@ fn layout_no_wrap_ellipsis(
         builder.mark_boundary(unit.byte_end);
     }
 
-    if line_width_without_wrap(units) > max_width || truncation_source.is_some() {
+    if units_display_width(units) > max_width || truncation_source.is_some() {
         builder.push_ellipsis(truncation_source.or_else(|| units.last()), request);
     }
 }
@@ -473,35 +505,12 @@ fn append_char_wrapped_units(
     };
 
     if max_width == 0 {
-        let row = builder.current_row();
-        for unit in units {
-            builder.mark_boundary_at(unit.byte_start, row, 0);
-            builder.mark_boundary_at(unit.byte_end, row, 0);
-        }
+        mark_boundaries_at(builder, units, builder.current_row(), 0);
         return;
     }
 
     for unit in units {
-        builder.mark_boundary(unit.byte_start);
-
-        if unit.width == 0 {
-            builder.mark_boundary(unit.byte_end);
-            continue;
-        }
-
-        if builder.current_width() > 0 && !builder.can_fit(unit.width as u16, max_width) {
-            builder.finish_line();
-            builder.mark_boundary(unit.byte_start);
-        }
-
-        if builder.current_width() == 0 && unit.width as u16 > max_width {
-            builder.mark_boundary(unit.byte_end);
-            builder.finish_line();
-            continue;
-        }
-
-        builder.push_unit(unit);
-        builder.mark_boundary(unit.byte_end);
+        append_wrapped_unit(builder, unit, max_width, OversizeUnitPolicy::FinishLine);
     }
 }
 
@@ -516,11 +525,7 @@ fn append_word_wrapped_units(
     };
 
     if max_width == 0 {
-        let row = builder.current_row();
-        for unit in units {
-            builder.mark_boundary_at(unit.byte_start, row, 0);
-            builder.mark_boundary_at(unit.byte_end, row, 0);
-        }
+        mark_boundaries_at(builder, units, builder.current_row(), 0);
         return;
     }
 
@@ -531,7 +536,7 @@ fn append_word_wrapped_units(
     let segments = build_segments(units);
     for segment in segments {
         let segment_units = &units[segment.start..segment.end];
-        let segment_width: u16 = segment_units.iter().map(|unit| unit.width as u16).sum();
+        let segment_width = units_display_width(segment_units);
 
         if !segment.is_space
             && builder.current_width() > 0
@@ -541,40 +546,14 @@ fn append_word_wrapped_units(
         }
 
         if !segment.is_space && segment_width <= max_width {
-            for unit in segment_units {
-                builder.mark_boundary(unit.byte_start);
-                builder.push_unit(unit);
-                builder.mark_boundary(unit.byte_end);
-            }
+            append_units_without_wrap(builder, segment_units);
             continue;
         }
 
         for unit in segment_units {
-            builder.mark_boundary(unit.byte_start);
-
-            if unit.width == 0 {
-                builder.mark_boundary(unit.byte_end);
-                continue;
-            }
-
-            if builder.current_width() > 0 && !builder.can_fit(unit.width as u16, max_width) {
-                builder.finish_line();
-                builder.mark_boundary(unit.byte_start);
-            }
-
-            if builder.current_width() == 0 && unit.width as u16 > max_width {
-                builder.mark_boundary(unit.byte_end);
-                continue;
-            }
-
-            builder.push_unit(unit);
-            builder.mark_boundary(unit.byte_end);
+            append_wrapped_unit(builder, unit, max_width, OversizeUnitPolicy::Skip);
         }
     }
-}
-
-fn line_width_without_wrap(units: &[SourceUnit]) -> u16 {
-    saturating_u32_to_u16(units.iter().map(|unit| unit.width as u32).sum())
 }
 
 pub(crate) fn layout_text(request: &TextLayoutRequest<'_>) -> TextLayoutResult {
@@ -624,7 +603,7 @@ pub(crate) fn layout_text(request: &TextLayoutRequest<'_>) -> TextLayoutResult {
         .map(|line| line.display_width)
         .max()
         .unwrap_or(0);
-    let height = saturating_usize_to_u16(lines.len());
+    let height = floor_usize_to_u16(lines.len());
 
     TextLayoutResult {
         width,
@@ -676,7 +655,7 @@ pub(crate) fn measure_min_content(
     match wrap {
         TextWrap::None => explicit_lines
             .iter()
-            .map(|line| line_width_without_wrap(&line.units))
+            .map(|line| units_display_width(&line.units))
             .max()
             .unwrap_or(0),
         TextWrap::Char => explicit_lines
