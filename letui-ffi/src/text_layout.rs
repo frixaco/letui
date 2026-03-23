@@ -243,6 +243,14 @@ fn push_visible_unit(line: &mut VisualLine, unit: &SourceUnit) {
     line.display_width = line.display_width.saturating_add(unit.width as u16);
 }
 
+fn empty_line() -> VisualLine {
+    VisualLine {
+        display_width: 0,
+        cells: Vec::new(),
+        ends_with_ellipsis: false,
+    }
+}
+
 fn line_end_cursor(row: usize, line: &VisualLine) -> CursorPlacement {
     CursorPlacement {
         row: saturating_usize_to_u16(row),
@@ -265,6 +273,73 @@ fn place_cursor_if_matches(
     }
 }
 
+struct LineBuilder {
+    cursor_target: Option<usize>,
+    cursor: Option<CursorPlacement>,
+    lines: Vec<VisualLine>,
+    current: VisualLine,
+}
+
+impl LineBuilder {
+    fn new(cursor_target: Option<usize>) -> Self {
+        Self {
+            cursor_target,
+            cursor: None,
+            lines: Vec::new(),
+            current: empty_line(),
+        }
+    }
+
+    fn current_row(&self) -> usize {
+        self.lines.len()
+    }
+
+    fn current_width(&self) -> u16 {
+        self.current.display_width
+    }
+
+    fn can_fit(&self, width: u16, max_width: u16) -> bool {
+        self.current_width().saturating_add(width) <= max_width
+    }
+
+    fn mark_boundary(&mut self, byte_index: usize) {
+        self.mark_boundary_at(byte_index, self.current_row(), self.current_width());
+    }
+
+    fn mark_boundary_at(&mut self, byte_index: usize, row: usize, col: u16) {
+        place_cursor_if_matches(self.cursor_target, &mut self.cursor, byte_index, row, col);
+    }
+
+    fn push_unit(&mut self, unit: &SourceUnit) {
+        push_visible_unit(&mut self.current, unit);
+    }
+
+    fn push_ellipsis(&mut self, source: Option<&SourceUnit>, request: &TextLayoutRequest<'_>) {
+        let mut ellipsis = ellipsis_cell(source, request);
+        ellipsis.display_col = self.current_width();
+        self.current.cells.push(ellipsis);
+        self.current.display_width = self.current.display_width.saturating_add(1);
+        self.current.ends_with_ellipsis = true;
+    }
+
+    fn finish_line(&mut self) {
+        let line = std::mem::replace(&mut self.current, empty_line());
+        self.lines.push(line);
+    }
+
+    fn last_finished_line(&self) -> Option<&VisualLine> {
+        self.lines.last()
+    }
+
+    fn finished_line_count(&self) -> usize {
+        self.lines.len()
+    }
+
+    fn into_parts(self) -> (Vec<VisualLine>, Option<CursorPlacement>) {
+        (self.lines, self.cursor)
+    }
+}
+
 fn ellipsis_cell(source: Option<&SourceUnit>, request: &TextLayoutRequest<'_>) -> VisualCell {
     let foreground = source.map_or(request.default_fg, |unit| unit.foreground);
     let background = source.map_or(request.default_bg, |unit| unit.background);
@@ -280,382 +355,222 @@ fn ellipsis_cell(source: Option<&SourceUnit>, request: &TextLayoutRequest<'_>) -
     }
 }
 
-fn finalize_line_for_no_wrap(
+fn layout_no_wrap_clip(
     request: &TextLayoutRequest<'_>,
     units: &[SourceUnit],
-    row: usize,
-    cursor: &mut Option<CursorPlacement>,
-) -> VisualLine {
-    let mut line = VisualLine {
-        display_width: 0,
-        cells: Vec::new(),
-        ends_with_ellipsis: false,
-    };
-
+    builder: &mut LineBuilder,
+) {
     let Some(max_width) = request.max_width else {
         for unit in units {
-            place_cursor_if_matches(
-                request.cursor,
-                cursor,
-                unit.byte_start,
-                row,
-                line.display_width,
-            );
-            push_visible_unit(&mut line, unit);
-            place_cursor_if_matches(
-                request.cursor,
-                cursor,
-                unit.byte_end,
-                row,
-                line.display_width,
-            );
+            builder.mark_boundary(unit.byte_start);
+            builder.push_unit(unit);
+            builder.mark_boundary(unit.byte_end);
         }
-        return line;
+        return;
     };
 
     if max_width == 0 {
+        let row = builder.current_row();
         for unit in units {
-            place_cursor_if_matches(request.cursor, cursor, unit.byte_start, row, 0);
-            place_cursor_if_matches(request.cursor, cursor, unit.byte_end, row, 0);
+            builder.mark_boundary_at(unit.byte_start, row, 0);
+            builder.mark_boundary_at(unit.byte_end, row, 0);
         }
-        return line;
-    }
-
-    if request.overflow == TextOverflow::Ellipsis {
-        if max_width == 1 {
-            let truncation_source = units.iter().find(|unit| unit.width > 0);
-            line.cells.push(ellipsis_cell(truncation_source, request));
-            line.display_width = 1;
-            line.ends_with_ellipsis = truncation_source.is_some();
-            for unit in units {
-                place_cursor_if_matches(
-                    request.cursor,
-                    cursor,
-                    unit.byte_start,
-                    row,
-                    line.display_width.min(1),
-                );
-                place_cursor_if_matches(
-                    request.cursor,
-                    cursor,
-                    unit.byte_end,
-                    row,
-                    line.display_width.min(1),
-                );
-            }
-            return line;
-        }
-
-        let mut truncation_source = None;
-        for unit in units {
-            place_cursor_if_matches(
-                request.cursor,
-                cursor,
-                unit.byte_start,
-                row,
-                line.display_width,
-            );
-            if unit.width == 0 {
-                place_cursor_if_matches(
-                    request.cursor,
-                    cursor,
-                    unit.byte_end,
-                    row,
-                    line.display_width,
-                );
-                continue;
-            }
-
-            let next_width = line.display_width.saturating_add(unit.width as u16);
-            if next_width > max_width.saturating_sub(1) {
-                truncation_source = Some(unit);
-                place_cursor_if_matches(request.cursor, cursor, unit.byte_end, row, max_width);
-                break;
-            }
-
-            push_visible_unit(&mut line, unit);
-            place_cursor_if_matches(
-                request.cursor,
-                cursor,
-                unit.byte_end,
-                row,
-                line.display_width,
-            );
-        }
-
-        let content_width = line.display_width;
-        let full_width: u16 = units.iter().map(|unit| unit.width as u16).sum();
-        if full_width > max_width || truncation_source.is_some() {
-            let mut ellipsis = ellipsis_cell(truncation_source.or_else(|| units.last()), request);
-            ellipsis.display_col = content_width;
-            line.cells.push(ellipsis);
-            line.display_width = content_width.saturating_add(1);
-            line.ends_with_ellipsis = true;
-        }
-
-        return line;
+        return;
     }
 
     for unit in units {
-        place_cursor_if_matches(
-            request.cursor,
-            cursor,
-            unit.byte_start,
-            row,
-            line.display_width,
-        );
+        builder.mark_boundary(unit.byte_start);
         if unit.width == 0 {
-            place_cursor_if_matches(
-                request.cursor,
-                cursor,
-                unit.byte_end,
-                row,
-                line.display_width,
-            );
+            builder.mark_boundary(unit.byte_end);
             continue;
         }
 
-        let next_width = line.display_width.saturating_add(unit.width as u16);
-        if next_width > max_width {
-            place_cursor_if_matches(request.cursor, cursor, unit.byte_end, row, max_width);
+        if !builder.can_fit(unit.width as u16, max_width) {
+            builder.mark_boundary_at(unit.byte_end, builder.current_row(), max_width);
             break;
         }
 
-        push_visible_unit(&mut line, unit);
-        place_cursor_if_matches(
-            request.cursor,
-            cursor,
-            unit.byte_end,
-            row,
-            line.display_width,
-        );
+        builder.push_unit(unit);
+        builder.mark_boundary(unit.byte_end);
+    }
+}
+
+fn layout_no_wrap_ellipsis(
+    request: &TextLayoutRequest<'_>,
+    units: &[SourceUnit],
+    builder: &mut LineBuilder,
+) {
+    let Some(max_width) = request.max_width else {
+        layout_no_wrap_clip(request, units, builder);
+        return;
+    };
+
+    if max_width == 0 {
+        let row = builder.current_row();
+        for unit in units {
+            builder.mark_boundary_at(unit.byte_start, row, 0);
+            builder.mark_boundary_at(unit.byte_end, row, 0);
+        }
+        return;
+    };
+
+    if max_width == 1 {
+        let truncation_source = units.iter().find(|unit| unit.width > 0);
+        if truncation_source.is_some() {
+            builder.push_ellipsis(truncation_source, request);
+        }
+
+        let col = builder.current_width().min(1);
+        for unit in units {
+            builder.mark_boundary_at(unit.byte_start, builder.current_row(), col);
+            builder.mark_boundary_at(unit.byte_end, builder.current_row(), col);
+        }
+        return;
     }
 
-    line
+    let mut truncation_source = None;
+    for unit in units {
+        builder.mark_boundary(unit.byte_start);
+        if unit.width == 0 {
+            builder.mark_boundary(unit.byte_end);
+            continue;
+        }
+
+        if builder.current_width().saturating_add(unit.width as u16) > max_width.saturating_sub(1) {
+            truncation_source = Some(unit);
+            builder.mark_boundary_at(unit.byte_end, builder.current_row(), max_width);
+            break;
+        }
+
+        builder.push_unit(unit);
+        builder.mark_boundary(unit.byte_end);
+    }
+
+    if line_width_without_wrap(units) > max_width || truncation_source.is_some() {
+        builder.push_ellipsis(truncation_source.or_else(|| units.last()), request);
+    }
+}
+
+fn layout_no_wrap(
+    request: &TextLayoutRequest<'_>,
+    units: &[SourceUnit],
+    builder: &mut LineBuilder,
+) {
+    match request.overflow {
+        TextOverflow::Clip => layout_no_wrap_clip(request, units, builder),
+        TextOverflow::Ellipsis => layout_no_wrap_ellipsis(request, units, builder),
+    }
 }
 
 fn append_char_wrapped_units(
     request: &TextLayoutRequest<'_>,
     units: &[SourceUnit],
-    lines: &mut Vec<VisualLine>,
-    cursor: &mut Option<CursorPlacement>,
+    builder: &mut LineBuilder,
 ) {
     let Some(max_width) = request.max_width else {
-        let row = lines.len();
-        lines.push(finalize_line_for_no_wrap(request, units, row, cursor));
+        layout_no_wrap(request, units, builder);
         return;
     };
 
     if max_width == 0 {
-        let row = lines.len();
-        let line = VisualLine {
-            display_width: 0,
-            cells: Vec::new(),
-            ends_with_ellipsis: false,
-        };
+        let row = builder.current_row();
         for unit in units {
-            place_cursor_if_matches(request.cursor, cursor, unit.byte_start, row, 0);
-            place_cursor_if_matches(request.cursor, cursor, unit.byte_end, row, 0);
+            builder.mark_boundary_at(unit.byte_start, row, 0);
+            builder.mark_boundary_at(unit.byte_end, row, 0);
         }
-        lines.push(line);
         return;
     }
 
-    let mut line = VisualLine {
-        display_width: 0,
-        cells: Vec::new(),
-        ends_with_ellipsis: false,
-    };
-
     for unit in units {
-        let mut row = lines.len();
-        place_cursor_if_matches(
-            request.cursor,
-            cursor,
-            unit.byte_start,
-            row,
-            line.display_width,
-        );
+        builder.mark_boundary(unit.byte_start);
 
         if unit.width == 0 {
-            place_cursor_if_matches(
-                request.cursor,
-                cursor,
-                unit.byte_end,
-                row,
-                line.display_width,
-            );
+            builder.mark_boundary(unit.byte_end);
             continue;
         }
 
-        if line.display_width > 0
-            && line.display_width.saturating_add(unit.width as u16) > max_width
-        {
-            lines.push(line);
-            line = VisualLine {
-                display_width: 0,
-                cells: Vec::new(),
-                ends_with_ellipsis: false,
-            };
-            row = lines.len();
-            place_cursor_if_matches(request.cursor, cursor, unit.byte_start, row, 0);
+        if builder.current_width() > 0 && !builder.can_fit(unit.width as u16, max_width) {
+            builder.finish_line();
+            builder.mark_boundary(unit.byte_start);
         }
 
-        if line.display_width == 0 && unit.width as u16 > max_width {
-            place_cursor_if_matches(request.cursor, cursor, unit.byte_end, row, 0);
-            lines.push(line);
-            line = VisualLine {
-                display_width: 0,
-                cells: Vec::new(),
-                ends_with_ellipsis: false,
-            };
+        if builder.current_width() == 0 && unit.width as u16 > max_width {
+            builder.mark_boundary(unit.byte_end);
+            builder.finish_line();
             continue;
         }
 
-        push_visible_unit(&mut line, unit);
-        place_cursor_if_matches(
-            request.cursor,
-            cursor,
-            unit.byte_end,
-            row,
-            line.display_width,
-        );
+        builder.push_unit(unit);
+        builder.mark_boundary(unit.byte_end);
     }
-
-    lines.push(line);
 }
 
 fn append_word_wrapped_units(
     request: &TextLayoutRequest<'_>,
     units: &[SourceUnit],
-    lines: &mut Vec<VisualLine>,
-    cursor: &mut Option<CursorPlacement>,
+    builder: &mut LineBuilder,
 ) {
     let Some(max_width) = request.max_width else {
-        let row = lines.len();
-        lines.push(finalize_line_for_no_wrap(request, units, row, cursor));
+        layout_no_wrap(request, units, builder);
         return;
     };
 
     if max_width == 0 {
-        let row = lines.len();
+        let row = builder.current_row();
         for unit in units {
-            place_cursor_if_matches(request.cursor, cursor, unit.byte_start, row, 0);
-            place_cursor_if_matches(request.cursor, cursor, unit.byte_end, row, 0);
+            builder.mark_boundary_at(unit.byte_start, row, 0);
+            builder.mark_boundary_at(unit.byte_end, row, 0);
         }
-        lines.push(VisualLine {
-            display_width: 0,
-            cells: Vec::new(),
-            ends_with_ellipsis: false,
-        });
         return;
     }
 
     if units.is_empty() {
-        lines.push(VisualLine {
-            display_width: 0,
-            cells: Vec::new(),
-            ends_with_ellipsis: false,
-        });
         return;
     }
 
     let segments = build_segments(units);
-    let mut line = VisualLine {
-        display_width: 0,
-        cells: Vec::new(),
-        ends_with_ellipsis: false,
-    };
-
     for segment in segments {
         let segment_units = &units[segment.start..segment.end];
         let segment_width: u16 = segment_units.iter().map(|unit| unit.width as u16).sum();
 
         if !segment.is_space
-            && line.display_width > 0
-            && line.display_width.saturating_add(segment_width) > max_width
+            && builder.current_width() > 0
+            && builder.current_width().saturating_add(segment_width) > max_width
         {
-            lines.push(line);
-            line = VisualLine {
-                display_width: 0,
-                cells: Vec::new(),
-                ends_with_ellipsis: false,
-            };
+            builder.finish_line();
         }
 
         if !segment.is_space && segment_width <= max_width {
-            let row = lines.len();
             for unit in segment_units {
-                place_cursor_if_matches(
-                    request.cursor,
-                    cursor,
-                    unit.byte_start,
-                    row,
-                    line.display_width,
-                );
-                push_visible_unit(&mut line, unit);
-                place_cursor_if_matches(
-                    request.cursor,
-                    cursor,
-                    unit.byte_end,
-                    row,
-                    line.display_width,
-                );
+                builder.mark_boundary(unit.byte_start);
+                builder.push_unit(unit);
+                builder.mark_boundary(unit.byte_end);
             }
             continue;
         }
 
         for unit in segment_units {
-            let mut row = lines.len();
-            place_cursor_if_matches(
-                request.cursor,
-                cursor,
-                unit.byte_start,
-                row,
-                line.display_width,
-            );
+            builder.mark_boundary(unit.byte_start);
 
             if unit.width == 0 {
-                place_cursor_if_matches(
-                    request.cursor,
-                    cursor,
-                    unit.byte_end,
-                    row,
-                    line.display_width,
-                );
+                builder.mark_boundary(unit.byte_end);
                 continue;
             }
 
-            if line.display_width > 0
-                && line.display_width.saturating_add(unit.width as u16) > max_width
-            {
-                lines.push(line);
-                line = VisualLine {
-                    display_width: 0,
-                    cells: Vec::new(),
-                    ends_with_ellipsis: false,
-                };
-                row = lines.len();
-                place_cursor_if_matches(request.cursor, cursor, unit.byte_start, row, 0);
+            if builder.current_width() > 0 && !builder.can_fit(unit.width as u16, max_width) {
+                builder.finish_line();
+                builder.mark_boundary(unit.byte_start);
             }
 
-            if line.display_width == 0 && unit.width as u16 > max_width {
-                place_cursor_if_matches(request.cursor, cursor, unit.byte_end, row, 0);
+            if builder.current_width() == 0 && unit.width as u16 > max_width {
+                builder.mark_boundary(unit.byte_end);
                 continue;
             }
 
-            push_visible_unit(&mut line, unit);
-            place_cursor_if_matches(
-                request.cursor,
-                cursor,
-                unit.byte_end,
-                row,
-                line.display_width,
-            );
+            builder.push_unit(unit);
+            builder.mark_boundary(unit.byte_end);
         }
     }
-
-    lines.push(line);
 }
 
 fn line_width_without_wrap(units: &[SourceUnit]) -> u16 {
@@ -664,50 +579,38 @@ fn line_width_without_wrap(units: &[SourceUnit]) -> u16 {
 
 pub(crate) fn layout_text(request: &TextLayoutRequest<'_>) -> TextLayoutResult {
     let explicit_lines = build_explicit_lines(request);
-    let mut lines = Vec::new();
-    let mut cursor = None;
+    let mut builder = LineBuilder::new(request.cursor);
 
     for explicit_line in &explicit_lines {
         match request.wrap {
-            TextWrap::None => {
-                let row = lines.len();
-                lines.push(finalize_line_for_no_wrap(
-                    request,
-                    &explicit_line.units,
-                    row,
-                    &mut cursor,
-                ));
-            }
+            TextWrap::None => layout_no_wrap(request, &explicit_line.units, &mut builder),
             TextWrap::Char => {
-                append_char_wrapped_units(request, &explicit_line.units, &mut lines, &mut cursor)
+                append_char_wrapped_units(request, &explicit_line.units, &mut builder)
             }
             TextWrap::Word => {
-                append_word_wrapped_units(request, &explicit_line.units, &mut lines, &mut cursor)
+                append_word_wrapped_units(request, &explicit_line.units, &mut builder)
             }
         }
+        builder.finish_line();
 
         if let Some(break_start) = explicit_line.break_start {
-            if let Some(last_line) = lines.last() {
-                place_cursor_if_matches(
-                    request.cursor,
-                    &mut cursor,
+            if let Some(last_line) = builder.last_finished_line() {
+                builder.mark_boundary_at(
                     break_start,
-                    lines.len() - 1,
+                    builder.finished_line_count() - 1,
                     last_line.display_width,
                 );
             }
         }
         if let Some(break_end) = explicit_line.break_end {
-            place_cursor_if_matches(request.cursor, &mut cursor, break_end, lines.len(), 0);
+            builder.mark_boundary_at(break_end, builder.finished_line_count(), 0);
         }
     }
 
+    let (mut lines, mut cursor) = builder.into_parts();
+
     if lines.is_empty() {
-        lines.push(VisualLine {
-            display_width: 0,
-            cells: Vec::new(),
-            ends_with_ellipsis: false,
-        });
+        lines.push(empty_line());
     }
 
     if request.show_cursor && cursor.is_none() && request.cursor == Some(request.text.len()) {
@@ -805,5 +708,122 @@ pub(crate) fn measure_min_content(
             })
             .max()
             .unwrap_or(0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request<'a>(
+        text: &'a str,
+        max_width: Option<u16>,
+        wrap: TextWrap,
+        overflow: TextOverflow,
+        cursor: Option<usize>,
+    ) -> TextLayoutRequest<'a> {
+        TextLayoutRequest {
+            text,
+            spans: &[],
+            max_width,
+            wrap,
+            overflow,
+            cursor,
+            show_cursor: cursor.is_some(),
+            default_fg: DEFAULT_FG,
+            default_bg: DEFAULT_BG,
+        }
+    }
+
+    fn line_text(line: &VisualLine) -> String {
+        line.cells.iter().map(|cell| cell.ch).collect()
+    }
+
+    #[test]
+    fn no_wrap_ellipsis_truncates_with_trailing_marker() {
+        let result = layout_text(&request(
+            "abcd",
+            Some(3),
+            TextWrap::None,
+            TextOverflow::Ellipsis,
+            None,
+        ));
+
+        assert_eq!(result.width, 3);
+        assert_eq!(result.height, 1);
+        assert_eq!(line_text(&result.lines[0]), "ab…");
+        assert!(result.lines[0].ends_with_ellipsis);
+    }
+
+    #[test]
+    fn width_zero_units_do_not_advance_display_width() {
+        let text = "a\u{0301}b";
+        let accent_end = "a\u{0301}".len();
+        let result = layout_text(&request(
+            text,
+            Some(10),
+            TextWrap::None,
+            TextOverflow::Clip,
+            Some(accent_end),
+        ));
+
+        assert_eq!(result.width, 2);
+        assert_eq!(result.height, 1);
+        assert_eq!(line_text(&result.lines[0]), "ab");
+        let cursor = result.cursor.expect("cursor should be placed");
+        assert_eq!(cursor.row, 0);
+        assert_eq!(cursor.col, 1);
+    }
+
+    #[test]
+    fn char_wrap_breaks_at_visible_unit_boundaries() {
+        let result = layout_text(&request(
+            "abcd",
+            Some(3),
+            TextWrap::Char,
+            TextOverflow::Clip,
+            None,
+        ));
+
+        assert_eq!(result.width, 3);
+        assert_eq!(result.height, 2);
+        assert_eq!(line_text(&result.lines[0]), "abc");
+        assert_eq!(line_text(&result.lines[1]), "d");
+    }
+
+    #[test]
+    fn word_wrap_prefers_whole_segments() {
+        let result = layout_text(&request(
+            "ab cd",
+            Some(3),
+            TextWrap::Word,
+            TextOverflow::Clip,
+            None,
+        ));
+
+        assert_eq!(result.width, 3);
+        assert_eq!(result.height, 2);
+        assert_eq!(line_text(&result.lines[0]), "ab ");
+        assert_eq!(line_text(&result.lines[1]), "cd");
+    }
+
+    #[test]
+    fn explicit_break_places_cursor_on_following_row_start() {
+        let text = "ab\ncd";
+        let break_end = "ab\n".len();
+        let result = layout_text(&request(
+            text,
+            Some(10),
+            TextWrap::None,
+            TextOverflow::Clip,
+            Some(break_end),
+        ));
+
+        assert_eq!(result.height, 2);
+        assert_eq!(line_text(&result.lines[0]), "ab");
+        assert_eq!(line_text(&result.lines[1]), "cd");
+        let cursor = result.cursor.expect("cursor should be placed");
+        assert_eq!(cursor.row, 1);
+        assert_eq!(cursor.col, 0);
     }
 }
