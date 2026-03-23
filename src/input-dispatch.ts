@@ -1,47 +1,41 @@
+import {
+  reduceEditor,
+  type EditorCommand,
+  type EditorState,
+} from "./input-editor";
 import { prepareTextInput } from "./text-spans";
 
 const IGNORED_INPUT_CONTROL_PATTERN = /[\x00-\x09\x0B\x0C\x0E-\x1F]/;
 
-type InputChunkOp =
-  | { type: "insert"; text: string }
-  | { type: "backspace" }
-  | { type: "newline" };
-
 export type InputDispatchTarget = {
-  getText: () => string;
-  setText: (value: string) => void;
+  getState: () => EditorState;
+  setState: (state: EditorState) => void;
   multiline: boolean;
   onChange?: (value: string) => void;
   onSubmit?: (value: string) => void;
 };
 
-function deletePreviousCodepoint(text: string): string {
-  const chars = Array.from(text);
-  chars.pop();
-  return chars.join("");
-}
-
-function pushInsertOp(ops: InputChunkOp[], buffer: string[]): void {
+function pushInsertCommand(ops: EditorCommand[], buffer: string[]): void {
   if (buffer.length === 0) return;
-  ops.push({ type: "insert", text: buffer.join("") });
+  ops.push({ type: "insertText", text: buffer.join("") });
   buffer.length = 0;
 }
 
-export function parseInputChunk(data: string): InputChunkOp[] {
+export function parseInputCommands(data: string): EditorCommand[] {
   const normalized = prepareTextInput(data).text;
-  const ops: InputChunkOp[] = [];
+  const ops: EditorCommand[] = [];
   const buffer: string[] = [];
 
   for (const ch of normalized) {
     if (ch === "\x7f") {
-      pushInsertOp(ops, buffer);
-      ops.push({ type: "backspace" });
+      pushInsertCommand(ops, buffer);
+      ops.push({ type: "deleteBackward" });
       continue;
     }
 
     if (ch === "\n") {
-      pushInsertOp(ops, buffer);
-      ops.push({ type: "newline" });
+      pushInsertCommand(ops, buffer);
+      ops.push({ type: "insertLineBreak" });
       continue;
     }
 
@@ -52,7 +46,7 @@ export function parseInputChunk(data: string): InputChunkOp[] {
     buffer.push(ch);
   }
 
-  pushInsertOp(ops, buffer);
+  pushInsertCommand(ops, buffer);
   return ops;
 }
 
@@ -64,56 +58,28 @@ export function dispatchInputChunk(
     return false;
   }
 
-  const ops = parseInputChunk(data);
+  const ops = parseInputCommands(data);
   if (ops.length === 0) {
     return false;
   }
 
-  let draft = target.getText();
   let handled = false;
-  let hasPendingInsert = false;
-
-  const commitDraft = (): void => {
-    if (!hasPendingInsert) {
-      return;
-    }
-
-    target.setText(draft);
-    target.onChange?.(target.getText());
-    draft = target.getText();
-    hasPendingInsert = false;
-  };
 
   for (const op of ops) {
     handled = true;
+    const result = reduceEditor(target.getState(), op, {
+      multiline: target.multiline,
+    });
 
-    switch (op.type) {
-      case "insert":
-        draft += op.text;
-        hasPendingInsert = true;
-        break;
-      case "backspace":
-        commitDraft();
-        target.setText(deletePreviousCodepoint(target.getText()));
-        target.onChange?.(target.getText());
-        draft = target.getText();
-        break;
-      case "newline":
-        if (target.multiline) {
-          commitDraft();
-          target.setText(target.getText() + "\n");
-          target.onChange?.(target.getText());
-          draft = target.getText();
-          break;
-        }
+    if (result.changed) {
+      target.setState(result.state);
+      target.onChange?.(result.state.text);
+    }
 
-        commitDraft();
-        target.onSubmit?.(target.getText());
-        draft = target.getText();
-        break;
+    if (result.submit !== undefined) {
+      target.onSubmit?.(result.submit);
     }
   }
 
-  commitDraft();
   return handled;
 }

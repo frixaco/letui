@@ -4,6 +4,7 @@ import { dirname } from "path";
 import api from "./ffi";
 import { $, ff, type Signal } from "./signals";
 import { getFocusedNode, getFocusVersion } from "./components";
+import { getInputEditorState, setInputEditorState } from "./input-editor";
 import { dispatchInputChunk } from "./input-dispatch";
 import {
   NODE_TYPE,
@@ -575,8 +576,8 @@ function dispatchToNode(node: Node, data: string): boolean {
   if (node.type === NODE_TYPE.Input) {
     return dispatchInputChunk(
       {
-        getText: () => node.props.text(),
-        setText: (value) => node.setText(value),
+        getState: () => getInputEditorState(node),
+        setState: (state) => setInputEditorState(node, state),
         multiline: node.props.multiline() === true,
         onChange: node.handlers.onChange,
         onSubmit: node.handlers.onSubmit,

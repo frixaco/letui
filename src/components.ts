@@ -1,3 +1,4 @@
+import { resetInputEditorText } from "./input-editor";
 import { $, type Signal } from "./signals";
 import { normalizeStyledText, prepareTextInput } from "./text-spans";
 import { NODE_TYPE } from "./types";
@@ -327,12 +328,13 @@ export function Input(input: InputProps): InputNode {
     children: undefined,
     setChildren: undefined,
     setStyle: makeSetStyle(props),
-    setText: (v) => props.text(prepareTextInput(v).text),
+    setText: (v) => resetInputEditorText(node, v),
     focus: () => focusNode(node),
     blur: () => blurNode(node),
     isFocused: () => focusedNode === node,
   };
 
+  resetInputEditorText(node, "");
   return node;
 }
 
