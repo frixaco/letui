@@ -69,7 +69,7 @@ function formatSeconds(ms: number): string {
 }
 
 function keyLabel(value: string): string {
-  return value.length === 0 ? "   " : ` ${value} `;
+  return value.length === 0 ? "   " : ` ${value.toUpperCase()} `;
 }
 
 function createKey(value: string): KeyNode {
@@ -97,9 +97,22 @@ const startedAt = $<number | null>(null);
 const finishedAt = $<number | null>(null);
 const now = $(Date.now());
 
+const titleText = "TYPING SPEED // COLEMAK MOD DH";
 const title = Text({
-  text: "typing speed // colemak mod dh",
-  foreground: THEME.accent,
+  text: {
+    text: titleText,
+    spans: [{ start: 0, end: titleText.length, foreground: THEME.accent, bold: true }],
+  },
+});
+
+const separator = Text({
+  text: "─".repeat(KEYBOARD_WIDTH),
+  foreground: THEME.border,
+});
+
+const promptCounter = Text({
+  text: "",
+  foreground: THEME.muted,
 });
 
 const statsLine = Text({
@@ -185,8 +198,9 @@ const content = Column(
   {
     gap: 1,
     alignItems: "center",
+    padding: "1 2",
   },
-  [title, statsLine, promptLine, typedLine, keyboard, hintLine],
+  [title, separator, promptCounter, statsLine, promptLine, typedLine, keyboard, hintLine],
 );
 
 const root = Column(
@@ -194,7 +208,7 @@ const root = Column(
     flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: "1 1",
+    padding: "2 2",
   },
   [content],
 );
@@ -249,6 +263,8 @@ ff(() => {
   const lastExpected = prompt[currentTyped.length - 1] ?? "";
   const lastWasCorrect = lastTyped.length > 0 && lastTyped === lastExpected;
 
+  promptCounter.setText(`${promptIndex() + 1} / ${PROMPTS.length}`);
+
   statsLine.setText(
     `wpm ${grossWpm.toFixed(1)}   acc ${accuracy.toFixed(0)}%   errors ${errors}   time ${formatSeconds(elapsedMs)}s`,
   );
@@ -256,10 +272,36 @@ ff(() => {
     foreground: finished ? THEME.ok : errors > 0 ? THEME.warn : THEME.text,
   });
 
-  promptLine.setText(prompt);
-  promptLine.setStyle({ foreground: THEME.text });
+  // Per-character styled prompt: correct=accent, wrong=fail, cursor=underline, untyped=muted
+  const promptChars = Array.from(prompt);
+  const spans: { start: number; end: number; foreground?: number; background?: number; bold?: boolean; underline?: boolean }[] = [];
+  for (let i = 0; i < promptChars.length; i++) {
+    if (i < currentTyped.length) {
+      const isCorrect = currentTyped[i] === promptChars[i];
+      spans.push({
+        start: i,
+        end: i + 1,
+        foreground: isCorrect ? THEME.accent : THEME.fail,
+        bold: isCorrect,
+      });
+    } else if (i === currentTyped.length && !finished) {
+      spans.push({
+        start: i,
+        end: i + 1,
+        foreground: THEME.text,
+        underline: true,
+      });
+    } else {
+      spans.push({
+        start: i,
+        end: i + 1,
+        foreground: THEME.muted,
+      });
+    }
+  }
+  promptLine.setText({ text: prompt, spans });
 
-  typedLine.setText(currentTyped.length === 0 ? "start typing" : currentTyped);
+  typedLine.setText(currentTyped.length === 0 ? "▸ start typing" : currentTyped);
   typedLine.setStyle({
     foreground:
       finished && errors === 0

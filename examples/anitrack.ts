@@ -2,12 +2,12 @@
 // keyboard-first (j/k/h/l/tab/enter) with mouse support
 
 import { existsSync } from "fs";
-import { COLORS } from "@/colors";
-import { Button, Column, Input, Row, Text, run, onKey } from "@/components";
+import { COLORS } from "../src/colors";
+import { Button, Column, Input, Row, Text, run, onKey } from "../src/components";
 import { LoadingBar } from "./progress-bar";
-import { $, ff } from "@/signals";
-import { saveMetrics } from "@/metrics";
-import type { StyledText, TextSpan } from "@/types";
+import { $, ff } from "../src/signals";
+import { saveMetrics } from "../src/metrics";
+import type { StyledText, TextSpan } from "../src/types";
 
 // --- Theme ---
 const T = {
@@ -63,6 +63,17 @@ function styled(segments: readonly StyledSegment[]): StyledText {
   return { text, spans };
 }
 
+function hint(key: string, label: string, color: number = T.accent): StyledSegment[] {
+  return [
+    { text: key, foreground: color, bold: true },
+    { text: ` ${label}`, foreground: T.muted },
+  ];
+}
+
+function sep(): StyledSegment {
+  return { text: "  ", foreground: T.muted };
+}
+
 // --- Types ---
 type ScrapeResultItem = {
   title: string;
@@ -76,7 +87,15 @@ const results = $<ScrapeResultItem[]>([]);
 const loading = $(false);
 const selectedIndex = $(0);
 const focusTarget = $<"input" | "results">("input");
+const errorMsg = $("");
 const MPV_SOCKET_WAIT_MS = 5000;
+let errorTimer: Timer | null = null;
+
+function flashError(msg: string): void {
+  errorMsg(msg);
+  if (errorTimer) clearTimeout(errorTimer);
+  errorTimer = setTimeout(() => errorMsg(""), 4000);
+}
 
 // --- Loading Bar ---
 const loadingBar = LoadingBar({
@@ -133,7 +152,8 @@ async function fetchResults(query: string) {
     results(parsedResults);
     selectedIndex(0);
     focusTarget(parsedResults.length > 0 ? "results" : "input");
-  } catch {
+  } catch (err) {
+    flashError(err instanceof Error ? err.message : "search failed");
     resetResultsToInput();
   } finally {
     loading(false);
@@ -163,8 +183,8 @@ async function streamResult(magnet: string) {
     while (!existsSync(ipcPath) && Date.now() < deadline) {
       await Bun.sleep(50);
     }
-  } catch {
-    // keep UI alive
+  } catch (err) {
+    flashError(err instanceof Error ? err.message : "stream failed");
   } finally {
     loadingBar.stop();
   }
@@ -203,10 +223,16 @@ const countBadge = Text({
   paddingX: 1,
 });
 
+const errorLine = Text({
+  text: "",
+  foreground: COLORS.default.red,
+});
+
 const header = Column(
   {
-    padding: "1 1",
+    padding: "0 1",
     borderBottom: { color: T.border },
+    gap: 0,
   },
   [
     Row(
@@ -221,6 +247,7 @@ const header = Column(
         Row({ gap: 1, flexWrap: "wrap" }, [statusBadge, countBadge]),
       ],
     ),
+    errorLine,
   ],
 );
 
@@ -228,7 +255,7 @@ const header = Column(
 const searchInput = Input({
   placeholder: "search torrents...",
   border: idleBorder,
-  padding: "1 1",
+  padding: "0 1",
   foreground: T.fg,
   onSubmit: (val) => {
     const query = val.trim();
@@ -246,29 +273,26 @@ const searchInput = Input({
 });
 
 const searchHint = Text({
-  text: styled([
-    { text: "Enter", foreground: T.accent, bold: true },
-    { text: " search", foreground: T.muted },
-    { text: "   ", foreground: T.muted },
-    { text: "Tab", foreground: T.accent, bold: true },
-    { text: " results", foreground: T.muted },
-  ]),
+  text: styled([...hint("Enter", "search"), sep(), ...hint("Tab", "results")]),
+});
+
+const searchLabel = Text({
+  text: styled([{ text: "SEARCH", foreground: T.accent, bold: true }]),
 });
 
 const searchPanel = Column(
   {
-    gap: 1,
-    padding: "1 1",
+    gap: 0,
+    padding: "0 1",
     borderBottom: { color: T.border },
     flexShrink: 0,
   },
   [
     Row({ gap: 1, alignItems: "center", flexWrap: "wrap" }, [
-      Text({ text: "SEARCH", foreground: T.accent }),
+      searchLabel,
       searchHint,
     ]),
     Row({ alignItems: "stretch" }, [searchInput]),
-    Row({}, [loadingBar.node]),
   ],
 );
 
@@ -282,32 +306,39 @@ const resultsList = Column({ padding: "0 0", flexGrow: 1, gap: 0 }, []);
 
 const helpLine = Text({
   text: styled([
-    { text: "/", foreground: T.accent, bold: true },
-    { text: " search", foreground: T.muted },
-    { text: "  ", foreground: T.muted },
-    { text: "j/k", foreground: T.active, bold: true },
-    { text: " navigate", foreground: T.muted },
-    { text: "  ", foreground: T.muted },
-    { text: "h/l", foreground: T.active, bold: true },
-    { text: " jump", foreground: T.muted },
-    { text: "  ", foreground: T.muted },
-    { text: "Enter", foreground: T.orange, bold: true },
-    { text: " stream", foreground: T.muted },
-    { text: "  ", foreground: T.muted },
-    { text: "q", foreground: T.pink, bold: true },
-    { text: " quit", foreground: T.muted },
+    ...hint("/", "search"),
+    sep(),
+    ...hint("j/k", "navigate", T.active),
+    sep(),
+    ...hint("h/l", "jump", T.active),
+    sep(),
+    ...hint("Enter", "stream", T.orange),
+    sep(),
+    ...hint("q", "quit", T.pink),
   ]),
+});
+
+const emptyState = Text({
+  text: styled([
+    { text: "  ◇  ", foreground: T.border },
+    { text: "no results", foreground: T.muted, italic: true },
+    { text: " — enter a query above to search", foreground: T.dim },
+  ]),
+});
+
+const resultsLabel = Text({
+  text: styled([{ text: "RESULTS", foreground: T.accent, bold: true }]),
 });
 
 const resultsPanel = Column(
   {
-    gap: 1,
-    padding: "1 1",
+    gap: 0,
+    padding: "0 1",
     flexGrow: 1,
     minHeight: 0,
   },
   [
-    Text({ text: "RESULTS", foreground: T.accent }),
+    Row({ gap: 1, alignItems: "center" }, [resultsLabel, loadingBar.node]),
     resultsSummary,
     resultsList,
     helpLine,
@@ -318,10 +349,12 @@ const resultsPanel = Column(
 const root = Column({ flexGrow: 1 }, [header, searchPanel, resultsPanel]);
 
 // --- Result Row Pool ---
-let resultButtons: ReturnType<typeof Button>[] = [];
-let visibleStartIndex = 0;
-let lastResultsSnapshot: ScrapeResultItem[] | null = null;
-const resultHeights = new Map<number, number>();
+const viewport = {
+  buttons: [] as ReturnType<typeof Button>[],
+  start: 0,
+  snapshot: null as ScrapeResultItem[] | null,
+  heights: new Map<number, number>(),
+};
 
 type ResultRow = {
   button: ReturnType<typeof Button>;
@@ -346,12 +379,15 @@ function createResultRow(): ResultRow {
     wrap: "word",
     foreground: T.muted,
   });
+  const marker = Column(
+    { width: 1, minWidth: 1, maxWidth: 1, flexShrink: 0 },
+    [],
+  );
+  const content = Column({ gap: 0, flexGrow: 1, padding: "0 1" }, [title, meta]);
 
   const button = Button(
     {
       text: "",
-      border: undefined,
-      padding: "0 1",
       foreground: T.fg,
       onFocus: () => {
         if (focusTarget() !== "results") focusTarget("results");
@@ -363,7 +399,7 @@ function createResultRow(): ResultRow {
         if (magnet.length > 0) streamResult(magnet);
       },
     },
-    [Column({ gap: 0 }, [title, meta])],
+    [Row({ alignItems: "stretch", gap: 0 }, [marker, content])],
   );
 
   return {
@@ -374,10 +410,8 @@ function createResultRow(): ResultRow {
       globalIdx = nextGlobalIdx;
       magnet = item.magnet;
 
-      const marker = isActive ? "▸ " : "  ";
       title.setText(
         styled([
-          { text: marker, foreground: isActive ? T.active : T.muted },
           { text: item.title, foreground: isActive ? T.active : T.fg, bold: isActive },
         ]),
       );
@@ -388,9 +422,8 @@ function createResultRow(): ResultRow {
           { text: item.date, foreground: isActive ? T.accent : T.muted, italic: true },
         ]),
       );
-      button.setStyle({
-        background: isActive ? T.bgAlt : undefined,
-      });
+      button.setStyle({ background: undefined });
+      marker.setStyle({ borderRight: isActive ? { color: T.active } : undefined });
     },
   };
 }
@@ -407,6 +440,10 @@ ff(() => {
   const selected = selectedIndex();
   const isLoading = loading();
   const activePane = focusTarget();
+  const error = errorMsg();
+
+  // Error line
+  errorLine.setText(error.length > 0 ? `⚠ ${error}` : "");
 
   // Header badges
   if (isLoading) {
@@ -448,31 +485,33 @@ ff(() => {
   );
 
   // Results summary
-  resultsSummary.setText(
-    all.length === 0
-      ? "no results — enter a query to search"
-      : `${all.length} results · navigating with ${activePane === "results" ? "keyboard" : "mouse"}`,
-  );
-  resultsSummary.setStyle({
-    foreground: all.length === 0 ? T.muted : activePane === "results" ? T.active : T.accent,
-  });
-
-  if (all !== lastResultsSnapshot) {
-    resultHeights.clear();
-    lastResultsSnapshot = all;
+  if (all.length === 0) {
+    resultsSummary.setText("");
+  } else {
+    resultsSummary.setText(
+      `${all.length} results · navigating with ${activePane === "results" ? "keyboard" : "mouse"}`,
+    );
+    resultsSummary.setStyle({
+      foreground: activePane === "results" ? T.active : T.accent,
+    });
   }
 
-  for (let i = 0; i < resultButtons.length; i++) {
-    const measuredHeight = Math.floor(resultButtons[i]?.frameHeight() ?? 0);
+  if (all !== viewport.snapshot) {
+    viewport.heights.clear();
+    viewport.snapshot = all;
+  }
+
+  for (let i = 0; i < viewport.buttons.length; i++) {
+    const measuredHeight = Math.floor(viewport.buttons[i]?.frameHeight() ?? 0);
     if (measuredHeight > 0) {
-      resultHeights.set(visibleStartIndex + i, measuredHeight);
+      viewport.heights.set(viewport.start + i, measuredHeight);
     }
   }
 
   if (all.length === 0) {
-    visibleStartIndex = 0;
-    resultButtons = [];
-    resultsList.setChildren?.([]);
+    viewport.start = 0;
+    viewport.buttons = [];
+    resultsList.setChildren?.([emptyState]);
     if (focusTarget() === "results") focusInput();
     return;
   }
@@ -488,13 +527,13 @@ ff(() => {
   const fallbackHeight = Math.max(
     1,
     Math.floor(
-      resultHeights.get(selected) ??
-        resultButtons[0]?.frameHeight() ??
+      viewport.heights.get(selected) ??
+        viewport.buttons[0]?.frameHeight() ??
         searchInput.frameHeight(),
     ),
   );
   const itemHeightAt = (index: number) =>
-    Math.max(1, Math.floor(resultHeights.get(index) ?? fallbackHeight));
+    Math.max(1, Math.floor(viewport.heights.get(index) ?? fallbackHeight));
 
   let start = selected;
   let usedHeight = 0;
@@ -523,9 +562,9 @@ ff(() => {
   }
 
   const visible = all.slice(start, end);
-  visibleStartIndex = start;
+  viewport.start = start;
   ensureResultRows(visible.length);
-  resultButtons = visible.map((item, i) => {
+  viewport.buttons = visible.map((item, i) => {
     const globalIdx = start + i;
     const isActive = globalIdx === selected;
     const row = resultRows[i]!;
@@ -533,7 +572,7 @@ ff(() => {
     return row.button;
   });
 
-  resultsList.setChildren?.(resultButtons);
+  resultsList.setChildren?.(viewport.buttons);
 
   if (focusTarget() === "results") focusSelectedResult();
 });
@@ -589,13 +628,13 @@ function focusSelectedResult() {
     return;
   }
   focusTarget("results");
-  const selectedVisibleIndex = selectedIndex() - visibleStartIndex;
-  const selectedButton = resultButtons[selectedVisibleIndex];
+  const selectedVisibleIndex = selectedIndex() - viewport.start;
+  const selectedButton = viewport.buttons[selectedVisibleIndex];
   if (selectedButton) {
     selectedButton.focus();
     return;
   }
-  resultButtons[0]?.focus();
+  viewport.buttons[0]?.focus();
 }
 
 function toggleFocusTarget() {

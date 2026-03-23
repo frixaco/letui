@@ -26,13 +26,11 @@ export function LoadingBar(props: LoadingBarProps): LoadingBarController {
 
   const leftTrack = Text({
     text: "",
-    background: trackColor,
     foreground: trackColor,
   });
-  const dot = Text({ text: "", background: dotColor, foreground: dotColor });
+  const dot = Text({ text: "", foreground: dotColor });
   const rightTrack = Text({
     text: "",
-    background: trackColor,
     foreground: trackColor,
   });
 
@@ -51,9 +49,9 @@ export function LoadingBar(props: LoadingBarProps): LoadingBarController {
     const maxPos = width - 1;
     const clampedPos = Math.max(0, Math.min(pos, maxPos));
 
-    leftTrack.setText?.(" ".repeat(clampedPos));
-    dot.setText?.(" ");
-    rightTrack.setText?.(" ".repeat(maxPos - clampedPos));
+    leftTrack.setText?.("-".repeat(clampedPos));
+    dot.setText?.("o");
+    rightTrack.setText?.("-".repeat(maxPos - clampedPos));
   });
 
   function clearTimer() {

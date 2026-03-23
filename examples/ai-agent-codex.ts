@@ -1119,7 +1119,7 @@ const composerHint = Text({
 const composer = Input({
   placeholder: "Type a prompt…",
   border: idleBorder,
-  padding: "1 0",
+  padding: "0 1",
   foreground: THEME.text,
   onSubmit: submitPrompt,
   onFocus: (self) => self.setStyle({ border: focusBorder }),
