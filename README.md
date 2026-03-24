@@ -2,8 +2,8 @@
 
 TUI library with a Rust rendering core, built for interactive full-screen terminal apps. Performance of `ratatui`, ecosystem of TypeScript. No more `Ink`. Written from scratch.
 
-![](./demo.png)
-![](./demo-2.png)
+<img src="./examples/demo-1.png" width="49%"><img src="./examples/demo-2.png" width="49%" align="right">
+<img src="./examples/demo-3.png" width="49%"><img src="./examples/demo-4.png" width="49%" align="right">
 
 Demo video:
 
