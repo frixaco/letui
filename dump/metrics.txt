@@ -1,6 +1,6 @@
-1200fps | 0.8ms avg (0.3-2.6, p99:2.5) | 35MB | 101 frames
-serialize: 0.2ms (0-1.1) [tree→rust]
-textSync:  0.2ms (0-1.1, p99:1.1) | ops:2.1 avg 50 max | bytes:63.2 avg 2483 max
-rust:      0.3ms (0.1-1.1) [layout+paint]
-sync:      0.1ms (0-0.3) [frames→JS]
-flush:     0.1ms (0-0.3) [terminal I/O]
+238fps | 4.2ms avg (0.7-5.8, p99:5.6) | 10MB | 70 frames
+serialize: 0.6ms (0.2-1.8) [tree→rust]
+textSync:  0.6ms (0.2-1.8, p99:1.5) | ops:5 avg 128 max | bytes:119.8 avg 1548 max
+rust:      1.8ms (0-3.1) [layout+paint]
+sync:      0.3ms (0.1-0.6) [frames→JS]
+flush:     0.1ms (0-0.8) [terminal I/O]

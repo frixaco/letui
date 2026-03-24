@@ -8,6 +8,9 @@ export type SmokeRunOptions = {
   rows?: number;
   env?: Record<string, string | undefined>;
   screenPath: string;
+  spawnArgs?: string[];
+  spawnTimeoutMs?: number;
+  scenario?: (ctx: { terminal: Bun.Terminal; output: () => string }) => Promise<void> | void;
 };
 
 export type SmokeRunResult = {
@@ -59,6 +62,7 @@ export async function runSmokeExample(
 ): Promise<SmokeRunResult> {
   const decoder = new TextDecoder();
   const chunks: string[] = [];
+  const output = () => chunks.join("");
 
   await using terminal = new Bun.Terminal({
     cols: options.cols ?? 100,
@@ -74,7 +78,7 @@ export async function runSmokeExample(
   }
 
   const subprocess = Bun.spawn(
-    [process.execPath, "run", "examples/smoke.ts"],
+    options.spawnArgs ?? [process.execPath, "run", "examples/smoke.ts"],
     {
       cwd: process.cwd(),
       env: {
@@ -83,22 +87,26 @@ export async function runSmokeExample(
         ...options.env,
       },
       terminal,
-      timeout: 5000,
+      timeout: options.spawnTimeoutMs ?? 5000,
       killSignal: SMOKE_KILL_SIGNAL,
     },
   );
 
-  await waitForOutput(() => chunks.join(""), "letui smoke");
-  await Bun.sleep(50);
-  await typeText(terminal, "typed");
-  await waitForOutput(() => chunks.join(""), "[smoke:input] typed");
-  terminal.write("\r");
-  await waitForOutput(() => chunks.join(""), "[smoke:submit] typed");
-  await waitForOutput(() => chunks.join(""), "[smoke:status] ready");
-  terminal.write("\x11");
+  if (options.scenario) {
+    await options.scenario({ terminal, output });
+  } else {
+    await waitForOutput(output, "letui smoke");
+    await Bun.sleep(50);
+    await typeText(terminal, "typed");
+    await waitForOutput(output, "[smoke:input] typed");
+    terminal.write("\r");
+    await waitForOutput(output, "[smoke:submit] typed");
+    await waitForOutput(output, "[smoke:status] ready");
+    terminal.write("\x11");
+  }
 
   const exitCode = await subprocess.exited;
-  const raw = chunks.join("");
+  const raw = output();
   const screen = stripAnsi(raw);
 
   ensureParentDir(options.screenPath);

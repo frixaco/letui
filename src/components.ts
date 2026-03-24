@@ -7,6 +7,8 @@ import type {
   Node,
   BoxNode,
   BoxProps,
+  BoxEventProps,
+  WheelEvent,
   TextNode,
   TextProps,
   InputNode,
@@ -32,6 +34,8 @@ export type {
   Frame,
   Node,
   BoxProps,
+  BoxEventProps,
+  WheelEvent,
   TextProps,
   InputProps,
   ButtonProps,
@@ -240,25 +244,29 @@ function blurNode(node: Node): void {
 // CONSTRUCTORS
 // =============================================================================
 
-export function Box(input: BoxProps, children: Node[]): BoxNode {
-  const props = createBoxSignals(input);
+export function Box(input: BoxProps & BoxEventProps, children: Node[]): BoxNode {
+  const { onWheel, ...styleInput } = input;
+  const props = createBoxSignals(styleInput);
   const childrenSignal = $(children);
   const frameWidth = $(0);
   const frameHeight = $(0);
-  const initialType = directionToBoxKind(input.direction);
+  const initialType = directionToBoxKind(styleInput.direction);
   const setStyleSignals = makeSetStyle(props);
 
   const node: BoxNode = {
     type: initialType,
     id: generateId(),
     props,
-    handlers: {},
+    handlers: { onWheel },
     frame: getInitialFrame(),
     frameWidth,
     frameHeight,
     children: childrenSignal,
     setChildren: (nodes) => childrenSignal(nodes),
     setStyle: (newProps) => {
+      if (Object.prototype.hasOwnProperty.call(newProps, "onWheel")) {
+        node.handlers.onWheel = newProps.onWheel;
+      }
       if (newProps.direction !== undefined) {
         node.type = directionToBoxKind(newProps.direction);
       }
@@ -273,14 +281,14 @@ export function Box(input: BoxProps, children: Node[]): BoxNode {
 }
 
 export function Column(
-  props: Omit<BoxProps, "direction">,
+  props: Omit<BoxProps, "direction"> & BoxEventProps,
   children: Node[],
 ): BoxNode {
   return Box({ ...props, direction: "column" }, children);
 }
 
 export function Row(
-  props: Omit<BoxProps, "direction">,
+  props: Omit<BoxProps, "direction"> & BoxEventProps,
   children: Node[],
 ): BoxNode {
   return Box({ ...props, direction: "row" }, children);

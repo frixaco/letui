@@ -1,8 +1,19 @@
-import { Codex, type Thread as CodexThread, type ThreadEvent, type Usage } from "@openai/codex-sdk";
+import { createOpencodeClient } from "@opencode-ai/sdk";
 import { createHighlighter, type Highlighter } from "shiki";
 
-import { Button, Column, Input, Row, Text, ff, onKey, run } from "../index.ts";
+import {
+  Button,
+  Column,
+  Input,
+  Row,
+  Text,
+  createVirtualListController,
+  ff,
+  onKey,
+  run,
+} from "../index.ts";
 import type { StyledText, TextSpan } from "../index.ts";
+import type { VirtualListSlice } from "../index.ts";
 
 type SidebarMode = "prompts" | "threads";
 type ThreadStatus = "idle" | "streaming" | "error";
@@ -15,13 +26,18 @@ type ChatMessage = {
 };
 
 type AgentThreadState = {
-  sdkThread: CodexThread;
+  sessionId: string;
   title: string;
   prompts: string[];
   messages: ChatMessage[];
   status: ThreadStatus;
   lastLatencyMs: number | null;
-  usage: Usage | null;
+};
+
+type TranscriptItem = {
+  key: string;
+  lines: StyledText[];
+  rowCount: number;
 };
 
 type PromptSectionTone = "accent" | "blue" | "lime";
@@ -40,8 +56,6 @@ type MarkdownBlock =
   | { type: "paragraph"; text: string }
   | { type: "code"; lang: string | null; code: string };
 
-const MODEL = "gpt-5.4";
-const REASONING: "medium" = "medium";
 const SHIKI_THEME = "github-dark";
 const STACKED_BREAKPOINT = 86;
 const COMPACT_BREAKPOINT = 108;
@@ -64,7 +78,11 @@ const THEME = {
 const idleBorder = { color: THEME.border, style: "rounded" as const };
 const focusBorder = { color: THEME.accent, style: "rounded" as const };
 
-const codex = new Codex();
+const client = createOpencodeClient({
+  baseUrl: "http://localhost:4096",
+  throwOnError: true,
+});
+let currentModel = "—";
 let highlighter: Highlighter | null = null;
 
 try {
@@ -76,29 +94,47 @@ try {
   highlighter = null;
 }
 
+async function loadConfig(): Promise<void> {
+  try {
+    const config = await client.config.get();
+    if (config.data?.model) {
+      const parts = config.data.model.split("/");
+      currentModel = parts[parts.length - 1] ?? config.data.model;
+    }
+  } catch {
+    currentModel = "—";
+  }
+}
+await loadConfig();
+
 let nextMessageId = 1;
 let sidebarMode: SidebarMode = "threads";
 let activeThreadIndex = 0;
-const threads: AgentThreadState[] = [createThreadState()];
+const threads: AgentThreadState[] = [await createThreadState()];
 
 let promptRows: ReturnType<typeof Text>[] = [];
-let transcriptRows: ReturnType<typeof Text>[] = [];
+let transcriptMessageLinesCache = new Map<
+  string,
+  { width: number; role: ChatRole; content: string; lines: StyledText[] }
+>();
 
 const codeBlockCache = new Map<string, StyledSegment[][]>();
 
-function createThreadState(): AgentThreadState {
+async function createThreadState(): Promise<AgentThreadState> {
+  const session = await client.session.create({
+    query: { directory: process.cwd() },
+    body: { title: "New Thread" },
+  });
+  if (session.error) {
+    throw new Error(String(session.error));
+  }
   return {
-    sdkThread: codex.startThread({
-      model: MODEL,
-      modelReasoningEffort: REASONING,
-      workingDirectory: process.cwd(),
-    }),
+    sessionId: session.data.id,
     title: "New Thread",
     prompts: [],
     messages: [],
     status: "idle",
     lastLatencyMs: null,
-    usage: null,
   };
 }
 
@@ -609,12 +645,54 @@ function renderMarkdownToLines(text: string, width: number): StyledText[] {
   return lines;
 }
 
-function renderMessageLines(message: ChatMessage, width: number): StyledText[] {
+function renderMessageLines(
+  message: ChatMessage,
+  width: number,
+  firstLinePrefix: readonly StyledSegment[] = [],
+): StyledText[] {
   const lines: StyledText[] = [];
+  const bodyPrefix = [...firstLinePrefix, { text: "  ", foreground: THEME.muted }];
+
+  function applyFirstLinePrefix(source: StyledText[]): StyledText[] {
+    if (firstLinePrefix.length === 0 || source.length === 0) {
+      return source;
+    }
+
+    const [first, ...rest] = source;
+    if (!first) {
+      return source;
+    }
+
+    const sourceSegments: StyledSegment[] = [];
+    let cursor = 0;
+    for (const span of first.spans) {
+      if (span.start > cursor) {
+        sourceSegments.push({ text: first.text.slice(cursor, span.start) });
+      }
+
+      sourceSegments.push({
+        text: first.text.slice(span.start, span.end),
+        foreground: span.foreground,
+        background: span.background,
+        bold: span.bold,
+        italic: span.italic,
+        underline: span.underline,
+      });
+      cursor = span.end;
+    }
+    if (cursor < first.text.length) {
+      sourceSegments.push({ text: first.text.slice(cursor) });
+    }
+
+    const prefixedFirst = clippedLine([...firstLinePrefix, ...sourceSegments], width);
+
+    return [prefixedFirst, ...rest];
+  }
 
   if (message.role === "user") {
     lines.push(
       clippedLine([
+        ...firstLinePrefix,
         { text: "YOU", foreground: THEME.amber, bold: true },
       ], width),
     );
@@ -622,7 +700,7 @@ function renderMessageLines(message: ChatMessage, width: number): StyledText[] {
       ...wrapSegments(
         createInlineSegments(message.content, { foreground: THEME.text }),
         width,
-        [{ text: "  ", foreground: THEME.muted }],
+        bodyPrefix,
       ),
     );
     lines.push(styledLine([]));
@@ -632,6 +710,7 @@ function renderMessageLines(message: ChatMessage, width: number): StyledText[] {
   if (message.role === "error") {
     lines.push(
       clippedLine([
+        ...firstLinePrefix,
         { text: "ERROR", foreground: THEME.red, bold: true },
       ], width),
     );
@@ -639,7 +718,7 @@ function renderMessageLines(message: ChatMessage, width: number): StyledText[] {
       ...wrapSegments(
         createInlineSegments(message.content, { foreground: THEME.red }),
         width,
-        [{ text: "  ", foreground: THEME.muted }],
+        bodyPrefix,
       ),
     );
     lines.push(styledLine([]));
@@ -648,6 +727,7 @@ function renderMessageLines(message: ChatMessage, width: number): StyledText[] {
 
   lines.push(
     clippedLine([
+      ...firstLinePrefix,
       { text: "AI", foreground: THEME.accent, bold: true },
     ], width),
   );
@@ -655,35 +735,63 @@ function renderMessageLines(message: ChatMessage, width: number): StyledText[] {
   if (message.content.trim().length === 0) {
     lines.push(
       clippedLine([
-        { text: "  thinking…", foreground: THEME.muted, italic: true },
+        ...bodyPrefix,
+        { text: "thinking…", foreground: THEME.muted, italic: true },
       ], width),
     );
     lines.push(styledLine([]));
     return lines;
   }
 
-  lines.push(...renderMarkdownToLines(message.content, width));
+  lines.push(...applyFirstLinePrefix(renderMarkdownToLines(message.content, width)));
   lines.push(styledLine([]));
   return lines;
 }
 
-function buildTranscriptLines(thread: AgentThreadState, width: number): StyledText[] {
-  const lines: StyledText[] = [];
-
+function buildTranscriptItems(thread: AgentThreadState, width: number): TranscriptItem[] {
   if (thread.messages.length === 0) {
-    return [
+    const emptyLines = [
       clippedLine([{ text: "AI AGENT", foreground: THEME.accent, bold: true }], width),
       ...wrapSegments([{ text: "  Submit a prompt to start the thread.", foreground: THEME.muted }], width),
       ...wrapSegments([{ text: "  Ctrl+N creates a new thread.", foreground: THEME.muted }], width),
     ];
+
+    return emptyLines.map((line, index) => ({
+      key: `empty:${index}`,
+      lines: [line],
+      rowCount: 1,
+    }));
   }
 
-  for (const message of thread.messages) {
-    lines.push(...renderMessageLines(message, width));
-  }
+  const items: TranscriptItem[] = [];
 
-  trimTrailingEmptyLines(lines);
-  return lines;
+  thread.messages.forEach((message) => {
+    const cachedMessage = transcriptMessageLinesCache.get(message.id);
+    const lines =
+      cachedMessage &&
+      cachedMessage.width === width &&
+      cachedMessage.role === message.role &&
+      cachedMessage.content === message.content
+        ? cachedMessage.lines
+        : renderMessageLines(message, width);
+
+    transcriptMessageLinesCache.set(message.id, {
+      width,
+      role: message.role,
+      content: message.content,
+      lines,
+    });
+
+    lines.forEach((line, lineIndex) => {
+      items.push({
+        key: `${message.id}:${lineIndex}`,
+        lines: [line],
+        rowCount: 1,
+      });
+    });
+  });
+
+  return items;
 }
 
 function visiblePromptLabels(thread: AgentThreadState, count: number): StyledText[] {
@@ -744,14 +852,55 @@ function ensurePromptRows(count: number): void {
   );
 }
 
-function ensureTranscriptRows(count: number): void {
-  if (transcriptRows.length === count) return;
-  transcriptRows = Array.from({ length: count }, () =>
-    Text({
-      text: "",
-      foreground: THEME.text,
-    }),
+function makeTranscriptSlot(slotIndex: number): ReturnType<typeof Text> {
+  return Text({
+    text: "",
+    foreground: THEME.text,
+    height: 1,
+    paddingX: 0,
+    background: undefined,
+  });
+}
+
+let transcriptVirtualizer: ReturnType<
+  typeof createVirtualListController<ReturnType<typeof Text>>
+>;
+
+function trimTranscriptMessageLinesCache(maxEntries = 200): void {
+  if (transcriptMessageLinesCache.size <= maxEntries) return;
+  const keys = Array.from(transcriptMessageLinesCache.keys());
+  const overflow = keys.length - maxEntries;
+  for (let i = 0; i < overflow; i++) {
+    const key = keys[i];
+    if (key !== undefined) {
+      transcriptMessageLinesCache.delete(key);
+    }
+  }
+}
+
+function activeTranscriptItems(width: number): TranscriptItem[] {
+  const thread = activeThread();
+  const items = buildTranscriptItems(thread, width);
+  trimTranscriptMessageLinesCache();
+  return items;
+}
+
+function lineForSlice(item: TranscriptItem, slice: VirtualListSlice): StyledText {
+  const firstLine = slice.itemTopCutRows;
+  const lastVisibleLineExclusive = Math.max(
+    firstLine,
+    item.rowCount - slice.itemBottomCutRows,
   );
+  const line = item.lines[Math.min(firstLine, item.lines.length - 1)];
+  if (!line) {
+    return styledLine([]);
+  }
+
+  if (lastVisibleLineExclusive <= firstLine) {
+    return styledLine([]);
+  }
+
+  return line;
 }
 
 function syncSidebarRows(): void {
@@ -774,20 +923,35 @@ function syncSidebarRows(): void {
 }
 
 function syncTranscriptRows(): void {
-  const rowCount = Math.max(1, Math.floor(transcriptViewport.frameHeight()));
-  ensureTranscriptRows(rowCount);
-  transcriptViewport.setChildren(transcriptRows);
-
   const width = Math.max(1, Math.floor(transcriptViewport.frameWidth()) - 1);
-  const allLines = buildTranscriptLines(activeThread(), width);
-  const visibleLines = allLines.slice(-rowCount);
-  const topPad = Math.max(0, rowCount - visibleLines.length);
+  const items = activeTranscriptItems(width);
 
-  for (let i = 0; i < transcriptRows.length; i++) {
-    const line = transcriptRows[i]!;
-    const visibleIndex = i - topPad;
-    line.setText(visibleIndex >= 0 ? visibleLines[visibleIndex] ?? "" : "");
+  transcriptVirtualizer.setItemCount(items.length);
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (!item) continue;
+    transcriptVirtualizer.setMeasuredRows(i, item.rowCount);
   }
+
+  transcriptVirtualizer.render((slot, slice) => {
+    if (!slice) {
+      slot.node.setText("");
+      slot.node.setStyle({ foreground: THEME.text });
+      return;
+    }
+
+    const item = items[slice.itemIndex];
+    if (!item) {
+      slot.node.setText("");
+      return;
+    }
+
+    slot.node.setText(lineForSlice(item, slice));
+    slot.node.setStyle({ foreground: THEME.text });
+
+    const measuredRows = Math.max(1, Math.floor(slot.node.frameHeight()));
+    transcriptVirtualizer.setMeasuredRows(slice.itemIndex, measuredRows);
+  });
 }
 
 function metric(label: string, value: string, valueColor: number, bold = false): StyledSegment[] {
@@ -800,7 +964,6 @@ function metric(label: string, value: string, valueColor: number, bold = false):
 function syncHeader(): void {
   const thread = activeThread();
   const latency = thread.lastLatencyMs !== null ? `${thread.lastLatencyMs}ms` : "—";
-  const outputTokens = thread.usage?.output_tokens ?? 0;
 
   const statusColor =
     thread.status === "streaming"
@@ -810,9 +973,9 @@ function syncHeader(): void {
         : THEME.muted;
 
   const values: StyledSegment[][] = [
-    metric("MODEL", MODEL, THEME.text, true),
+    metric("MODEL", currentModel, THEME.text, true),
+    metric("PROVIDER", "opencode", THEME.muted),
     metric("STATUS", thread.status, statusColor, true),
-    metric("TOKENS", `${outputTokens}`, THEME.text),
     metric("LAT", latency, THEME.amber),
   ];
 
@@ -907,6 +1070,13 @@ function syncResponsiveLayout(): void {
   );
 }
 
+function extractTextFromParts(parts: Array<{ type: string; text?: string }>): string {
+  return parts
+    .filter((part) => part.type === "text" && part.text)
+    .map((part) => part.text!)
+    .join("");
+}
+
 async function handleAgentStream(
   thread: AgentThreadState,
   assistantMessage: ChatMessage,
@@ -916,7 +1086,6 @@ async function handleAgentStream(
 
   thread.status = "streaming";
   thread.lastLatencyMs = null;
-  thread.usage = null;
   thread.prompts.unshift(prompt);
   if (thread.title === "New Thread") {
     thread.title = threadTitleFromPrompt(prompt);
@@ -924,27 +1093,48 @@ async function handleAgentStream(
   thread.messages.push({ id: `msg-${nextMessageId++}`, role: "user", content: prompt });
   thread.messages.push(assistantMessage);
   refreshView();
+  transcriptVirtualizer.scrollToEnd();
 
   const startedAt = Date.now();
 
   try {
-    const { events } = await thread.sdkThread.runStreamed(prompt);
+    const events = await client.event.subscribe();
+    await client.session.promptAsync({
+      path: { id: thread.sessionId },
+      body: {
+        parts: [{ type: "text", text: prompt }],
+      },
+    });
 
-    for await (const event of events) {
-      handleThreadEvent(thread, assistantMessage, event);
-      refreshView();
+    for await (const event of events.stream) {
+      if (event.type === "message.part.updated") {
+        const props = event.properties as { part: { type: string; text?: string }; delta?: string };
+        const { part, delta } = props;
+        if (part.type !== "text") continue;
+        if (delta) {
+          assistantMessage.content += delta;
+        } else if (part.text !== undefined) {
+          assistantMessage.content = part.text;
+        }
+        refreshView();
+      }
+      if (event.type === "session.status") {
+        if (event.properties.sessionID === thread.sessionId && event.properties.status.type === "idle") {
+          thread.status = "idle";
+          break;
+        }
+      }
+      if (event.type === "session.error") {
+        const error = event.properties.error;
+        throw new Error(error ? String(error) : "Unknown error");
+      }
     }
-
-    thread.status = "idle";
   } catch (error) {
     thread.status = "error";
     const message = error instanceof Error ? error.message : String(error);
     if (assistantMessage.content.trim().length === 0) {
       assistantMessage.role = "error";
-      assistantMessage.content =
-        message.includes("login") || message.includes("auth")
-          ? `${message}\n\nRun \`codex login\` in this terminal, then submit again.`
-          : message;
+      assistantMessage.content = message;
     } else {
       thread.messages.push({
         id: `msg-${nextMessageId++}`,
@@ -955,40 +1145,6 @@ async function handleAgentStream(
   } finally {
     thread.lastLatencyMs = Date.now() - startedAt;
     refreshView();
-  }
-}
-
-function handleThreadEvent(
-  thread: AgentThreadState,
-  assistantMessage: ChatMessage,
-  event: ThreadEvent,
-): void {
-  if (
-    (event.type === "item.started" ||
-      event.type === "item.updated" ||
-      event.type === "item.completed") &&
-    event.item.type === "agent_message"
-  ) {
-    assistantMessage.content = event.item.text;
-    return;
-  }
-
-  if (event.type === "turn.completed") {
-    thread.usage = event.usage;
-    return;
-  }
-
-  if (event.type === "turn.failed") {
-    thread.status = "error";
-    assistantMessage.role = "error";
-    assistantMessage.content = event.error.message;
-    return;
-  }
-
-  if (event.type === "error") {
-    thread.status = "error";
-    assistantMessage.role = "error";
-    assistantMessage.content = event.message;
   }
 }
 
@@ -1011,9 +1167,11 @@ function submitPrompt(rawPrompt: string): void {
   void handleAgentStream(thread, assistantMessage, prompt);
 }
 
-function createNewThread(): void {
-  threads.unshift(createThreadState());
+async function createNewThread(): Promise<void> {
+  const newThread = await createThreadState();
+  threads.unshift(newThread);
   activeThreadIndex = 0;
+  transcriptVirtualizer.setScrollRows(0);
   refreshView();
   composer.setText("");
   composer.focus();
@@ -1023,6 +1181,7 @@ function moveThreadSelection(delta: number): void {
   if (sidebarMode !== "threads" || threads.length === 0) return;
   activeThreadIndex = Math.max(0, Math.min(threads.length - 1, activeThreadIndex + delta));
   refreshView();
+  transcriptVirtualizer.scrollToEnd();
 }
 
 function cycleFocus(delta: number): void {
@@ -1094,14 +1253,23 @@ const transcriptViewport = Column(
   {
     gap: 0,
     flexGrow: 1,
+    minHeight: 0,
   },
   [],
 );
+
+transcriptVirtualizer = createVirtualListController({
+  container: transcriptViewport,
+  createSlot: makeTranscriptSlot,
+  overscanRows: 0,
+  wheelRowsPerStep: 2,
+});
 
 const transcriptPanel = Column(
   {
     gap: 0,
     flexGrow: 1,
+    minHeight: 0,
     padding: "1 1",
   },
   [transcriptViewport],
@@ -1142,6 +1310,7 @@ const rightPane = Column(
     flexGrow: 2,
     flexBasis: 56,
     minWidth: 40,
+    minHeight: 0,
     gap: 0,
   },
   [transcriptPanel, composerPanel],
@@ -1150,6 +1319,7 @@ const rightPane = Column(
 const body = Row(
   {
     flexGrow: 1,
+    minHeight: 0,
     gap: 0,
     alignItems: "stretch",
   },
@@ -1176,17 +1346,18 @@ const root = Column(
 );
 
 ff(() => {
+  transcriptVirtualizer.scrollRowsSignal();
   refreshView();
 });
 
 const app = run(root);
 
 onKey("q", () => app.quit());
-onKey("\x0e", () => createNewThread()); // Ctrl+N
-onKey("\x1b[B", () => moveThreadSelection(1)); // Arrow Down
-onKey("\x1b[A", () => moveThreadSelection(-1)); // Arrow Up
+onKey("\x0e", () => createNewThread());
+onKey("\x1b[B", () => moveThreadSelection(1));
+onKey("\x1b[A", () => moveThreadSelection(-1));
 onKey("\t", () => cycleFocus(1));
-onKey("\x1b[Z", () => cycleFocus(-1)); // Shift+Tab
+onKey("\x1b[Z", () => cycleFocus(-1));
 
 applyModeStyles();
 refreshView();

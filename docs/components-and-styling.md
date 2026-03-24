@@ -3,9 +3,9 @@
 ## Constructors
 
 ```ts
-Box(input: BoxProps, children: Node[]): Node
-Column(input: Omit<BoxProps, "direction">, children: Node[]): Node
-Row(input: Omit<BoxProps, "direction">, children: Node[]): Node
+Box(input: BoxProps & BoxEventProps, children: Node[]): Node
+Column(input: Omit<BoxProps, "direction"> & BoxEventProps, children: Node[]): Node
+Row(input: Omit<BoxProps, "direction"> & BoxEventProps, children: Node[]): Node
 Text(input: TextProps): Node
 Input(input: InputProps): Node
 Button(input: ButtonProps, children?: Node[]): Node
@@ -35,6 +35,11 @@ Button(input: ButtonProps, children?: Node[]): Node
   - optional: `gap` (`number`)
   - optional: `direction` (`"row" | "column" | "rowReverse" | "columnReverse"`)
   - optional: all `StyleProps`
+
+- `BoxEventProps`
+  - optional: `onWheel(event)` for vertical wheel/trackpad handling
+  - `event`: `{ x, y, deltaY, raw }`
+  - return `true` to consume and stop bubbling; return `false`/`void` to bubble to parent container
 
 ## Shared style fields (`StyleProps`)
 
@@ -66,6 +71,19 @@ Button(input: ButtonProps, children?: Node[]): Node
 - Public styling/layout surface is the exported `StyleProps` + `BoxProps` above.
 - `overflow`, scrolling, and other non-exported props are not part of the public API.
 - Prefer `Row` / `Column` for common cases; use `Box` when you need explicit `direction`, including reverse directions.
+
+## Wheel Routing
+
+- wheel routing targets the deepest container with `onWheel` under the cursor
+- events bubble up through parent containers until one handler returns `true`
+- horizontal wheel is deferred; current surface exposes vertical `deltaY` only
+
+## Virtual List Notes
+
+- `createVirtualListController(...)` uses row-based virtualization with stable slot nodes
+- avoid large overscan in normal-flow containers; it can increase container height and create layout feedback loops
+- runtime guard now disables overscan automatically when it detects repeated viewport-growth feedback
+- for high overscan, prefer a clipped/fixed-height viewport container so slot count does not affect layout height
 
 ## Colors
 

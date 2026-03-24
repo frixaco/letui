@@ -46,6 +46,13 @@ export type FlexWrap = "noWrap" | "wrap" | "wrapReverse";
 export type TextWrap = "none" | "word" | "char";
 export type TextOverflow = "clip" | "ellipsis";
 
+export type WheelEvent = {
+  x: number;
+  y: number;
+  deltaY: number;
+  raw: string;
+};
+
 export type TextSpan = {
   start: number;
   end: number;
@@ -167,6 +174,10 @@ export type BoxProps = StyleProps & {
   direction?: Direction;
 };
 
+export type BoxEventProps = {
+  onWheel?: (event: WheelEvent) => boolean | void;
+};
+
 export type TextProps = StyleProps & {
   text: string | StyledText;
   wrap?: TextWrap;
@@ -223,7 +234,9 @@ export type NodeKindNum = (typeof NODE_KIND_ID)[NodeKind];
 // HANDLER TYPES (plain functions, not reactive)
 // =============================================================================
 
-export type BoxHandlers = {};
+export type BoxHandlers = {
+  onWheel?: (event: WheelEvent) => boolean | void;
+};
 
 export type TextHandlers = {};
 
@@ -297,7 +310,7 @@ export type BoxNode = NodeBase<BoxKind> &
   ContainerNode & {
     props: _BoxProps;
     handlers: BoxHandlers;
-    setStyle: (p: Partial<BoxProps>) => void;
+    setStyle: (p: Partial<BoxProps & BoxEventProps>) => void;
   };
 
 export type Node = TextNode | InputNode | ButtonNode | BoxNode;

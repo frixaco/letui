@@ -11,6 +11,7 @@ import {
   type Node,
   type NodeKind,
   type NormalizedStyledText,
+  type WheelEvent,
 } from "./types";
 import {
   EMITTED_STYLE_PROPS,
@@ -41,7 +42,9 @@ export type RunOptions = {
 let terminalWidth: Signal<number>;
 let terminalHeight: Signal<number>;
 let spatialLookup: (number | undefined)[];
+let wheelLookup: (number | undefined)[];
 let nodeRegistry: Map<number, Node>;
+let parentById: Map<number, number | null>;
 let globalKeyHandlers: Map<string, () => void>;
 let pressedNodeId: number | null = null;
 let isRunning = false;
@@ -90,7 +93,70 @@ function getNodeAt(x: number, y: number): Node | undefined {
   return id !== undefined ? nodeRegistry.get(id) : undefined;
 }
 
+function getWheelNodeAt(x: number, y: number): Node | undefined {
+  const id = wheelLookup[y * terminalWidth() + x];
+  return id !== undefined ? nodeRegistry.get(id) : undefined;
+}
+
 const MOUSE_EVENT_PATTERN = /\x1b\[<\d+;\d+;\d+[Mm]/g;
+
+type ParsedMouseEvent = {
+  raw: string;
+  rawBtn: number;
+  x: number;
+  y: number;
+  isPress: boolean;
+  isRelease: boolean;
+};
+
+function parseMouseEvent(data: string): ParsedMouseEvent | undefined {
+  // Parse: \x1b[<btn;x;y[Mm]
+  const i = data.indexOf("<") + 1;
+  const j = data.length - 1;
+  if (i <= 0 || j <= i) return;
+
+  const parts = data.slice(i, j).split(";");
+  if (parts.length !== 3) return;
+
+  const isPress = data.endsWith("M");
+  const isRelease = data.endsWith("m");
+  const rawBtn = Number(parts[0]);
+  const rawX = Number(parts[1]);
+  const rawY = Number(parts[2]);
+  if (
+    !Number.isFinite(rawBtn) ||
+    !Number.isFinite(rawX) ||
+    !Number.isFinite(rawY)
+  ) {
+    return;
+  }
+
+  return {
+    raw: data,
+    rawBtn,
+    x: rawX - 1, // 1-indexed -> 0-indexed
+    y: rawY - 1,
+    isPress,
+    isRelease,
+  };
+}
+
+function parseWheelEvent(mouse: ParsedMouseEvent): WheelEvent | undefined {
+  if ((mouse.rawBtn & 0b1000000) === 0) {
+    return;
+  }
+
+  const wheelButton = mouse.rawBtn & 0b11;
+  if (wheelButton === 0) {
+    return { x: mouse.x, y: mouse.y, deltaY: -1, raw: mouse.raw };
+  }
+  if (wheelButton === 1) {
+    return { x: mouse.x, y: mouse.y, deltaY: 1, raw: mouse.raw };
+  }
+
+  // Horizontal wheel is intentionally deferred for now.
+  return;
+}
 
 function resolveBorderState(props: any): ResolvedBorderState {
   const border = props.border?.();
@@ -522,6 +588,51 @@ function syncRenderTree(
   }
 }
 
+function markHitAreaForNode(
+  node: Node,
+  lookup: (number | undefined)[],
+  width: number,
+  height: number,
+): void {
+  const startX = Math.max(0, Math.floor(node.frame.x));
+  const startY = Math.max(0, Math.floor(node.frame.y));
+  const endX = Math.min(width, Math.ceil(node.frame.x + node.frame.width));
+  const endY = Math.min(height, Math.ceil(node.frame.y + node.frame.height));
+
+  if (startX >= endX || startY >= endY) return;
+
+  for (let y = startY; y < endY; y++) {
+    const rowOffset = y * width;
+    for (let x = startX; x < endX; x++) {
+      lookup[rowOffset + x] = node.id;
+    }
+  }
+}
+
+function dispatchWheelEvent(target: Node, event: WheelEvent): boolean {
+  let current: Node | undefined = target;
+
+  while (current) {
+    const handled = current.type === NODE_TYPE.Row || current.type === NODE_TYPE.Column
+      ? current.handlers.onWheel?.(event)
+      : undefined;
+    // Bubble to parent only when current scroll container declines to consume.
+    if (handled === true) {
+      return true;
+    }
+
+    const parentId = parentById.get(current.id);
+    if (parentId === undefined || parentId === null) {
+      current = undefined;
+      continue;
+    }
+
+    current = nodeRegistry.get(parentId);
+  }
+
+  return false;
+}
+
 function updateNodeFrames(root: Node): void {
   const framesPtr = api.get_frames_ptr()!;
   const framesLen = Number(api.get_frames_len()!);
@@ -533,26 +644,9 @@ function updateNodeFrames(root: Node): void {
   const width = terminalWidth();
   const height = terminalHeight();
 
-  function markInteractiveHitArea(node: Node): void {
-    if (node.type !== NODE_TYPE.Input && node.type !== NODE_TYPE.Button) return;
-
-    const startX = Math.max(0, Math.floor(node.frame.x));
-    const startY = Math.max(0, Math.floor(node.frame.y));
-    const endX = Math.min(width, Math.ceil(node.frame.x + node.frame.width));
-    const endY = Math.min(height, Math.ceil(node.frame.y + node.frame.height));
-
-    if (startX >= endX || startY >= endY) return;
-
-    for (let y = startY; y < endY; y++) {
-      const rowOffset = y * width;
-      for (let x = startX; x < endX; x++) {
-        spatialLookup[rowOffset + x] = node.id;
-      }
-    }
-  }
-
-  function updateFrames(node: Node): void {
+  function updateFrames(node: Node, parentId: number | null): void {
     nodeRegistry.set(node.id, node);
+    parentById.set(node.id, parentId);
 
     node.frame.x = framesArray[idx++]!;
     node.frame.y = framesArray[idx++]!;
@@ -561,15 +655,24 @@ function updateNodeFrames(root: Node): void {
 
     node.frameWidth(node.frame.width);
     node.frameHeight(node.frame.height);
-    markInteractiveHitArea(node);
+
+    if (node.type === NODE_TYPE.Input || node.type === NODE_TYPE.Button) {
+      markHitAreaForNode(node, spatialLookup, width, height);
+    }
+
+    if (node.type === NODE_TYPE.Row || node.type === NODE_TYPE.Column) {
+      if (node.handlers.onWheel) {
+        markHitAreaForNode(node, wheelLookup, width, height);
+      }
+    }
 
     const children = node.children?.() ?? [];
     for (const child of children) {
-      updateFrames(child);
+      updateFrames(child, node.id);
     }
   }
 
-  updateFrames(root);
+  updateFrames(root, null);
 }
 
 function dispatchToNode(node: Node, data: string): boolean {
@@ -624,34 +727,24 @@ function handleKeyboardEvent(data: string): void {
 }
 
 function handleMouseEvent(data: string): void {
-  // Parse: \x1b[<btn;x;y[Mm]
-  const i = data.indexOf("<") + 1;
-  const j = data.length - 1;
-  if (i <= 0 || j <= i) return;
-  const parts = data.slice(i, j).split(";");
-  if (parts.length !== 3) return;
+  const mouse = parseMouseEvent(data);
+  if (!mouse) return;
 
-  const isPress = data.endsWith("M");
-  const isRelease = data.endsWith("m");
-  const rawBtn = Number(parts[0]);
-  const rawX = Number(parts[1]);
-  const rawY = Number(parts[2]);
-  if (
-    !Number.isFinite(rawBtn) ||
-    !Number.isFinite(rawX) ||
-    !Number.isFinite(rawY)
-  ) {
+  const wheel = parseWheelEvent(mouse);
+  if (wheel) {
+    const wheelTarget = getWheelNodeAt(wheel.x, wheel.y);
+    if (wheelTarget) {
+      dispatchWheelEvent(wheelTarget, wheel);
+    }
     return;
   }
 
-  const btn = rawBtn & 0b11;
-  const x = rawX - 1; // 1-indexed -> 0-indexed
-  const y = rawY - 1;
+  const btn = mouse.rawBtn & 0b11;
 
   const isLeftButton = btn === 0;
-  const target = getNodeAt(x, y);
+  const target = getNodeAt(mouse.x, mouse.y);
 
-  if (isPress && isLeftButton) {
+  if (mouse.isPress && isLeftButton) {
     if (target) {
       pressedNodeId = target.id;
       target.focus();
@@ -663,7 +756,7 @@ function handleMouseEvent(data: string): void {
     return;
   }
 
-  if (isRelease && isLeftButton) {
+  if (mouse.isRelease && isLeftButton) {
     if (pressedNodeId !== null && target && target.id === pressedNodeId) {
       if (target.type === NODE_TYPE.Button) {
         target.handlers.onClick();
@@ -707,6 +800,7 @@ function handleResize(): void {
   terminalWidth(api.get_width());
   terminalHeight(api.get_height());
   spatialLookup = new Array(terminalWidth() * terminalHeight());
+  wheelLookup = new Array(terminalWidth() * terminalHeight());
 }
 
 export function onKey(key: string, callback: () => void): void {
@@ -732,9 +826,11 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   terminalHeight = $(api.get_height());
   globalKeyHandlers = globalKeyHandlers ?? new Map();
   nodeRegistry = new Map();
+  parentById = new Map();
   ops = new OpQueue();
   previousSentTree = null;
   spatialLookup = new Array(terminalWidth() * terminalHeight());
+  wheelLookup = new Array(terminalWidth() * terminalHeight());
   pressedNodeId = null;
   isRunning = true;
   let cleanedUp = false;
@@ -810,7 +906,9 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
 
     // Clear state for this frame
     spatialLookup.fill(undefined);
+    wheelLookup.fill(undefined);
     nodeRegistry.clear();
+    parentById.clear();
     const sentTree = buildSentNodeState(root);
 
     // Keep the Rust-side tree alive across compatible frames. If structure changes,

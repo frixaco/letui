@@ -297,7 +297,7 @@ function quit(): void {
   if (stopped) return;
   stopped = true;
   clearInterval(timer);
-  saveMetrics("dump/metrics-viz.txt");
+  saveMetrics("dump/metrics.txt");
   app.quit();
 }
 

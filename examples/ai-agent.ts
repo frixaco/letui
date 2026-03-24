@@ -4,6 +4,7 @@ import {
   NODE_TYPE,
   Row,
   Text,
+  createVirtualListController,
   ff,
   onKey,
   run,
@@ -273,6 +274,51 @@ const THREADS: PromptThread[] = [
   },
 ];
 
+function generateFillerSections(count: number): PromptSection[] {
+  const tones: PromptSectionTone[] = ["accent", "blue", "lime", "amber"];
+  const headings = [
+    "Implementation Detail",
+    "Edge Case Analysis",
+    "Performance Constraint",
+    "Dependency Risk",
+    "Migration Note",
+    "Observability Gap",
+    "Operational Guideline",
+    "Rollback Path",
+  ];
+  const sections: PromptSection[] = [];
+  for (let i = 0; i < count; i++) {
+    sections.push({
+      heading: headings[i % headings.length]! + ` (${i + 1})`,
+      tone: tones[i % tones.length]!,
+      paragraphs: [
+        [
+          { text: "This is filler paragraph ", tone: "text" },
+          { text: `#${i + 1}`, tone: tones[i % tones.length], bold: true },
+          {
+            text: " added to guarantee the transcript pane overflows the visible viewport so wheel scrolling can be tested end-to-end.",
+            tone: "text",
+          },
+        ],
+        [
+          { text: "Second line of section ", tone: "text" },
+          { text: `${i + 1}`, tone: "lime", bold: true, underline: true },
+          {
+            text: " with enough detail to push layout beyond what fits on screen, validating that the virtual list controller correctly pages through rows.",
+            tone: "muted",
+            italic: true,
+          },
+        ],
+      ],
+    });
+  }
+  return sections;
+}
+
+for (const thread of THREADS) {
+  thread.sections.push(...generateFillerSections(12));
+}
+
 const THEME = {
   border: 0x3a3a5c,
   text: 0xf0f0f0,
@@ -443,13 +489,13 @@ const transcriptSubhead = Text({
   wrap: "word",
 });
 
-const transcriptBody = Text({
-  text: "",
-  foreground: THEME.text,
-  wrap: "word",
-});
+const transcriptViewport = Column({ gap: 0, flexGrow: 1, minHeight: 0 }, []);
 
-const transcriptViewport = Column({ gap: 0, flexGrow: 1, minHeight: 0 }, [transcriptBody]);
+const transcriptVirtualizer = createVirtualListController({
+  container: transcriptViewport as any,
+  createSlot: () =>
+    Text({ text: "", foreground: THEME.text, wrap: "word" }),
+});
 
 const transcriptPanel = Column(
   {
@@ -593,26 +639,6 @@ function paragraphSegments(
   return segments;
 }
 
-function joinStyledBlocks(blocks: readonly StyledText[]): StyledText {
-  let text = "";
-  let cursor = 0;
-  const spans: TextSpan[] = [];
-
-  for (const block of blocks) {
-    text += block.text;
-    for (const span of block.spans) {
-      spans.push({
-        ...span,
-        start: span.start + cursor,
-        end: span.end + cursor,
-      });
-    }
-    cursor = textLength(text);
-  }
-
-  return { text, spans };
-}
-
 function syncPromptWindow(): void {
   const visibleCount = promptSlots.length;
   promptWindowStart = clamp(
@@ -669,49 +695,44 @@ function renderPromptSlots(): void {
   }
 }
 
-function buildTranscriptText(thread: PromptThread): StyledText {
-  const blocks: StyledText[] = [
+function buildTranscriptLines(thread: PromptThread): StyledText[] {
+  const lines: StyledText[] = [];
+
+  lines.push(
     styledLine([
       { text: "USER> ", foreground: THEME.blue, bold: true },
       { text: thread.userPrompt, foreground: THEME.amber },
-      { text: "\n\n" },
     ]),
-  ];
+  );
+  lines.push(styledLine([]));
 
   for (const section of thread.sections) {
-    blocks.push(
+    lines.push(
       styledLine([
         { text: section.heading.toUpperCase(), foreground: sectionToneColor(section.tone), bold: true },
-        { text: "\n" },
       ]),
     );
 
     for (const paragraph of section.paragraphs) {
-      blocks.push(
-        styledLine([
-          ...paragraphSegments(paragraph),
-          { text: "\n" },
-        ]),
-      );
+      lines.push(styledLine(paragraphSegments(paragraph)));
     }
 
-    blocks.push(styledLine([{ text: "\n" }]));
+    lines.push(styledLine([]));
   }
 
-  blocks.push(
+  lines.push(
     styledLine([
       { text: "RENDERER NOTES", foreground: THEME.blue, bold: true },
-      { text: "\n" },
     ]),
   );
-  blocks.push(
+  lines.push(
     styledLine([
       { text: "  The demo still runs through ", foreground: THEME.text },
       { text: "bun + rust ffi", foreground: THEME.blue, bold: true, underline: true },
-      { text: " so text styling exercises the same render path as the rest of the library.\n", foreground: THEME.text },
+      { text: " so text styling exercises the same render path as the rest of the library.", foreground: THEME.text },
     ]),
   );
-  blocks.push(
+  lines.push(
     styledLine([
       { text: "  Layout stays ", foreground: THEME.text },
       { text: "wrapped", foreground: THEME.lime, bold: true },
@@ -719,12 +740,30 @@ function buildTranscriptText(thread: PromptThread): StyledText {
     ]),
   );
 
-  return joinStyledBlocks(blocks);
+  return lines;
 }
+
+let cachedTranscriptLines: StyledText[] = [];
 
 function renderTranscript(): void {
   const thread = THREADS[selectedIndex];
   if (!thread) return;
+
+  cachedTranscriptLines = buildTranscriptLines(thread);
+
+  transcriptVirtualizer.setItemCount(cachedTranscriptLines.length);
+  for (let i = 0; i < cachedTranscriptLines.length; i++) {
+    transcriptVirtualizer.setMeasuredRows(i, 1);
+  }
+
+  transcriptVirtualizer.render((slot, slice) => {
+    if (!slice) {
+      slot.node.setText("");
+      return;
+    }
+    const line = cachedTranscriptLines[slice.itemIndex];
+    slot.node.setText(line ?? "");
+  });
 
   transcriptHeader.setText(
     styledLine([
@@ -732,6 +771,8 @@ function renderTranscript(): void {
       { text: thread.title, foreground: THEME.text },
     ]),
   );
+
+  const scrollInfo = transcriptVirtualizer.scrollRowsSignal();
   headerMeta.setText(
     styledLine([
       { text: "active thread ", foreground: THEME.muted },
@@ -740,11 +781,13 @@ function renderTranscript(): void {
         foreground: THEME.blue,
         bold: true,
       },
-      { text: "   prompt viewport ", foreground: THEME.muted },
+      { text: "   scroll ", foreground: THEME.muted },
       {
-        text: `${Math.floor(promptViewport.frameWidth())}w`,
-        foreground: THEME.lime,
+        text: `${scrollInfo}`,
+        foreground: THEME.accent,
+        bold: true,
       },
+      { text: `/${cachedTranscriptLines.length} lines`, foreground: THEME.muted },
       { text: "\ntranscript viewport ", foreground: THEME.muted },
       {
         text: `${Math.floor(transcriptViewport.frameWidth())}w`,
@@ -770,8 +813,6 @@ function renderTranscript(): void {
       { text: " ", foreground: THEME.badgeFg },
     ]),
   );
-
-  transcriptBody.setText(buildTranscriptText(thread));
 }
 
 function refreshView(): void {
@@ -787,6 +828,8 @@ function moveSelection(delta: number): void {
 ff(() => {
   promptViewport.frameWidth();
   transcriptViewport.frameWidth();
+  transcriptViewport.frameHeight();
+  transcriptVirtualizer.scrollRowsSignal();
   composer.props.text();
   refreshView();
 });

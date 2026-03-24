@@ -145,10 +145,10 @@ Benchmark snapshot (`2026-02-20`, `terminal-rerender`, `full` profile, PTY mode)
 - [x] Globals ops queue (see `./docs/FULL_RUST_AUTHORITY_SPEC.md`)
 - [x] Text styling: markdown and syntax highlighting API
 - [x] Multi-line text input, text overflow and wrapping
-- [ ] Vertical and horizontal scrolling
+- [x] Persistent Taffy tree
+- [x] Vertical scrolling
 - [ ] Safer quit/cleanup when used as a library
 - [ ] Responsive examples for smaller terminal sizes
-- [ ] Persistent Taffy tree
 - [ ] Experiment: Neovim as text input via [Bun PTY](https://bun.com/docs/runtime/child-process#terminal-pty-support)
 - [ ] Refactor `flush` with `BatchWriter` pattern
 - [ ] Performance stats overlay

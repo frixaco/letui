@@ -357,6 +357,14 @@ const resultsPanel = Column(
     padding: "0 1",
     flexGrow: 1,
     minHeight: 0,
+    onWheel: (event) => {
+      if (results().length === 0) return;
+      if (event.deltaY > 0) {
+        selectNext();
+      } else if (event.deltaY < 0) {
+        selectPrev();
+      }
+    },
   },
   [
     Row({ gap: 1, alignItems: "center" }, [resultsLabel, loadingBar.node]),

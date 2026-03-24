@@ -72,6 +72,13 @@ onKey(key: string, callback: () => void): void
 - Keyboard input routed to focused node first
 - If focused node consumes key event, global `onKey` handler does not run
 
+## Wheel Routing Model
+
+- wheel events use SGR mouse input and dispatch to `onWheel` on `Row`/`Column` containers
+- dispatch starts at deepest container under cursor with a wheel handler
+- if handler returns `true`, bubbling stops; otherwise event bubbles to parent containers
+- current payload: `{ x, y, deltaY, raw }` with vertical `deltaY` only
+
 ## Input behavior
 
 For focused `Input` node:
@@ -111,3 +118,12 @@ onKey("q", quit);
 
 - Keep long-lived nodes and mutate them with `setText`, `setStyle`, or signals
 - Rebuilding whole subtrees every tick changes tree shape and forces Rust tree rebuilds
+
+## Virtualization Rule
+
+- for large scrolling lists, keep a fixed slot pool (`setChildren` only on viewport-size changes)
+- bind slot content by updating text/style on stable nodes instead of creating/removing nodes per scroll tick
+- row-based slicing is done in JS by mapping scroll rows to visible line ranges
+- if virtualized rows are normal-flow children, overscan can feed back into layout (more slots -> taller viewport -> more slots)
+- virtual list now auto-disables overscan when this runaway growth pattern is detected and logs a warning
+- if you need overscan for smoothness, place virtualized slots in a clipped/fixed-height viewport container
