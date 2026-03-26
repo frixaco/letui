@@ -1,3 +1,12 @@
+//! Terminal initialization, buffer management, and rendering output.
+//!
+//! Data flow:
+//! ```text
+//! CURRENT_BUFFER (managed here) → flush() → stdout (crossterm)
+//! LAST_BUFFER (for diffing)     → next_flush() diffs against previous frame
+//! TERMINAL_SIZE (dimensions)    → used by all rendering functions
+//! ```
+
 use crate::shared::{
     CELL_STRIDE, CONTINUATION_CELL, CURRENT_BUFFER, FIRST_DIFF, LAST_BUFFER, TERMINAL_SIZE,
     TEXT_ATTR_ALL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
@@ -16,6 +25,10 @@ use std::{
     io::{Stdout, Write, stdout},
     os::raw::c_int,
 };
+
+// =============================================================================
+// Public API (FFI exports)
+// =============================================================================
 
 #[unsafe(no_mangle)]
 pub extern "C" fn init_buffer() -> c_int {
@@ -89,6 +102,99 @@ pub extern "C" fn get_height() -> u16 {
     term_size.1
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn flush() -> c_int {
+    let cb = CURRENT_BUFFER.lock().unwrap();
+    let mut lb = LAST_BUFFER.lock().unwrap();
+    let term_size = TERMINAL_SIZE.lock().unwrap();
+    let (w, h) = *term_size;
+    let mut stdout = stdout();
+
+    let Some(ref buf) = *cb else {
+        return 1;
+    };
+    let Some(ref mut last_buf) = *lb else {
+        return 1;
+    };
+
+    queue!(stdout, BeginSynchronizedUpdate).unwrap();
+
+    let mut first_diff = FIRST_DIFF.lock().unwrap();
+
+    if *first_diff {
+        first_flush(w, h, &mut stdout, buf);
+        *first_diff = false;
+    } else {
+        next_flush(w, h, &mut stdout, buf, last_buf);
+    }
+    queue!(stdout, EndSynchronizedUpdate).unwrap();
+    stdout.flush().unwrap();
+
+    last_buf.copy_from_slice(buf);
+
+    1
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_buffer_ptr() -> *mut u64 {
+    let cb = CURRENT_BUFFER.lock().unwrap();
+    match *cb {
+        Some(ref buf) => buf.as_ptr() as *mut u64,
+        None => std::ptr::null_mut(),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_buffer_len() -> u64 {
+    let cb = CURRENT_BUFFER.lock().unwrap();
+    match *cb {
+        Some(ref buf) => buf.len() as u64,
+        None => 0,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn free_buffer() -> c_int {
+    *CURRENT_BUFFER.lock().unwrap() = None;
+    *LAST_BUFFER.lock().unwrap() = None;
+    *FIRST_DIFF.lock().unwrap() = true;
+
+    execute!(
+        stdout(),
+        SetAttribute(Attribute::Reset),
+        SetBackgroundColor(Color::Reset),
+        SetForegroundColor(Color::Reset),
+        Clear(ClearType::All)
+    )
+    .unwrap();
+    1
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn update_terminal_size() -> c_int {
+    let mut term_size = TERMINAL_SIZE.lock().unwrap();
+    *term_size = size().unwrap();
+    1
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn debug_buffer(idx: u64) -> u64 {
+    let cb = CURRENT_BUFFER.lock().unwrap();
+    if let Some(ref buf) = *cb {
+        if buf.len() < idx as usize {
+            return 0;
+        }
+        println!("{}", buf[idx as usize]);
+        return buf[idx as usize];
+    } else {
+        0
+    }
+}
+
+// =============================================================================
+// Internal Algorithm
+// =============================================================================
+
 fn hex_to_color(hex: u64) -> Color {
     Color::Rgb {
         r: ((hex >> 16) & 0xFF) as u8,
@@ -98,8 +204,6 @@ fn hex_to_color(hex: u64) -> Color {
 }
 
 fn queue_text_attribute_delta(stdout: &mut Stdout, previous: u8, current: u8) {
-    // Terminal attrs are sticky state. Diff the previous/current bitfields and emit
-    // only the ANSI toggles needed to reach the next style.
     let previous = previous & TEXT_ATTR_ALL;
     let current = current & TEXT_ATTR_ALL;
 
@@ -227,8 +331,6 @@ fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]
     for y in 0..h {
         let mut char_seq = String::with_capacity(w as usize);
         let mut batch_start_x = 0;
-        // Track terminal cells, not UTF-8 byte length. `String::len()` breaks adjacency
-        // for multibyte glyphs (e.g. box-drawing chars), causing unnecessary batch splits.
         let mut batch_cells = 0u16;
 
         for x in 0..w {
@@ -303,94 +405,5 @@ fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]
         if !char_seq.is_empty() {
             queue!(stdout, MoveTo(batch_start_x, y), Print(&char_seq)).unwrap();
         }
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn flush() -> c_int {
-    let cb = CURRENT_BUFFER.lock().unwrap();
-    let mut lb = LAST_BUFFER.lock().unwrap();
-    let term_size = TERMINAL_SIZE.lock().unwrap();
-    let (w, h) = *term_size;
-    let mut stdout = stdout();
-
-    let Some(ref buf) = *cb else {
-        return 1;
-    };
-    let Some(ref mut last_buf) = *lb else {
-        return 1;
-    };
-
-    queue!(stdout, BeginSynchronizedUpdate).unwrap();
-
-    let mut first_diff = FIRST_DIFF.lock().unwrap();
-
-    if *first_diff {
-        first_flush(w, h, &mut stdout, buf);
-        *first_diff = false;
-    } else {
-        next_flush(w, h, &mut stdout, buf, last_buf);
-    }
-    queue!(stdout, EndSynchronizedUpdate).unwrap();
-    stdout.flush().unwrap();
-
-    last_buf.copy_from_slice(buf);
-
-    1
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn get_buffer_ptr() -> *mut u64 {
-    let cb = CURRENT_BUFFER.lock().unwrap();
-    match *cb {
-        Some(ref buf) => buf.as_ptr() as *mut u64,
-        None => std::ptr::null_mut(),
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn get_buffer_len() -> u64 {
-    let cb = CURRENT_BUFFER.lock().unwrap();
-    match *cb {
-        Some(ref buf) => buf.len() as u64,
-        None => 0,
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn free_buffer() -> c_int {
-    *CURRENT_BUFFER.lock().unwrap() = None;
-    *LAST_BUFFER.lock().unwrap() = None;
-    *FIRST_DIFF.lock().unwrap() = true;
-
-    execute!(
-        stdout(),
-        SetAttribute(Attribute::Reset),
-        SetBackgroundColor(Color::Reset),
-        SetForegroundColor(Color::Reset),
-        Clear(ClearType::All)
-    )
-    .unwrap();
-    1
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn update_terminal_size() -> c_int {
-    let mut term_size = TERMINAL_SIZE.lock().unwrap();
-    *term_size = size().unwrap();
-    1
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn debug_buffer(idx: u64) -> u64 {
-    let cb = CURRENT_BUFFER.lock().unwrap();
-    if let Some(ref buf) = *cb {
-        if buf.len() < idx as usize {
-            return 0;
-        }
-        println!("{}", buf[idx as usize]);
-        return buf[idx as usize];
-    } else {
-        0
     }
 }

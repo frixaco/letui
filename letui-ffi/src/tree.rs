@@ -1,3 +1,11 @@
+//! Tree state management and operation application.
+//!
+//! Data flow:
+//! ```text
+//! JS ops buffer → apply_ops() → TREE_STATE (persistent tree)
+//!                              → render() reads TREE_STATE → Taffy tree → paint
+//! ```
+
 use crate::shared::{
     DEFAULT_BG, DEFAULT_FG, TEXT_ATTR_ALL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
 };
@@ -12,11 +20,17 @@ use taffy::prelude::*;
 pub(crate) static TREE_STATE: LazyLock<Mutex<TreeState>> =
     LazyLock::new(|| Mutex::new(TreeState::default()));
 
+// =============================================================================
+// Constants
+// =============================================================================
+
 const STYLE_VALUE_RESET: u8 = 0;
 const STYLE_VALUE_NUMBER: u8 = 1;
 const STYLE_VALUE_STRING: u8 = 2;
+
 const TEXT_SPAN_COLOR_FOREGROUND: u8 = 1 << 0;
 const TEXT_SPAN_COLOR_BACKGROUND: u8 = 1 << 1;
+
 const OP_SIZE: usize = 1;
 const ID_SIZE: usize = 4;
 const KIND_SIZE: usize = 1;
@@ -30,19 +44,400 @@ const TEXT_SPAN_COLOR_FLAGS_SIZE: usize = 1;
 const TEXT_SPAN_RECORD_SIZE: usize =
     ID_SIZE * 2 + TEXT_SPAN_ATTR_FLAGS_SIZE + TEXT_SPAN_COLOR_FLAGS_SIZE + ID_SIZE * 2;
 
+// =============================================================================
+// Public API (FFI exports)
+// =============================================================================
+
+#[unsafe(no_mangle)]
+pub extern "C" fn clear_tree_state() -> c_int {
+    let mut state = TREE_STATE.lock().unwrap();
+    state.root_id = None;
+    state.nodes.clear();
+    state.topology_dirty = true;
+    state.dirty_nodes.clear();
+    1
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
+    if ops_len > 0 && ops_ptr.is_null() {
+        return 0;
+    }
+
+    let ops_bytes: &[u8] = if ops_len == 0 {
+        &[]
+    } else {
+        unsafe { slice::from_raw_parts(ops_ptr, ops_len as usize) }
+    };
+
+    if ops_bytes.is_empty() {
+        return 1;
+    }
+
+    let mut state = TREE_STATE.lock().unwrap();
+    let mut offset = 0usize;
+    while offset < ops_bytes.len() {
+        let header = match ops_bytes.get(offset..offset + RECORD_HEADER_SIZE) {
+            Some(header) => header,
+            None => return 0,
+        };
+
+        let op = match OpType::from_u8(header[0]) {
+            Some(op) => op,
+            None => return 0,
+        };
+
+        let node_id = match header[OP_SIZE..OP_SIZE + ID_SIZE].try_into().ok() {
+            Some(bytes) => u32::from_le_bytes(bytes),
+            None => return 0,
+        };
+
+        let payload_len = match header[OP_SIZE + ID_SIZE..RECORD_HEADER_SIZE]
+            .try_into()
+            .ok()
+        {
+            Some(bytes) => u32::from_le_bytes(bytes) as usize,
+            None => return 0,
+        };
+
+        offset += RECORD_HEADER_SIZE;
+
+        let payload = match ops_bytes.get(offset..offset + payload_len) {
+            Some(payload) => payload,
+            None => return 0,
+        };
+
+        match op {
+            OpType::AddNode => {
+                if payload.len() != KIND_SIZE {
+                    return 0;
+                }
+                if state.nodes.contains_key(&node_id) {
+                    return 0;
+                }
+
+                let kind = match NodeType::from_u8(payload[0]) {
+                    Some(kind) => kind,
+                    None => return 0,
+                };
+
+                state.nodes.insert(
+                    node_id,
+                    NodeData {
+                        kind,
+                        parent: None,
+                        children: Vec::new(),
+                        text: String::new(),
+                        text_spans: Vec::new(),
+                        style: NodeStyle::default_for_kind(kind),
+                    },
+                );
+                state.topology_dirty = true;
+            }
+            OpType::SetText => {
+                let appended_text = match std::str::from_utf8(payload) {
+                    Ok(text) => text,
+                    Err(_) => return 0,
+                };
+
+                let node = match state.nodes.get_mut(&node_id) {
+                    Some(node) => node,
+                    None => return 0,
+                };
+
+                if !node.kind.supports_text() {
+                    return 0;
+                }
+
+                node.text.push_str(appended_text);
+                state.dirty_nodes.insert(node_id);
+            }
+            OpType::DeleteTextRange => {
+                if payload.len() != ID_SIZE * 2 {
+                    return 0;
+                }
+
+                let start_byte = match payload[0..ID_SIZE].try_into().ok() {
+                    Some(bytes) => u32::from_le_bytes(bytes) as usize,
+                    None => return 0,
+                };
+
+                let end_byte = match payload[ID_SIZE..ID_SIZE * 2].try_into().ok() {
+                    Some(bytes) => u32::from_le_bytes(bytes) as usize,
+                    None => return 0,
+                };
+
+                let node = match state.nodes.get_mut(&node_id) {
+                    Some(node) => node,
+                    None => return 0,
+                };
+
+                if !node.kind.supports_text() {
+                    return 0;
+                }
+
+                if start_byte > end_byte || end_byte > node.text.len() {
+                    return 0;
+                }
+
+                if !node.text.is_char_boundary(start_byte) || !node.text.is_char_boundary(end_byte)
+                {
+                    return 0;
+                }
+
+                node.text.replace_range(start_byte..end_byte, "");
+                state.dirty_nodes.insert(node_id);
+            }
+            OpType::SetTextSpans => {
+                let node = match state.nodes.get_mut(&node_id) {
+                    Some(node) => node,
+                    None => return 0,
+                };
+
+                if node.kind != NodeType::Text {
+                    return 0;
+                }
+
+                let spans = match parse_text_spans(payload, &node.text) {
+                    Some(spans) => spans,
+                    None => return 0,
+                };
+
+                node.text_spans = spans;
+                state.dirty_nodes.insert(node_id);
+            }
+            OpType::SetRoot => {
+                if !payload.is_empty() || !state.nodes.contains_key(&node_id) {
+                    return 0;
+                }
+                state.root_id = Some(node_id);
+                state.topology_dirty = true;
+            }
+            OpType::DeleteNode => {
+                if !payload.is_empty() || !state.nodes.contains_key(&node_id) {
+                    return 0;
+                }
+
+                let deleted_node_parent_id =
+                    state.nodes.get(&node_id).and_then(|node| node.parent);
+                if let Some(parent_id) = deleted_node_parent_id {
+                    if let Some(parent) = state.nodes.get_mut(&parent_id) {
+                        parent.children.retain(|child_id| *child_id != node_id);
+                    }
+                }
+
+                if state.root_id == Some(node_id) {
+                    state.root_id = None;
+                }
+
+                remove_subtree(&mut state, node_id);
+                state.topology_dirty = true;
+            }
+            OpType::AppendChild => {
+                if payload.len() != ID_SIZE {
+                    return 0;
+                }
+
+                let parent_id = node_id;
+                let child_id = match payload.try_into().ok() {
+                    Some(bytes) => u32::from_le_bytes(bytes),
+                    None => return 0,
+                };
+
+                if parent_id == child_id {
+                    return 0;
+                }
+
+                if !state.nodes.contains_key(&parent_id) || !state.nodes.contains_key(&child_id) {
+                    return 0;
+                }
+
+                let child_parent_id = match state.nodes.get(&child_id) {
+                    Some(child) => child.parent,
+                    None => return 0,
+                };
+                if child_parent_id.is_some() {
+                    return 0;
+                }
+
+                let mut current_parent_id = Some(parent_id);
+                while let Some(parent_id_in_chain) = current_parent_id {
+                    if parent_id_in_chain == child_id {
+                        return 0;
+                    }
+                    current_parent_id = state
+                        .nodes
+                        .get(&parent_id_in_chain)
+                        .and_then(|node| node.parent);
+                }
+
+                if let Some(parent) = state.nodes.get_mut(&parent_id) {
+                    parent.children.push(child_id);
+                } else {
+                    return 0;
+                }
+
+                if let Some(child) = state.nodes.get_mut(&child_id) {
+                    child.parent = Some(parent_id);
+                } else {
+                    return 0;
+                }
+                state.topology_dirty = true;
+            }
+            OpType::UpdateStyle => {
+                if payload.len() < 2 {
+                    return 0;
+                }
+
+                let prop_name_len = payload[0] as usize;
+                if prop_name_len == 0 || payload.len() < 1 + prop_name_len + 1 {
+                    return 0;
+                }
+
+                let prop_name_end = 1 + prop_name_len;
+                let prop_name = match std::str::from_utf8(&payload[1..prop_name_end]) {
+                    Ok(prop_name) => prop_name,
+                    Err(_) => return 0,
+                };
+
+                let value_kind = payload[prop_name_end];
+                let value_payload = &payload[prop_name_end + 1..];
+
+                let node = match state.nodes.get_mut(&node_id) {
+                    Some(node) => node,
+                    None => return 0,
+                };
+
+                let success = match value_kind {
+                    STYLE_VALUE_RESET => {
+                        if !value_payload.is_empty() {
+                            return 0;
+                        }
+                        apply_style_reset(node, prop_name)
+                    }
+                    STYLE_VALUE_NUMBER => {
+                        let value = match parse_style_number(value_payload) {
+                            Some(value) => value,
+                            None => return 0,
+                        };
+                        apply_style_number(node, prop_name, value)
+                    }
+                    STYLE_VALUE_STRING => {
+                        let value = match parse_style_string(value_payload) {
+                            Some(value) => value,
+                            None => return 0,
+                        };
+                        apply_style_string(node, prop_name, value)
+                    }
+                    _ => return 0,
+                };
+
+                if !success {
+                    return 0;
+                }
+
+                state.dirty_nodes.insert(node_id);
+            }
+        }
+
+        offset += payload_len;
+    }
+
+    1
+}
+
+// =============================================================================
+// Internal State
+// =============================================================================
+
 #[derive(Debug, Default)]
 pub(crate) struct TreeState {
     pub(crate) root_id: Option<u32>,
     pub(crate) nodes: HashMap<u32, NodeData>,
-    // Topology edits (add/delete/reparent/root changes) require rebuilding Taffy structure.
     pub(crate) topology_dirty: bool,
-    // Style/text edits can update existing Taffy nodes in place.
     pub(crate) dirty_nodes: HashSet<u32>,
+}
+
+// =============================================================================
+// Supporting Types
+// =============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum NodeType {
+    Row = 1,
+    Column = 2,
+    Button = 3,
+    Input = 4,
+    Text = 5,
+}
+
+impl NodeType {
+    fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            1 => Some(NodeType::Row),
+            2 => Some(NodeType::Column),
+            3 => Some(NodeType::Button),
+            4 => Some(NodeType::Input),
+            5 => Some(NodeType::Text),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn supports_text(self) -> bool {
+        matches!(self, NodeType::Text | NodeType::Button | NodeType::Input)
+    }
+
+    pub(crate) fn is_box(self) -> bool {
+        matches!(self, NodeType::Row | NodeType::Column)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum Direction {
+    Row = 1,
+    Column = 2,
+    RowReverse = 3,
+    ColumnReverse = 4,
+}
+
+impl Direction {
+    pub(crate) fn from_node_type(kind: NodeType) -> Self {
+        match kind {
+            NodeType::Row => Direction::Row,
+            NodeType::Column => Direction::Column,
+            _ => Direction::Column,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum BorderStyle {
+    None = 0,
+    Rounded = 1,
+    Squared = 2,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum TextWrap {
+    None,
+    Word,
+    Char,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum TextOverflow {
+    Clip,
+    Ellipsis,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum StyleDimension {
+    Auto,
+    Points(f32),
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct TextSpanData {
-    // Stored in byte offsets because Rust string slicing / validation is byte-based.
     pub(crate) start_byte: usize,
     pub(crate) end_byte: usize,
     pub(crate) foreground: Option<u32>,
@@ -160,25 +555,6 @@ pub(crate) struct NodeStyle {
     pub(crate) cursor_visible: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum TextWrap {
-    None,
-    Word,
-    Char,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum TextOverflow {
-    Clip,
-    Ellipsis,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum StyleDimension {
-    Auto,
-    Points(f32),
-}
-
 impl NodeStyle {
     pub(crate) fn default_for_kind(kind: NodeType) -> Self {
         Self {
@@ -225,8 +601,6 @@ enum OpType {
     UpdateStyle = 5,
     SetRoot = 6,
     AppendChild = 7,
-    // Replaces the full span table for a Text node; text bytes still flow through
-    // SetText/DeleteTextRange ops.
     SetTextSpans = 8,
 }
 
@@ -246,6 +620,10 @@ impl OpType {
     }
 }
 
+// =============================================================================
+// Internal Algorithm
+// =============================================================================
+
 fn remove_subtree(state: &mut TreeState, node_id: u32) {
     let children = match state.nodes.get(&node_id) {
         Some(node) => node.children.clone(),
@@ -260,6 +638,10 @@ fn remove_subtree(state: &mut TreeState, node_id: u32) {
     state.dirty_nodes.remove(&node_id);
 }
 
+// =============================================================================
+// Helpers
+// =============================================================================
+
 fn parse_style_number(payload: &[u8]) -> Option<f64> {
     let bytes: [u8; 8] = payload.try_into().ok()?;
     Some(f64::from_le_bytes(bytes))
@@ -270,7 +652,6 @@ fn parse_style_string(payload: &[u8]) -> Option<&str> {
     if payload.len() != 1 + string_len {
         return None;
     }
-
     std::str::from_utf8(&payload[1..]).ok()
 }
 
@@ -371,8 +752,6 @@ fn parse_style_u32(value: f64) -> Option<u32> {
 }
 
 fn parse_text_spans(payload: &[u8], text: &str) -> Option<Vec<TextSpanData>> {
-    // JS already normalized spans, but Rust still validates the binary payload and
-    // byte ranges before accepting it into persistent tree state.
     let count_bytes: [u8; TEXT_SPAN_COUNT_SIZE] =
         payload.get(..TEXT_SPAN_COUNT_SIZE)?.try_into().ok()?;
     let count = u32::from_le_bytes(count_bytes) as usize;
@@ -651,7 +1030,6 @@ fn apply_style_string(node: &mut NodeData, prop_name: &str, value: &str) -> bool
             if !node.kind.is_box() {
                 return false;
             }
-
             node.style.direction = match parse_direction(value) {
                 Some(value) => value,
                 None => return false,
@@ -685,362 +1063,4 @@ fn apply_style_string(node: &mut NodeData, prop_name: &str, value: &str) -> bool
     }
 
     true
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn clear_tree_state() -> c_int {
-    let mut state = TREE_STATE.lock().unwrap();
-    state.root_id = None;
-    state.nodes.clear();
-    state.topology_dirty = true;
-    state.dirty_nodes.clear();
-    1
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
-    if ops_len > 0 && ops_ptr.is_null() {
-        return 0;
-    }
-
-    let ops_bytes: &[u8] = if ops_len == 0 {
-        &[]
-    } else {
-        unsafe { slice::from_raw_parts(ops_ptr, ops_len as usize) }
-    };
-
-    if ops_bytes.is_empty() {
-        return 1;
-    }
-
-    let mut state = TREE_STATE.lock().unwrap();
-    let mut offset = 0usize;
-    while offset < ops_bytes.len() {
-        // Record layout: <op><node_id><payload_len><payload>
-        let header = match ops_bytes.get(offset..offset + RECORD_HEADER_SIZE) {
-            Some(header) => header,
-            None => return 0,
-        };
-
-        let op = match OpType::from_u8(header[0]) {
-            Some(op) => op,
-            None => return 0,
-        };
-
-        let node_id = match header[OP_SIZE..OP_SIZE + ID_SIZE].try_into().ok() {
-            Some(bytes) => u32::from_le_bytes(bytes),
-            None => return 0,
-        };
-
-        let payload_len = match header[OP_SIZE + ID_SIZE..RECORD_HEADER_SIZE]
-            .try_into()
-            .ok()
-        {
-            Some(bytes) => u32::from_le_bytes(bytes) as usize,
-            None => return 0,
-        };
-
-        offset += RECORD_HEADER_SIZE;
-
-        let payload = match ops_bytes.get(offset..offset + payload_len) {
-            Some(payload) => payload,
-            None => return 0,
-        };
-
-        match op {
-            OpType::AddNode => {
-                if payload.len() != KIND_SIZE {
-                    return 0;
-                }
-                if state.nodes.contains_key(&node_id) {
-                    return 0;
-                }
-
-                let kind = match NodeType::from_u8(payload[0]) {
-                    Some(kind) => kind,
-                    None => return 0,
-                };
-
-                state.nodes.insert(
-                    node_id,
-                    NodeData {
-                        kind,
-                        parent: None,
-                        children: Vec::new(),
-                        text: String::new(),
-                        text_spans: Vec::new(),
-                        style: NodeStyle::default_for_kind(kind),
-                    },
-                );
-                state.topology_dirty = true;
-            }
-            OpType::SetText => {
-                let appended_text = match std::str::from_utf8(payload) {
-                    Ok(text) => text,
-                    Err(_) => return 0,
-                };
-
-                let node = match state.nodes.get_mut(&node_id) {
-                    Some(node) => node,
-                    None => return 0,
-                };
-
-                if !node.kind.supports_text() {
-                    return 0;
-                }
-
-                node.text.push_str(appended_text);
-                state.dirty_nodes.insert(node_id);
-            }
-            OpType::DeleteTextRange => {
-                if payload.len() != ID_SIZE * 2 {
-                    return 0;
-                }
-
-                let start_byte = match payload[0..ID_SIZE].try_into().ok() {
-                    Some(bytes) => u32::from_le_bytes(bytes) as usize,
-                    None => return 0,
-                };
-
-                let end_byte = match payload[ID_SIZE..ID_SIZE * 2].try_into().ok() {
-                    Some(bytes) => u32::from_le_bytes(bytes) as usize,
-                    None => return 0,
-                };
-
-                let node = match state.nodes.get_mut(&node_id) {
-                    Some(node) => node,
-                    None => return 0,
-                };
-
-                if !node.kind.supports_text() {
-                    return 0;
-                }
-
-                if start_byte > end_byte || end_byte > node.text.len() {
-                    return 0;
-                }
-
-                if !node.text.is_char_boundary(start_byte) || !node.text.is_char_boundary(end_byte)
-                {
-                    return 0;
-                }
-
-                node.text.replace_range(start_byte..end_byte, "");
-                state.dirty_nodes.insert(node_id);
-            }
-            OpType::SetTextSpans => {
-                // Span metadata is stored separately from the text buffer so compatible
-                // frames can diff text bytes and styling independently.
-                let node = match state.nodes.get_mut(&node_id) {
-                    Some(node) => node,
-                    None => return 0,
-                };
-
-                if node.kind != NodeType::Text {
-                    return 0;
-                }
-
-                let spans = match parse_text_spans(payload, &node.text) {
-                    Some(spans) => spans,
-                    None => return 0,
-                };
-
-                node.text_spans = spans;
-                state.dirty_nodes.insert(node_id);
-            }
-            OpType::SetRoot => {
-                if !payload.is_empty() || !state.nodes.contains_key(&node_id) {
-                    return 0;
-                }
-                state.root_id = Some(node_id);
-                state.topology_dirty = true;
-            }
-            OpType::DeleteNode => {
-                if !payload.is_empty() || !state.nodes.contains_key(&node_id) {
-                    return 0;
-                }
-
-                let deleted_node_parent_id = state.nodes.get(&node_id).and_then(|node| node.parent);
-                if let Some(parent_id) = deleted_node_parent_id {
-                    if let Some(parent) = state.nodes.get_mut(&parent_id) {
-                        parent.children.retain(|child_id| *child_id != node_id);
-                    }
-                }
-
-                if state.root_id == Some(node_id) {
-                    state.root_id = None;
-                }
-
-                remove_subtree(&mut state, node_id);
-                state.topology_dirty = true;
-            }
-            OpType::AppendChild => {
-                if payload.len() != ID_SIZE {
-                    return 0;
-                }
-
-                let parent_id = node_id;
-                let child_id = match payload.try_into().ok() {
-                    Some(bytes) => u32::from_le_bytes(bytes),
-                    None => return 0,
-                };
-
-                if parent_id == child_id {
-                    return 0;
-                }
-
-                if !state.nodes.contains_key(&parent_id) || !state.nodes.contains_key(&child_id) {
-                    return 0;
-                }
-
-                let child_parent_id = match state.nodes.get(&child_id) {
-                    Some(child) => child.parent,
-                    None => return 0,
-                };
-                if child_parent_id.is_some() {
-                    return 0;
-                }
-
-                // Walk upward from the proposed parent. If we ever reach the child,
-                // attaching here would create a cycle.
-                let mut current_parent_id = Some(parent_id);
-                while let Some(parent_id_in_chain) = current_parent_id {
-                    if parent_id_in_chain == child_id {
-                        return 0;
-                    }
-                    current_parent_id = state
-                        .nodes
-                        .get(&parent_id_in_chain)
-                        .and_then(|node| node.parent);
-                }
-
-                // Store the relationship in both directions.
-                if let Some(parent) = state.nodes.get_mut(&parent_id) {
-                    parent.children.push(child_id);
-                } else {
-                    return 0;
-                }
-
-                if let Some(child) = state.nodes.get_mut(&child_id) {
-                    child.parent = Some(parent_id);
-                } else {
-                    return 0;
-                }
-                state.topology_dirty = true;
-            }
-            OpType::UpdateStyle => {
-                if payload.len() < 2 {
-                    return 0;
-                }
-
-                let prop_name_len = payload[0] as usize;
-                if prop_name_len == 0 || payload.len() < 1 + prop_name_len + 1 {
-                    return 0;
-                }
-
-                let prop_name_end = 1 + prop_name_len;
-                let prop_name = match std::str::from_utf8(&payload[1..prop_name_end]) {
-                    Ok(prop_name) => prop_name,
-                    Err(_) => return 0,
-                };
-
-                let value_kind = payload[prop_name_end];
-                let value_payload = &payload[prop_name_end + 1..];
-
-                let node = match state.nodes.get_mut(&node_id) {
-                    Some(node) => node,
-                    None => return 0,
-                };
-
-                let success = match value_kind {
-                    STYLE_VALUE_RESET => {
-                        if !value_payload.is_empty() {
-                            return 0;
-                        }
-                        apply_style_reset(node, prop_name)
-                    }
-                    STYLE_VALUE_NUMBER => {
-                        let value = match parse_style_number(value_payload) {
-                            Some(value) => value,
-                            None => return 0,
-                        };
-                        apply_style_number(node, prop_name, value)
-                    }
-                    STYLE_VALUE_STRING => {
-                        let value = match parse_style_string(value_payload) {
-                            Some(value) => value,
-                            None => return 0,
-                        };
-                        apply_style_string(node, prop_name, value)
-                    }
-                    _ => return 0,
-                };
-
-                if !success {
-                    return 0;
-                }
-
-                state.dirty_nodes.insert(node_id);
-            }
-        }
-
-        offset += payload_len;
-    }
-
-    1
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum NodeType {
-    Row = 1,
-    Column = 2,
-    Button = 3,
-    Input = 4,
-    Text = 5,
-}
-
-impl NodeType {
-    fn from_u8(v: u8) -> Option<Self> {
-        match v {
-            1 => Some(NodeType::Row),
-            2 => Some(NodeType::Column),
-            3 => Some(NodeType::Button),
-            4 => Some(NodeType::Input),
-            5 => Some(NodeType::Text),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn supports_text(self) -> bool {
-        matches!(self, NodeType::Text | NodeType::Button | NodeType::Input)
-    }
-
-    pub(crate) fn is_box(self) -> bool {
-        matches!(self, NodeType::Row | NodeType::Column)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum Direction {
-    Row = 1,
-    Column = 2,
-    RowReverse = 3,
-    ColumnReverse = 4,
-}
-
-impl Direction {
-    pub(crate) fn from_node_type(kind: NodeType) -> Self {
-        match kind {
-            NodeType::Row => Direction::Row,
-            NodeType::Column => Direction::Column,
-            _ => Direction::Column,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum BorderStyle {
-    None = 0,
-    Rounded = 1,
-    Squared = 2,
 }

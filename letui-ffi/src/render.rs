@@ -1,3 +1,12 @@
+//! Taffy tree management, layout computation, and rendering.
+//!
+//! Data flow:
+//! ```text
+//! TREE_STATE (from tree.rs) → rebuild/sync Taffy tree → compute_layout()
+//!                                                        → paint_taffy_node() → CURRENT_BUFFER
+//!                                   → build_frames_array() → FRAMES (for JS hit-testing)
+//! ```
+
 use crate::shared::{
     CELL_STRIDE, CONTINUATION_CELL, CURRENT_BUFFER, DEFAULT_BG, DEFAULT_FG, FRAMES, TERMINAL_SIZE,
 };
@@ -15,10 +24,184 @@ use std::{
 };
 use taffy::{Overflow, Point, prelude::*};
 
+// =============================================================================
+// Public API (FFI exports)
+// =============================================================================
+
+#[unsafe(no_mangle)]
+pub extern "C" fn render() -> c_int {
+    let (root_id, root_fg, root_bg, topology_dirty, dirty_nodes) = {
+        let mut state = TREE_STATE.lock().unwrap();
+        let Some(root_id) = state.root_id else {
+            return 0;
+        };
+        let root_style = state.nodes.get(&root_id).map(|d| d.style.clone());
+        let dirty_nodes = std::mem::take(&mut state.dirty_nodes);
+        let topology_dirty = state.topology_dirty;
+        state.topology_dirty = false;
+
+        let (root_fg, root_bg) = match root_style {
+            Some(style) => (style.fg, style.bg),
+            None => (DEFAULT_FG, DEFAULT_BG),
+        };
+
+        (root_id, root_fg, root_bg, topology_dirty, dirty_nodes)
+    };
+
+    TREE.with_borrow_mut(|taffy| {
+        NODE_MAP.with_borrow_mut(|node_map| {
+            let state = TREE_STATE.lock().unwrap();
+            let term_size = TERMINAL_SIZE.lock().unwrap();
+            let (tw, th) = *term_size;
+            drop(term_size);
+
+            let should_rebuild = topology_dirty
+                || !node_map.contains_key(&root_id)
+                || node_map.len() != state.nodes.len();
+
+            let taffy_root = if should_rebuild {
+                match rebuild_taffy_tree(taffy, node_map, &state, root_id) {
+                    Some(id) => id,
+                    None => return 0,
+                }
+            } else {
+                sync_dirty_nodes(taffy, node_map, &state, &dirty_nodes);
+                match node_map.get(&root_id).copied() {
+                    Some(id) => id,
+                    None => match rebuild_taffy_tree(taffy, node_map, &state, root_id) {
+                        Some(id) => id,
+                        None => return 0,
+                    },
+                }
+            };
+
+            let mut root_style = taffy.style(taffy_root).unwrap().clone();
+            root_style.size = Size {
+                width: length(tw),
+                height: length(th),
+            };
+            taffy.set_style(taffy_root, root_style).unwrap();
+
+            let _ = taffy.compute_layout_with_measure(
+                taffy_root,
+                Size {
+                    width: length(tw),
+                    height: length(th),
+                },
+                |known_dimensions, available_space, node_id, node_context, style| {
+                    measure_function(
+                        known_dimensions,
+                        available_space,
+                        node_id,
+                        node_context,
+                        style,
+                    )
+                },
+            );
+
+            let mut frame_lock = FRAMES.lock().unwrap();
+            let frames_vec = frame_lock.get_or_insert_with(Vec::new);
+            frames_vec.clear();
+            build_frames_array(taffy, taffy_root, frames_vec, 0.0, 0.0);
+            drop(frame_lock);
+
+            let mut cb = CURRENT_BUFFER.lock().unwrap();
+            if let Some(ref mut buf) = *cb {
+                paint_taffy_node(
+                    taffy,
+                    taffy_root,
+                    buf,
+                    0.0,
+                    0.0,
+                    root_fg,
+                    root_bg,
+                    ClipRect {
+                        left: 0,
+                        top: 0,
+                        right: tw,
+                        bottom: th,
+                    },
+                    tw,
+                    th,
+                );
+            }
+
+            1
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_frames_ptr() -> *const f32 {
+    let frames = FRAMES.lock().unwrap();
+    match *frames {
+        Some(ref vec) => vec.as_ptr(),
+        None => std::ptr::null(),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_frames_len() -> u64 {
+    let frames = FRAMES.lock().unwrap();
+    match *frames {
+        Some(ref vec) => vec.len() as u64,
+        None => 0,
+    }
+}
+
+// =============================================================================
+// Internal State
+// =============================================================================
+
 thread_local! {
     static TREE: RefCell<TaffyTree<NodeContext>> = RefCell::new(TaffyTree::new());
     static NODE_MAP: RefCell<HashMap<u32, NodeId>> = RefCell::new(HashMap::new());
 }
+
+// =============================================================================
+// Supporting Types
+// =============================================================================
+
+enum NodeContext {
+    Text {
+        content: String,
+        spans: Vec<TextSpanData>,
+        fg: u32,
+        bg: u32,
+        wrap: TextWrap,
+        overflow: TextOverflow,
+    },
+    Button {
+        label: String,
+        fg: u32,
+        bg: u32,
+        border: ResolvedBorder,
+        wrap: TextWrap,
+        overflow: TextOverflow,
+    },
+    Input {
+        content: String,
+        fg: u32,
+        bg: u32,
+        border: ResolvedBorder,
+        wrap: TextWrap,
+        cursor_visible: bool,
+    },
+    Row {
+        bg: u32,
+        fg: u32,
+        border: ResolvedBorder,
+    },
+    Column {
+        bg: u32,
+        fg: u32,
+        border: ResolvedBorder,
+    },
+}
+
+// =============================================================================
+// Internal Algorithm
+// =============================================================================
 
 fn style_dimension_to_taffy(dim: StyleDimension) -> Dimension {
     match dim {
@@ -141,43 +324,6 @@ fn effective_overflow(kind: NodeType, data: &NodeData) -> TextOverflow {
         NodeType::Text => data.style.text_overflow,
         _ => TextOverflow::Clip,
     }
-}
-
-enum NodeContext {
-    Text {
-        content: String,
-        spans: Vec<TextSpanData>,
-        fg: u32,
-        bg: u32,
-        wrap: TextWrap,
-        overflow: TextOverflow,
-    },
-    Button {
-        label: String,
-        fg: u32,
-        bg: u32,
-        border: ResolvedBorder,
-        wrap: TextWrap,
-        overflow: TextOverflow,
-    },
-    Input {
-        content: String,
-        fg: u32,
-        bg: u32,
-        border: ResolvedBorder,
-        wrap: TextWrap,
-        cursor_visible: bool,
-    },
-    Row {
-        bg: u32,
-        fg: u32,
-        border: ResolvedBorder,
-    },
-    Column {
-        bg: u32,
-        fg: u32,
-        border: ResolvedBorder,
-    },
 }
 
 fn node_data_to_context(data: &NodeData) -> NodeContext {
@@ -406,6 +552,176 @@ fn measure_function(
         height: result.height as f32,
     }
 }
+
+fn paint_taffy_node(
+    taffy: &TaffyTree<NodeContext>,
+    node_id: NodeId,
+    buf: &mut [u64],
+    abs_x: f32,
+    abs_y: f32,
+    parent_fg: u32,
+    parent_bg: u32,
+    inherited_clip: ClipRect,
+    tw: u16,
+    th: u16,
+) {
+    let layout = taffy.layout(node_id).unwrap();
+    let x = floor_to_u16(abs_x + layout.location.x);
+    let y = floor_to_u16(abs_y + layout.location.y);
+    let w = floor_to_u16(layout.size.width);
+    let h = floor_to_u16(layout.size.height);
+
+    let content_x = floor_to_u16(abs_x + layout.content_box_x());
+    let content_y = floor_to_u16(abs_y + layout.content_box_y());
+    let content_w = floor_to_u16(layout.content_box_width());
+    let content_h = floor_to_u16(layout.content_box_height());
+
+    let node_clip = inherited_clip.intersect(ClipRect {
+        left: x,
+        top: y,
+        right: x.saturating_add(w),
+        bottom: y.saturating_add(h),
+    });
+    let content_clip = inherited_clip.intersect(ClipRect {
+        left: content_x,
+        top: content_y,
+        right: content_x.saturating_add(content_w),
+        bottom: content_y.saturating_add(content_h),
+    });
+
+    let (fg, bg) = match taffy.get_node_context(node_id) {
+        Some(NodeContext::Text {
+            content,
+            spans,
+            fg,
+            bg,
+            wrap,
+            overflow,
+        }) => {
+            let fg = if *fg != 0 { *fg } else { parent_fg };
+            let bg = if *bg != 0 { *bg } else { parent_bg };
+            draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
+            paint_text_layout(
+                buf,
+                content_clip,
+                content_x,
+                content_y,
+                TextLayoutRequest {
+                    text: content,
+                    spans,
+                    max_width: Some(content_w),
+                    wrap: *wrap,
+                    overflow: *overflow,
+                    cursor: None,
+                    show_cursor: false,
+                    default_fg: fg,
+                    default_bg: bg,
+                },
+                tw,
+                th,
+            );
+            (fg, bg)
+        }
+        Some(NodeContext::Button {
+            label,
+            fg,
+            bg,
+            border,
+            wrap,
+            overflow,
+        }) => {
+            let fg = if *fg != 0 { *fg } else { parent_fg };
+            let bg = if *bg != 0 { *bg } else { parent_bg };
+            draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
+            draw_resolved_border_at(buf, node_clip, x, y, w, h, *border, bg, tw, th);
+            paint_text_layout(
+                buf,
+                content_clip,
+                content_x,
+                content_y,
+                TextLayoutRequest {
+                    text: label,
+                    spans: &[],
+                    max_width: Some(content_w),
+                    wrap: *wrap,
+                    overflow: *overflow,
+                    cursor: None,
+                    show_cursor: false,
+                    default_fg: fg,
+                    default_bg: bg,
+                },
+                tw,
+                th,
+            );
+            (fg, bg)
+        }
+        Some(NodeContext::Input {
+            content,
+            fg,
+            bg,
+            border,
+            wrap,
+            cursor_visible,
+        }) => {
+            let fg = if *fg != 0 { *fg } else { parent_fg };
+            let bg = if *bg != 0 { *bg } else { parent_bg };
+            draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
+            draw_resolved_border_at(buf, node_clip, x, y, w, h, *border, bg, tw, th);
+            paint_text_layout(
+                buf,
+                content_clip,
+                content_x,
+                content_y,
+                TextLayoutRequest {
+                    text: content,
+                    spans: &[],
+                    max_width: Some(content_w),
+                    wrap: *wrap,
+                    overflow: TextOverflow::Clip,
+                    cursor: if *cursor_visible {
+                        Some(content.len())
+                    } else {
+                        None
+                    },
+                    show_cursor: *cursor_visible,
+                    default_fg: fg,
+                    default_bg: bg,
+                },
+                tw,
+                th,
+            );
+            (fg, bg)
+        }
+        Some(NodeContext::Row { fg, bg, border })
+        | Some(NodeContext::Column { fg, bg, border }) => {
+            let fg = if *fg != 0 { *fg } else { parent_fg };
+            let bg = if *bg != 0 { *bg } else { parent_bg };
+            draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
+            draw_resolved_border_at(buf, node_clip, x, y, w, h, *border, bg, tw, th);
+            (fg, bg)
+        }
+        None => (parent_fg, parent_bg),
+    };
+
+    for child in taffy.children(node_id).unwrap() {
+        paint_taffy_node(
+            taffy,
+            child,
+            buf,
+            abs_x + layout.location.x,
+            abs_y + layout.location.y,
+            fg,
+            bg,
+            content_clip,
+            tw,
+            th,
+        );
+    }
+}
+
+// =============================================================================
+// Helpers
+// =============================================================================
 
 fn set_buffer_cell(
     buf: &mut [u64],
@@ -684,292 +1000,5 @@ fn paint_text_layout(
             tw,
             th,
         );
-    }
-}
-
-fn paint_taffy_node(
-    taffy: &TaffyTree<NodeContext>,
-    node_id: NodeId,
-    buf: &mut [u64],
-    abs_x: f32,
-    abs_y: f32,
-    parent_fg: u32,
-    parent_bg: u32,
-    inherited_clip: ClipRect,
-    tw: u16,
-    th: u16,
-) {
-    let layout = taffy.layout(node_id).unwrap();
-    let x = floor_to_u16(abs_x + layout.location.x);
-    let y = floor_to_u16(abs_y + layout.location.y);
-    let w = floor_to_u16(layout.size.width);
-    let h = floor_to_u16(layout.size.height);
-
-    let content_x = floor_to_u16(abs_x + layout.content_box_x());
-    let content_y = floor_to_u16(abs_y + layout.content_box_y());
-    let content_w = floor_to_u16(layout.content_box_width());
-    let content_h = floor_to_u16(layout.content_box_height());
-
-    let node_clip = inherited_clip.intersect(ClipRect {
-        left: x,
-        top: y,
-        right: x.saturating_add(w),
-        bottom: y.saturating_add(h),
-    });
-    let content_clip = inherited_clip.intersect(ClipRect {
-        left: content_x,
-        top: content_y,
-        right: content_x.saturating_add(content_w),
-        bottom: content_y.saturating_add(content_h),
-    });
-
-    let (fg, bg) = match taffy.get_node_context(node_id) {
-        Some(NodeContext::Text {
-            content,
-            spans,
-            fg,
-            bg,
-            wrap,
-            overflow,
-        }) => {
-            let fg = if *fg != 0 { *fg } else { parent_fg };
-            let bg = if *bg != 0 { *bg } else { parent_bg };
-            draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
-            paint_text_layout(
-                buf,
-                content_clip,
-                content_x,
-                content_y,
-                TextLayoutRequest {
-                    text: content,
-                    spans,
-                    max_width: Some(content_w),
-                    wrap: *wrap,
-                    overflow: *overflow,
-                    cursor: None,
-                    show_cursor: false,
-                    default_fg: fg,
-                    default_bg: bg,
-                },
-                tw,
-                th,
-            );
-            (fg, bg)
-        }
-        Some(NodeContext::Button {
-            label,
-            fg,
-            bg,
-            border,
-            wrap,
-            overflow,
-        }) => {
-            let fg = if *fg != 0 { *fg } else { parent_fg };
-            let bg = if *bg != 0 { *bg } else { parent_bg };
-            draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
-            draw_resolved_border_at(buf, node_clip, x, y, w, h, *border, bg, tw, th);
-            paint_text_layout(
-                buf,
-                content_clip,
-                content_x,
-                content_y,
-                TextLayoutRequest {
-                    text: label,
-                    spans: &[],
-                    max_width: Some(content_w),
-                    wrap: *wrap,
-                    overflow: *overflow,
-                    cursor: None,
-                    show_cursor: false,
-                    default_fg: fg,
-                    default_bg: bg,
-                },
-                tw,
-                th,
-            );
-            (fg, bg)
-        }
-        Some(NodeContext::Input {
-            content,
-            fg,
-            bg,
-            border,
-            wrap,
-            cursor_visible,
-        }) => {
-            let fg = if *fg != 0 { *fg } else { parent_fg };
-            let bg = if *bg != 0 { *bg } else { parent_bg };
-            draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
-            draw_resolved_border_at(buf, node_clip, x, y, w, h, *border, bg, tw, th);
-            paint_text_layout(
-                buf,
-                content_clip,
-                content_x,
-                content_y,
-                TextLayoutRequest {
-                    text: content,
-                    spans: &[],
-                    max_width: Some(content_w),
-                    wrap: *wrap,
-                    overflow: TextOverflow::Clip,
-                    cursor: if *cursor_visible {
-                        Some(content.len())
-                    } else {
-                        None
-                    },
-                    show_cursor: *cursor_visible,
-                    default_fg: fg,
-                    default_bg: bg,
-                },
-                tw,
-                th,
-            );
-            (fg, bg)
-        }
-        Some(NodeContext::Row { fg, bg, border })
-        | Some(NodeContext::Column { fg, bg, border }) => {
-            let fg = if *fg != 0 { *fg } else { parent_fg };
-            let bg = if *bg != 0 { *bg } else { parent_bg };
-            draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
-            draw_resolved_border_at(buf, node_clip, x, y, w, h, *border, bg, tw, th);
-            (fg, bg)
-        }
-        None => (parent_fg, parent_bg),
-    };
-
-    for child in taffy.children(node_id).unwrap() {
-        paint_taffy_node(
-            taffy,
-            child,
-            buf,
-            abs_x + layout.location.x,
-            abs_y + layout.location.y,
-            fg,
-            bg,
-            content_clip,
-            tw,
-            th,
-        );
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn render() -> c_int {
-    let (root_id, root_fg, root_bg, topology_dirty, dirty_nodes) = {
-        let mut state = TREE_STATE.lock().unwrap();
-        let Some(root_id) = state.root_id else {
-            return 0;
-        };
-        let root_style = state.nodes.get(&root_id).map(|d| d.style.clone());
-        let dirty_nodes = std::mem::take(&mut state.dirty_nodes);
-        let topology_dirty = state.topology_dirty;
-        state.topology_dirty = false;
-
-        let (root_fg, root_bg) = match root_style {
-            Some(style) => (style.fg, style.bg),
-            None => (DEFAULT_FG, DEFAULT_BG),
-        };
-
-        (root_id, root_fg, root_bg, topology_dirty, dirty_nodes)
-    };
-
-    TREE.with_borrow_mut(|taffy| {
-        NODE_MAP.with_borrow_mut(|node_map| {
-            let state = TREE_STATE.lock().unwrap();
-            let term_size = TERMINAL_SIZE.lock().unwrap();
-            let (tw, th) = *term_size;
-            drop(term_size);
-
-            let should_rebuild = topology_dirty
-                || !node_map.contains_key(&root_id)
-                || node_map.len() != state.nodes.len();
-
-            let taffy_root = if should_rebuild {
-                match rebuild_taffy_tree(taffy, node_map, &state, root_id) {
-                    Some(id) => id,
-                    None => return 0,
-                }
-            } else {
-                sync_dirty_nodes(taffy, node_map, &state, &dirty_nodes);
-                match node_map.get(&root_id).copied() {
-                    Some(id) => id,
-                    None => match rebuild_taffy_tree(taffy, node_map, &state, root_id) {
-                        Some(id) => id,
-                        None => return 0,
-                    },
-                }
-            };
-
-            let mut root_style = taffy.style(taffy_root).unwrap().clone();
-            root_style.size = Size {
-                width: length(tw),
-                height: length(th),
-            };
-            taffy.set_style(taffy_root, root_style).unwrap();
-
-            let _ = taffy.compute_layout_with_measure(
-                taffy_root,
-                Size {
-                    width: length(tw),
-                    height: length(th),
-                },
-                |known_dimensions, available_space, node_id, node_context, style| {
-                    measure_function(
-                        known_dimensions,
-                        available_space,
-                        node_id,
-                        node_context,
-                        style,
-                    )
-                },
-            );
-
-            let mut frame_lock = FRAMES.lock().unwrap();
-            let frames_vec = frame_lock.get_or_insert_with(Vec::new);
-            frames_vec.clear();
-            build_frames_array(taffy, taffy_root, frames_vec, 0.0, 0.0);
-            drop(frame_lock);
-
-            let mut cb = CURRENT_BUFFER.lock().unwrap();
-            if let Some(ref mut buf) = *cb {
-                paint_taffy_node(
-                    taffy,
-                    taffy_root,
-                    buf,
-                    0.0,
-                    0.0,
-                    root_fg,
-                    root_bg,
-                    ClipRect {
-                        left: 0,
-                        top: 0,
-                        right: tw,
-                        bottom: th,
-                    },
-                    tw,
-                    th,
-                );
-            }
-
-            1
-        })
-    })
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn get_frames_ptr() -> *const f32 {
-    let frames = FRAMES.lock().unwrap();
-    match *frames {
-        Some(ref vec) => vec.as_ptr(),
-        None => std::ptr::null(),
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn get_frames_len() -> u64 {
-    let frames = FRAMES.lock().unwrap();
-    match *frames {
-        Some(ref vec) => vec.len() as u64,
-        None => 0,
     }
 }

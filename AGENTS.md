@@ -32,6 +32,22 @@ State management primitives, component API, diffing, number of optimizations are
 - Providing pseudo code is OK
 - When explaining, start from first principles
 
+# File structure
+
+Structure each source file top-down — most important code first:
+
+1. **Module doc** — one-liner purpose + data flow diagram (if non-trivial)
+2. **Public API** — exported functions first
+3. **Request/Result types** — types the caller constructs or receives
+4. **Internal state / accumulator types** — structs that hold state during computation
+5. **Internal algorithm** — private functions implementing the logic
+6. **Supporting/lower-level types** — internal data structures
+7. **Helpers** — small utility functions
+
+Rationale: new developers should understand the module by reading top-to-bottom, not reverse-engineering from type definitions.
+
+Name internal types for humans, not compilers. If a type needs explanation, add a doc comment with a concrete example or data flow note.
+
 # Testing
 
 Manual TUI testing:
