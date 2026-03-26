@@ -1,4 +1,4 @@
-import { COLORS, Column, Input, Text, ff, onKey, run } from "../index.ts";
+import { COLORS, Column, Input, Text, VirtualList, ff, onKey, run } from "../index.ts";
 import { $ } from "../src/signals";
 
 const border = {
@@ -34,6 +34,12 @@ const submitLine = Text({
   text: "submit: waiting",
   foreground: COLORS.default.grey,
 });
+const scrollLine = Text({
+  text: "scroll: 0",
+  foreground: COLORS.default.grey,
+});
+
+const rows = Array.from({ length: 40 }, (_, index) => `row ${String(index + 1).padStart(2, "0")}`);
 
 const input = Input({
   placeholder: "type here",
@@ -47,9 +53,35 @@ const input = Input({
     submitLine.setText(`submit: ${value}`);
     status("ready");
     trace("submit", value);
+    list.focus();
   },
   onFocus: (self) => self.setStyle({ border: focusBorder }),
   onBlur: (self) => self.setStyle({ border }),
+});
+
+const list = VirtualList({
+  height: 8,
+  border,
+  items: rows,
+  rowHeight: 1,
+  overscanRows: 2,
+  createRow: () =>
+    Text({
+      text: "",
+      foreground: COLORS.default.fg,
+    }),
+  bindRow: (row, item, index) => {
+    if (row.type !== "Text") {
+      return;
+    }
+    row.setText(`${String(index + 1).padStart(2, "0")} ${item}`);
+  },
+  onScroll: (state) => {
+    scrollLine.setText(`scroll: ${state.scrollY}`);
+    if (state.scrollY > 0) {
+      trace("scroll", `${state.scrollY}`);
+    }
+  },
 });
 
 ff(() => {
@@ -65,7 +97,7 @@ const root = Column(
     border,
     background: COLORS.default.bg,
   },
-  [title, statusLine, input, mirrorLine, submitLine],
+  [title, statusLine, input, mirrorLine, submitLine, scrollLine, list],
 );
 
 const debug = process.env.LETUI_SMOKE_DEBUG === "1";

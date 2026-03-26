@@ -3,7 +3,14 @@ import { mkdirSync, writeFileSync } from "fs";
 import { dirname } from "path";
 import api from "./ffi";
 import { $, ff, type Signal } from "./signals";
-import { getFocusedNode, getFocusVersion } from "./components";
+import {
+  getFocusedNode,
+  getFocusVersion,
+  isScrollViewNode,
+  scrollViewConsumesKey,
+  scrollViewConsumesWheel,
+  syncScrollViewMetrics,
+} from "./components";
 import { getInputEditorState, setInputEditorState } from "./input-editor";
 import { dispatchInputChunk } from "./input-dispatch";
 import {
@@ -51,6 +58,7 @@ let isRunning = false;
 let quitFn: (() => void) | null = null;
 let ops: OpQueue;
 let previousSentTree: SentNodeState | null = null;
+const FRAME_FLOAT_STRIDE = 14;
 
 type SentStyleState = Partial<Record<StylePropName, StylePropValue>>;
 
@@ -147,14 +155,58 @@ function parseWheelEvent(mouse: ParsedMouseEvent): WheelEvent | undefined {
   }
 
   const wheelButton = mouse.rawBtn & 0b11;
+  const shift = (mouse.rawBtn & 0b100) !== 0;
+  const alt = (mouse.rawBtn & 0b1000) !== 0;
+  const ctrl = (mouse.rawBtn & 0b10000) !== 0;
   if (wheelButton === 0) {
-    return { x: mouse.x, y: mouse.y, deltaY: -1, raw: mouse.raw };
+    return {
+      x: mouse.x,
+      y: mouse.y,
+      deltaX: 0,
+      deltaY: -1,
+      shift,
+      alt,
+      ctrl,
+      raw: mouse.raw,
+    };
   }
   if (wheelButton === 1) {
-    return { x: mouse.x, y: mouse.y, deltaY: 1, raw: mouse.raw };
+    return {
+      x: mouse.x,
+      y: mouse.y,
+      deltaX: 0,
+      deltaY: 1,
+      shift,
+      alt,
+      ctrl,
+      raw: mouse.raw,
+    };
+  }
+  if (wheelButton === 2) {
+    return {
+      x: mouse.x,
+      y: mouse.y,
+      deltaX: -1,
+      deltaY: 0,
+      shift,
+      alt,
+      ctrl,
+      raw: mouse.raw,
+    };
+  }
+  if (wheelButton === 3) {
+    return {
+      x: mouse.x,
+      y: mouse.y,
+      deltaX: 1,
+      deltaY: 0,
+      shift,
+      alt,
+      ctrl,
+      raw: mouse.raw,
+    };
   }
 
-  // Horizontal wheel is intentionally deferred for now.
   return;
 }
 
@@ -362,6 +414,17 @@ function readSentStyleState(node: Node): SentStyleState {
   const textOverflow = props.textOverflow?.();
   if (textOverflow !== undefined) {
     style.textOverflow = textOverflow;
+  }
+
+  if (node.type === NODE_TYPE.ScrollView) {
+    const scrollX = props.scrollX?.();
+    const scrollY = props.scrollY?.();
+    if (scrollX !== undefined && scrollX !== 0) {
+      style.scrollX = scrollX;
+    }
+    if (scrollY !== undefined && scrollY !== 0) {
+      style.scrollY = scrollY;
+    }
   }
 
   const multiline = props.multiline?.();
@@ -594,10 +657,10 @@ function markHitAreaForNode(
   width: number,
   height: number,
 ): void {
-  const startX = Math.max(0, Math.floor(node.frame.x));
-  const startY = Math.max(0, Math.floor(node.frame.y));
-  const endX = Math.min(width, Math.ceil(node.frame.x + node.frame.width));
-  const endY = Math.min(height, Math.ceil(node.frame.y + node.frame.height));
+  const startX = Math.max(0, Math.floor(node.visibleFrame.x));
+  const startY = Math.max(0, Math.floor(node.visibleFrame.y));
+  const endX = Math.min(width, Math.ceil(node.visibleFrame.x + node.visibleFrame.width));
+  const endY = Math.min(height, Math.ceil(node.visibleFrame.y + node.visibleFrame.height));
 
   if (startX >= endX || startY >= endY) return;
 
@@ -613,9 +676,12 @@ function dispatchWheelEvent(target: Node, event: WheelEvent): boolean {
   let current: Node | undefined = target;
 
   while (current) {
-    const handled = current.type === NODE_TYPE.Row || current.type === NODE_TYPE.Column
-      ? current.handlers.onWheel?.(event)
-      : undefined;
+    let handled: boolean | void = false;
+    if (isScrollViewNode(current)) {
+      handled = scrollViewConsumesWheel(current, event);
+    } else if (current.type === NODE_TYPE.Row || current.type === NODE_TYPE.Column) {
+      handled = current.handlers.onWheel?.(event);
+    }
     // Bubble to parent only when current scroll container declines to consume.
     if (handled === true) {
       return true;
@@ -652,15 +718,37 @@ function updateNodeFrames(root: Node): void {
     node.frame.y = framesArray[idx++]!;
     node.frame.width = framesArray[idx++]!;
     node.frame.height = framesArray[idx++]!;
+    node.visibleFrame.x = framesArray[idx++]!;
+    node.visibleFrame.y = framesArray[idx++]!;
+    node.visibleFrame.width = framesArray[idx++]!;
+    node.visibleFrame.height = framesArray[idx++]!;
+    node.contentFrame.x = framesArray[idx++]!;
+    node.contentFrame.y = framesArray[idx++]!;
+    node.contentFrame.width = framesArray[idx++]!;
+    node.contentFrame.height = framesArray[idx++]!;
+    const scrollContentWidth = framesArray[idx++]!;
+    const scrollContentHeight = framesArray[idx++]!;
 
     node.frameWidth(node.frame.width);
     node.frameHeight(node.frame.height);
 
-    if (node.type === NODE_TYPE.Input || node.type === NODE_TYPE.Button) {
+    if (
+      node.type === NODE_TYPE.Input ||
+      node.type === NODE_TYPE.Button ||
+      isScrollViewNode(node)
+    ) {
       markHitAreaForNode(node, spatialLookup, width, height);
     }
 
-    if (node.type === NODE_TYPE.Row || node.type === NODE_TYPE.Column) {
+    if (isScrollViewNode(node)) {
+      syncScrollViewMetrics(node, {
+        viewportWidth: node.contentFrame.width,
+        viewportHeight: node.contentFrame.height,
+        contentWidth: scrollContentWidth,
+        contentHeight: scrollContentHeight,
+      });
+      markHitAreaForNode(node, wheelLookup, width, height);
+    } else if (node.type === NODE_TYPE.Row || node.type === NODE_TYPE.Column) {
       if (node.handlers.onWheel) {
         markHitAreaForNode(node, wheelLookup, width, height);
       }
@@ -673,6 +761,12 @@ function updateNodeFrames(root: Node): void {
   }
 
   updateFrames(root, null);
+
+  if (idx !== framesArray.length) {
+    throw new Error(
+      `Frame sync mismatch: expected ${framesArray.length / FRAME_FLOAT_STRIDE} nodes, consumed ${idx / FRAME_FLOAT_STRIDE}`,
+    );
+  }
 }
 
 function dispatchToNode(node: Node, data: string): boolean {
@@ -707,16 +801,31 @@ function dispatchToNode(node: Node, data: string): boolean {
     return false;
   }
 
+  if (isScrollViewNode(node)) {
+    return scrollViewConsumesKey(node, data);
+  }
+
   return false;
 }
 
 function handleKeyboardEvent(data: string): void {
   const focused = getFocusedNode();
 
-  // If a node is focused, try its handlers first
   if (focused) {
-    const handled = dispatchToNode(focused, data);
-    if (handled) return;
+    let current: Node | undefined = focused;
+    while (current) {
+      const handled = dispatchToNode(current, data);
+      if (handled) {
+        return;
+      }
+
+      const parentId = parentById.get(current.id);
+      if (parentId === undefined || parentId === null) {
+        current = undefined;
+        continue;
+      }
+      current = nodeRegistry.get(parentId);
+    }
   }
 
   // Fall back to global handlers
@@ -747,7 +856,33 @@ function handleMouseEvent(data: string): void {
   if (mouse.isPress && isLeftButton) {
     if (target) {
       pressedNodeId = target.id;
-      target.focus();
+      let focusTarget: Node | undefined;
+      if (
+        target.type === NODE_TYPE.Input ||
+        target.type === NODE_TYPE.Button ||
+        isScrollViewNode(target)
+      ) {
+        focusTarget = target;
+      } else {
+        let current: Node | undefined = target;
+        while (current) {
+          if (isScrollViewNode(current)) {
+            focusTarget = current;
+            break;
+          }
+
+          const parentId = parentById.get(current.id);
+          if (parentId === undefined || parentId === null) {
+            current = undefined;
+            continue;
+          }
+          current = nodeRegistry.get(parentId);
+        }
+      }
+
+      if (focusTarget) {
+        focusTarget.focus();
+      }
     } else {
       pressedNodeId = null;
       const focused = getFocusedNode();

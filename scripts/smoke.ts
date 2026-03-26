@@ -18,6 +18,7 @@ assertContains(result.raw, "letui smoke");
 assertContains(result.raw, "[smoke:input] typed");
 assertContains(result.raw, "[smoke:submit] typed");
 assertContains(result.raw, "[smoke:status] ready");
+assertContains(result.raw, "[smoke:scroll]");
 
 if (!/[┌┐└┘│─]/.test(result.screen)) {
   throw new Error("Smoke output missing visible border glyphs");

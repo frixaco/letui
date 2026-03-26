@@ -6,9 +6,11 @@
 Box(input: BoxProps & BoxEventProps, children: Node[]): Node
 Column(input: Omit<BoxProps, "direction"> & BoxEventProps, children: Node[]): Node
 Row(input: Omit<BoxProps, "direction"> & BoxEventProps, children: Node[]): Node
+ScrollView(input: ScrollViewProps, children: Node[]): Node
 Text(input: TextProps): Node
 Input(input: InputProps): Node
 Button(input: ButtonProps, children?: Node[]): Node
+VirtualList(input: FixedVirtualListOptions<TItem, TRow>): Node
 ```
 
 ## Required vs optional props
@@ -31,14 +33,22 @@ Button(input: ButtonProps, children?: Node[]): Node
   - optional: `onKeyDown`, `onFocus`, `onBlur`
   - optional: all `StyleProps`
 
+- `ScrollViewProps`
+  - optional: `axis` (`"y" | "x" | "both"`)
+  - optional: `sticky` (`"start" | "end"`)
+  - optional: `wheelStep` (`number`)
+  - optional: `keyboard` (`boolean`)
+  - optional: `onScroll(state)`
+  - optional: all `StyleProps`
+
 - `BoxProps`
   - optional: `gap` (`number`)
   - optional: `direction` (`"row" | "column" | "rowReverse" | "columnReverse"`)
   - optional: all `StyleProps`
 
 - `BoxEventProps`
-  - optional: `onWheel(event)` for vertical wheel/trackpad handling
-  - `event`: `{ x, y, deltaY, raw }`
+  - optional: `onWheel(event)` for custom wheel handling on `Box` / `Row` / `Column`
+  - `event`: `{ x, y, deltaX, deltaY, shift, alt, ctrl, raw }`
   - return `true` to consume and stop bubbling; return `false`/`void` to bubble to parent container
 
 ## Shared style fields (`StyleProps`)
@@ -68,22 +78,23 @@ Button(input: ButtonProps, children?: Node[]): Node
 
 ## Current scope
 
-- Public styling/layout surface is the exported `StyleProps` + `BoxProps` above.
-- `overflow`, scrolling, and other non-exported props are not part of the public API.
+- Public styling/layout surface is the exported `StyleProps`, `BoxProps`, and `ScrollViewProps` above.
+- `overflow` remains internal; public scrolling uses `ScrollView`.
 - Prefer `Row` / `Column` for common cases; use `Box` when you need explicit `direction`, including reverse directions.
 
 ## Wheel Routing
 
-- wheel routing targets the deepest container with `onWheel` under the cursor
-- events bubble up through parent containers until one handler returns `true`
-- horizontal wheel is deferred; current surface exposes vertical `deltaY` only
+- wheel routing targets the deepest `ScrollView` or box with `onWheel` under the cursor
+- events bubble up through parent containers until one handler consumes the event
+- wheel events now carry both `deltaX` and `deltaY`
+- `Shift+wheel` maps vertical wheel to horizontal scroll inside `ScrollView`
 
 ## Virtual List Notes
 
-- `createVirtualListController(...)` uses row-based virtualization with stable slot nodes
-- avoid large overscan in normal-flow containers; it can increase container height and create layout feedback loops
-- runtime guard now disables overscan automatically when it detects repeated viewport-growth feedback
-- for high overscan, prefer a clipped/fixed-height viewport container so slot count does not affect layout height
+- `VirtualList(...)` is fixed-row virtualization only
+- rows are created once with `createRow(...)`, then rebound with `bindRow(...)`
+- wrapped content should be flattened into visual rows before virtualization
+- `createVirtualListController(...)` is legacy compatibility surface
 
 ## Colors
 
@@ -103,6 +114,8 @@ Rule: pass numeric hex colors (`0xRRGGBB`), not CSS strings.
 - `setStyle(partialStyle)` on all nodes
 - `setText(nextText)` on `Text`, `Input`, `Button`
 - `setChildren(nextChildren)` on `Box`, `Button`
+- `scrollTo`, `scrollBy`, `scrollToStart`, `scrollToEnd`, `ensureVisible` on `ScrollView`
+- `scrollToIndex`, `ensureIndexVisible` on `VirtualList`
 - `focus()`, `blur()`, `isFocused()` on all nodes
 
 ## Text styling with `StyledText`

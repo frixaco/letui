@@ -45,12 +45,29 @@ export type JustifyContent =
 export type FlexWrap = "noWrap" | "wrap" | "wrapReverse";
 export type TextWrap = "none" | "word" | "char";
 export type TextOverflow = "clip" | "ellipsis";
+export type ScrollAxis = "y" | "x" | "both";
+export type ScrollSticky = "start" | "end";
 
 export type WheelEvent = {
   x: number;
   y: number;
+  deltaX: number;
   deltaY: number;
+  shift: boolean;
+  alt: boolean;
+  ctrl: boolean;
   raw: string;
+};
+
+export type ScrollState = {
+  scrollX: number;
+  scrollY: number;
+  maxScrollX: number;
+  maxScrollY: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  contentWidth: number;
+  contentHeight: number;
 };
 
 export type TextSpan = {
@@ -136,6 +153,15 @@ export type _ButtonProps = _StyleProps & {
   text: Signal<string>;
 };
 
+export type _ScrollViewProps = _StyleProps & {
+  scrollX: Signal<number>;
+  scrollY: Signal<number>;
+  axis: Signal<ScrollAxis | undefined>;
+  sticky: Signal<ScrollSticky | undefined>;
+  wheelStep: Signal<number | undefined>;
+  keyboard: Signal<boolean | undefined>;
+};
+
 // =============================================================================
 // USER-FACING PROP TYPES (plain values, passed to constructors)
 // =============================================================================
@@ -202,6 +228,14 @@ export type ButtonProps = StyleProps & {
   onBlur?: (self: Node) => void;
 };
 
+export type ScrollViewProps = StyleProps & {
+  axis?: ScrollAxis;
+  sticky?: ScrollSticky;
+  wheelStep?: number;
+  keyboard?: boolean;
+  onScroll?: (state: ScrollState) => void;
+};
+
 // =============================================================================
 // NODE KIND
 // =============================================================================
@@ -209,6 +243,7 @@ export type ButtonProps = StyleProps & {
 export const NODE_TYPE = {
   Row: "Row",
   Column: "Column",
+  ScrollView: "ScrollView",
   Button: "Button",
   Input: "Input",
   Text: "Text",
@@ -223,9 +258,10 @@ export type BoxKind = (typeof NODE_TYPE)[keyof Pick<
 export const NODE_KIND_ID: Record<NodeKind, number> = {
   [NODE_TYPE.Row]: 1,
   [NODE_TYPE.Column]: 2,
-  [NODE_TYPE.Button]: 3,
-  [NODE_TYPE.Input]: 4,
-  [NODE_TYPE.Text]: 5,
+  [NODE_TYPE.ScrollView]: 3,
+  [NODE_TYPE.Button]: 4,
+  [NODE_TYPE.Input]: 5,
+  [NODE_TYPE.Text]: 6,
 } as const;
 
 export type NodeKindNum = (typeof NODE_KIND_ID)[NodeKind];
@@ -254,6 +290,10 @@ export type ButtonHandlers = {
   onBlur?: (self: Node) => void;
 };
 
+export type ScrollViewHandlers = {
+  onScroll?: (state: ScrollState) => void;
+};
+
 // =============================================================================
 // NODE TYPE
 // =============================================================================
@@ -261,6 +301,8 @@ export type ButtonHandlers = {
 type CommonFields = {
   id: number;
   frame: Frame;
+  visibleFrame: Frame;
+  contentFrame: Frame;
   frameWidth: Signal<number>;
   frameHeight: Signal<number>;
   focus: () => void;
@@ -313,4 +355,28 @@ export type BoxNode = NodeBase<BoxKind> &
     setStyle: (p: Partial<BoxProps & BoxEventProps>) => void;
   };
 
-export type Node = TextNode | InputNode | ButtonNode | BoxNode;
+export type ScrollViewNode = NodeBase<typeof NODE_TYPE.ScrollView> &
+  ContainerNode & {
+    props: _ScrollViewProps;
+    handlers: ScrollViewHandlers;
+    content: BoxNode;
+    setStyle: (p: Partial<ScrollViewProps>) => void;
+    scrollTo: (x: number, y: number) => void;
+    scrollBy: (dx: number, dy: number) => void;
+    scrollToStart: () => void;
+    scrollToEnd: () => void;
+    ensureVisible: (
+      child: Node,
+      align?: "start" | "end" | "nearest",
+    ) => void;
+    scrollX: Signal<number>;
+    scrollY: Signal<number>;
+    maxScrollX: Signal<number>;
+    maxScrollY: Signal<number>;
+    viewportWidth: Signal<number>;
+    viewportHeight: Signal<number>;
+    contentWidth: Signal<number>;
+    contentHeight: Signal<number>;
+  };
+
+export type Node = TextNode | InputNode | ButtonNode | BoxNode | ScrollViewNode;

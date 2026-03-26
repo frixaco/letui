@@ -366,9 +366,10 @@ pub(crate) struct TreeState {
 pub(crate) enum NodeType {
     Row = 1,
     Column = 2,
-    Button = 3,
-    Input = 4,
-    Text = 5,
+    ScrollView = 3,
+    Button = 4,
+    Input = 5,
+    Text = 6,
 }
 
 impl NodeType {
@@ -376,9 +377,10 @@ impl NodeType {
         match v {
             1 => Some(NodeType::Row),
             2 => Some(NodeType::Column),
-            3 => Some(NodeType::Button),
-            4 => Some(NodeType::Input),
-            5 => Some(NodeType::Text),
+            3 => Some(NodeType::ScrollView),
+            4 => Some(NodeType::Button),
+            5 => Some(NodeType::Input),
+            6 => Some(NodeType::Text),
             _ => None,
         }
     }
@@ -388,7 +390,7 @@ impl NodeType {
     }
 
     pub(crate) fn is_box(self) -> bool {
-        matches!(self, NodeType::Row | NodeType::Column)
+        matches!(self, NodeType::Row | NodeType::Column | NodeType::ScrollView)
     }
 }
 
@@ -405,6 +407,7 @@ impl Direction {
         match kind {
             NodeType::Row => Direction::Row,
             NodeType::Column => Direction::Column,
+            NodeType::ScrollView => Direction::Column,
             _ => Direction::Column,
         }
     }
@@ -553,6 +556,8 @@ pub(crate) struct NodeStyle {
     pub(crate) text_overflow: TextOverflow,
     pub(crate) multiline: bool,
     pub(crate) cursor_visible: bool,
+    pub(crate) scroll_x: f32,
+    pub(crate) scroll_y: f32,
 }
 
 impl NodeStyle {
@@ -583,11 +588,13 @@ impl NodeStyle {
             text_wrap: match kind {
                 NodeType::Text => TextWrap::Word,
                 NodeType::Input | NodeType::Button => TextWrap::None,
-                NodeType::Row | NodeType::Column => TextWrap::None,
+                NodeType::Row | NodeType::Column | NodeType::ScrollView => TextWrap::None,
             },
             text_overflow: TextOverflow::Clip,
             multiline: false,
             cursor_visible: false,
+            scroll_x: 0.0,
+            scroll_y: 0.0,
         }
     }
 }
@@ -874,12 +881,14 @@ fn apply_style_reset(node: &mut NodeData, prop_name: &str) -> bool {
             node.style.text_wrap = match node.kind {
                 NodeType::Text => TextWrap::Word,
                 NodeType::Input | NodeType::Button => TextWrap::None,
-                NodeType::Row | NodeType::Column => return false,
+                NodeType::Row | NodeType::Column | NodeType::ScrollView => return false,
             }
         }
         "textOverflow" => node.style.text_overflow = TextOverflow::Clip,
         "multiline" => node.style.multiline = false,
         "cursorVisible" => node.style.cursor_visible = false,
+        "scrollX" => node.style.scroll_x = 0.0,
+        "scrollY" => node.style.scroll_y = 0.0,
         _ => return false,
     }
 
@@ -1000,6 +1009,14 @@ fn apply_style_number(node: &mut NodeData, prop_name: &str, value: f64) -> bool 
         },
         "multiline" => node.style.multiline = value != 0.0,
         "cursorVisible" => node.style.cursor_visible = value != 0.0,
+        "scrollX" => match parse_style_f32(value) {
+            Some(value) => node.style.scroll_x = value,
+            None => return false,
+        },
+        "scrollY" => match parse_style_f32(value) {
+            Some(value) => node.style.scroll_y = value,
+            None => return false,
+        },
         _ => return false,
     }
 

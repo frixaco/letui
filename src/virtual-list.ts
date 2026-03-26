@@ -1,5 +1,205 @@
-import { $, type Signal } from "./signals";
-import type { BoxNode, Node } from "./types";
+import { $, ff, type Signal } from "./signals";
+import { Column, ScrollView } from "./components";
+import type { BoxNode, Node, ScrollViewNode, ScrollViewProps } from "./types";
+
+type MaybeSignal<T> = T | Signal<T>;
+
+export type FixedVirtualListOptions<TItem, TSlot extends Node = Node> =
+  ScrollViewProps & {
+    items: MaybeSignal<readonly TItem[]>;
+    rowHeight?: number;
+    overscanRows?: number;
+    createRow: (slotIndex: number) => TSlot;
+    bindRow: (row: TSlot, item: TItem, index: number) => void;
+  };
+
+export type FixedVirtualListNode<TSlot extends Node = Node> = ScrollViewNode & {
+  readonly slotNodes: readonly TSlot[];
+  scrollToIndex: (
+    index: number,
+    align?: "start" | "end" | "nearest",
+  ) => void;
+  ensureIndexVisible: (
+    index: number,
+    align?: "start" | "end" | "nearest",
+  ) => void;
+};
+
+type FixedVirtualListSlot<TSlot extends Node> = {
+  row: TSlot;
+  wrapper: BoxNode;
+  itemIndex: number | null;
+};
+
+const DEFAULT_FIXED_ROW_HEIGHT = 1;
+
+function resolveMaybeSignal<T>(value: MaybeSignal<T>): T {
+  return typeof value === "function" ? (value as Signal<T>)() : value;
+}
+
+function computeFixedWindow(
+  itemCount: number,
+  rowHeight: number,
+  overscanRows: number,
+  scrollY: number,
+  viewportHeight: number,
+): {
+  startIndex: number;
+  endIndexExclusive: number;
+} {
+  if (itemCount <= 0) {
+    return { startIndex: 0, endIndexExclusive: 0 };
+  }
+
+  const startIndex = Math.max(
+    0,
+    Math.floor(scrollY / rowHeight) - overscanRows,
+  );
+  const endIndexExclusive = Math.min(
+    itemCount,
+    Math.ceil((scrollY + viewportHeight) / rowHeight) + overscanRows,
+  );
+
+  return { startIndex, endIndexExclusive };
+}
+
+function syncFixedSlotPool<TItem, TSlot extends Node>(
+  slots: FixedVirtualListSlot<TSlot>[],
+  slotCount: number,
+  createRow: (slotIndex: number) => TSlot,
+): FixedVirtualListSlot<TSlot>[] {
+  if (slots.length === slotCount) {
+    return slots;
+  }
+
+  const nextSlots: FixedVirtualListSlot<TSlot>[] = [];
+  for (let i = 0; i < slotCount; i++) {
+    const existing = slots[i];
+    if (existing) {
+      nextSlots.push(existing);
+      continue;
+    }
+
+    const row = createRow(i);
+    const wrapper = Column(
+      {
+        height: 0,
+        flexShrink: 0,
+      },
+      [row],
+    );
+    nextSlots.push({
+      row,
+      wrapper,
+      itemIndex: null,
+    });
+  }
+
+  return nextSlots;
+}
+
+export function VirtualList<TItem, TSlot extends Node = Node>(
+  input: FixedVirtualListOptions<TItem, TSlot>,
+): FixedVirtualListNode<TSlot> {
+  const {
+    items,
+    rowHeight = DEFAULT_FIXED_ROW_HEIGHT,
+    overscanRows = DEFAULT_OVERSCAN_ROWS,
+    createRow,
+    bindRow,
+    ...scrollViewProps
+  } = input;
+  const resolvedRowHeight = ensurePositiveRows(rowHeight);
+  const resolvedOverscanRows = ensureNonNegativeRows(overscanRows);
+  const topSpacer = Column({ height: 0, flexShrink: 0 }, []);
+  const bottomSpacer = Column({ height: 0, flexShrink: 0 }, []);
+  const view = ScrollView(scrollViewProps, [topSpacer, bottomSpacer]) as FixedVirtualListNode<TSlot>;
+  let slots: FixedVirtualListSlot<TSlot>[] = [];
+
+  function syncChildren(): void {
+    view.content.setChildren([
+      topSpacer,
+      ...slots.map((slot) => slot.wrapper),
+      bottomSpacer,
+    ]);
+  }
+
+  ff(() => {
+    const currentItems = resolveMaybeSignal(items);
+    const viewportHeight = Math.max(1, Math.floor(view.viewportHeight() || view.frameHeight()));
+    const scrollY = view.scrollY();
+    const slotCount = Math.max(
+      1,
+      Math.ceil(viewportHeight / resolvedRowHeight) + resolvedOverscanRows * 2,
+    );
+
+    const nextSlots = syncFixedSlotPool(slots, slotCount, createRow);
+    if (nextSlots !== slots) {
+      slots = nextSlots;
+      syncChildren();
+    }
+
+    const { startIndex, endIndexExclusive } = computeFixedWindow(
+      currentItems.length,
+      resolvedRowHeight,
+      resolvedOverscanRows,
+      scrollY,
+      viewportHeight,
+    );
+    const activeCount = Math.max(0, endIndexExclusive - startIndex);
+
+    topSpacer.setStyle({ height: startIndex * resolvedRowHeight });
+    bottomSpacer.setStyle({
+      height: (currentItems.length - endIndexExclusive) * resolvedRowHeight,
+    });
+
+    for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
+      const slot = slots[slotIndex]!;
+      const itemIndex = startIndex + slotIndex;
+      if (slotIndex < activeCount && itemIndex < currentItems.length) {
+        slot.wrapper.setStyle({ height: resolvedRowHeight });
+        slot.itemIndex = itemIndex;
+        bindRow(slot.row, currentItems[itemIndex]!, itemIndex);
+      } else {
+        slot.itemIndex = null;
+        slot.wrapper.setStyle({ height: 0 });
+      }
+    }
+  });
+
+  view.scrollToIndex = (index, align = "start") => {
+    const clampedIndex = clamp(0, Math.floor(index), Math.max(0, resolveMaybeSignal(items).length - 1));
+    const top = clampedIndex * resolvedRowHeight;
+    const bottom = top + resolvedRowHeight;
+
+    if (align === "start") {
+      view.scrollTo(view.scrollX(), top);
+      return;
+    }
+    if (align === "end") {
+      view.scrollTo(view.scrollX(), bottom - view.viewportHeight());
+      return;
+    }
+
+    if (top < view.scrollY()) {
+      view.scrollTo(view.scrollX(), top);
+    } else if (bottom > view.scrollY() + view.viewportHeight()) {
+      view.scrollTo(view.scrollX(), bottom - view.viewportHeight());
+    }
+  };
+
+  view.ensureIndexVisible = (index, align = "nearest") => {
+    view.scrollToIndex(index, align);
+  };
+
+  Object.defineProperty(view, "slotNodes", {
+    enumerable: true,
+    get: () => slots.map((slot) => slot.row),
+  });
+
+  syncChildren();
+  return view;
+}
 
 export type VirtualListSlice = {
   itemIndex: number;
@@ -53,7 +253,7 @@ type ComputedWindow = {
 };
 
 const DEFAULT_OVERSCAN_ROWS = 4;
-const DEFAULT_WHEEL_ROWS_PER_STEP = 3;
+const DEFAULT_WHEEL_ROWS_PER_STEP = 2;
 const RUNAWAY_OVERSCAN_GROWTH_LIMIT = 2;
 
 function clamp(min: number, value: number, max: number): number {

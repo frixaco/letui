@@ -102,6 +102,8 @@ export async function runSmokeExample(
     terminal.write("\r");
     await waitForOutput(output, "[smoke:submit] typed");
     await waitForOutput(output, "[smoke:status] ready");
+    terminal.write("\x1b[6~");
+    await waitForOutput(output, "[smoke:scroll]");
     terminal.write("\x11");
   }
 

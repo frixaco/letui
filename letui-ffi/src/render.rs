@@ -102,7 +102,21 @@ pub extern "C" fn render() -> c_int {
             let mut frame_lock = FRAMES.lock().unwrap();
             let frames_vec = frame_lock.get_or_insert_with(Vec::new);
             frames_vec.clear();
-            build_frames_array(taffy, taffy_root, frames_vec, 0.0, 0.0);
+            build_frames_array(
+                taffy,
+                taffy_root,
+                frames_vec,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                ClipRect {
+                    left: 0,
+                    top: 0,
+                    right: tw,
+                    bottom: th,
+                },
+            );
             drop(frame_lock);
 
             let mut cb = CURRENT_BUFFER.lock().unwrap();
@@ -197,6 +211,13 @@ enum NodeContext {
         fg: u32,
         border: ResolvedBorder,
     },
+    ScrollView {
+        bg: u32,
+        fg: u32,
+        border: ResolvedBorder,
+        scroll_x: f32,
+        scroll_y: f32,
+    },
 }
 
 // =============================================================================
@@ -281,7 +302,7 @@ fn node_data_to_style(data: &NodeData, parent_kind: Option<NodeType>) -> Style {
     }
 
     match data.kind {
-        NodeType::Column => {
+        NodeType::Column | NodeType::ScrollView => {
             if s.align_items.is_none() {
                 style.align_items = Some(AlignItems::Stretch);
             }
@@ -315,7 +336,7 @@ fn effective_wrap(kind: NodeType, data: &NodeData) -> TextWrap {
             }
         }
         NodeType::Button => TextWrap::None,
-        NodeType::Row | NodeType::Column => TextWrap::None,
+        NodeType::Row | NodeType::Column | NodeType::ScrollView => TextWrap::None,
     }
 }
 
@@ -338,6 +359,13 @@ fn node_data_to_context(data: &NodeData) -> NodeContext {
             bg: s.bg,
             fg: s.fg,
             border: s.border,
+        },
+        NodeType::ScrollView => NodeContext::ScrollView {
+            bg: s.bg,
+            fg: s.fg,
+            border: s.border,
+            scroll_x: s.scroll_x,
+            scroll_y: s.scroll_y,
         },
         NodeType::Text => NodeContext::Text {
             content: data.text.clone(),
@@ -430,28 +458,122 @@ fn sync_dirty_nodes(
     }
 }
 
+fn scrollable_content_size(taffy: &TaffyTree<NodeContext>, node: NodeId) -> (f32, f32) {
+    let layout = taffy.layout(node).unwrap();
+    let content_left = layout.content_box_x();
+    let content_top = layout.content_box_y();
+    let mut max_right = 0.0f32;
+    let mut max_bottom = 0.0f32;
+
+    for child in taffy.children(node).unwrap() {
+        let child_layout = taffy.layout(child).unwrap();
+        max_right = max_right.max(child_layout.location.x + child_layout.size.width - content_left);
+        max_bottom =
+            max_bottom.max(child_layout.location.y + child_layout.size.height - content_top);
+    }
+
+    (max_right.max(0.0), max_bottom.max(0.0))
+}
+
+fn clamped_scroll_offsets(
+    taffy: &TaffyTree<NodeContext>,
+    node: NodeId,
+    natural_content_width: f32,
+    natural_content_height: f32,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> (f32, f32) {
+    match taffy.get_node_context(node) {
+        Some(NodeContext::ScrollView {
+            scroll_x,
+            scroll_y,
+            ..
+        }) => (
+            scroll_x
+                .max(0.0)
+                .min((natural_content_width - viewport_width).max(0.0)),
+            scroll_y
+                .max(0.0)
+                .min((natural_content_height - viewport_height).max(0.0)),
+        ),
+        _ => (0.0, 0.0),
+    }
+}
+
 fn build_frames_array(
-    taffy: &mut TaffyTree<NodeContext>,
+    taffy: &TaffyTree<NodeContext>,
     node: NodeId,
     out: &mut Vec<f32>,
-    offset_x: f32,
-    offset_y: f32,
+    layout_offset_x: f32,
+    layout_offset_y: f32,
+    visible_offset_x: f32,
+    visible_offset_y: f32,
+    inherited_clip: ClipRect,
 ) {
     let layout = taffy.layout(node).unwrap();
-
-    let absolute_x = offset_x + layout.location.x;
-    let absolute_y = offset_y + layout.location.y;
+    let layout_x = layout_offset_x + layout.location.x;
+    let layout_y = layout_offset_y + layout.location.y;
+    let visible_x = visible_offset_x + layout.location.x;
+    let visible_y = visible_offset_y + layout.location.y;
+    let width = layout.size.width;
+    let height = layout.size.height;
+    let content_layout_x = layout_offset_x + layout.content_box_x();
+    let content_layout_y = layout_offset_y + layout.content_box_y();
+    let content_visible_x = visible_offset_x + layout.content_box_x();
+    let content_visible_y = visible_offset_y + layout.content_box_y();
+    let content_width = layout.content_box_width();
+    let content_height = layout.content_box_height();
+    let visible_left = visible_x.max(inherited_clip.left as f32);
+    let visible_top = visible_y.max(inherited_clip.top as f32);
+    let visible_right = (visible_x + width).min(inherited_clip.right as f32);
+    let visible_bottom = (visible_y + height).min(inherited_clip.bottom as f32);
+    let visible_width = (visible_right - visible_left).max(0.0);
+    let visible_height = (visible_bottom - visible_top).max(0.0);
+    let (natural_content_width, natural_content_height) = scrollable_content_size(taffy, node);
 
     out.extend([
-        absolute_x,
-        absolute_y,
-        layout.size.width,
-        layout.size.height,
+        layout_x,
+        layout_y,
+        width,
+        height,
+        visible_left,
+        visible_top,
+        visible_width,
+        visible_height,
+        content_layout_x,
+        content_layout_y,
+        content_width,
+        content_height,
+        natural_content_width,
+        natural_content_height,
     ]);
 
+    let (scroll_x, scroll_y) = clamped_scroll_offsets(
+        taffy,
+        node,
+        natural_content_width,
+        natural_content_height,
+        content_width,
+        content_height,
+    );
+    let child_clip = inherited_clip.intersect(ClipRect {
+        left: floor_to_u16(content_visible_x),
+        top: floor_to_u16(content_visible_y),
+        right: floor_to_u16(content_visible_x + content_width),
+        bottom: floor_to_u16(content_visible_y + content_height),
+    });
     let children = taffy.children(node).unwrap();
     for child in children {
-        build_frames_array(taffy, child, out, absolute_x, absolute_y);
+        build_frames_array(
+            taffy,
+            child,
+            out,
+            layout_x,
+            layout_y,
+            visible_x - scroll_x,
+            visible_y - scroll_y,
+            child_clip,
+        );
     }
 }
 
@@ -511,7 +633,9 @@ fn measure_function(
             *bg,
             *cursor_visible,
         ),
-        Some(NodeContext::Row { .. }) | Some(NodeContext::Column { .. }) => return Size::ZERO,
+        Some(NodeContext::Row { .. })
+        | Some(NodeContext::Column { .. })
+        | Some(NodeContext::ScrollView { .. }) => return Size::ZERO,
         None => return Size::ZERO,
     };
 
@@ -575,6 +699,15 @@ fn paint_taffy_node(
     let content_y = floor_to_u16(abs_y + layout.content_box_y());
     let content_w = floor_to_u16(layout.content_box_width());
     let content_h = floor_to_u16(layout.content_box_height());
+    let (natural_content_width, natural_content_height) = scrollable_content_size(taffy, node_id);
+    let (scroll_x, scroll_y) = clamped_scroll_offsets(
+        taffy,
+        node_id,
+        natural_content_width,
+        natural_content_height,
+        layout.content_box_width(),
+        layout.content_box_height(),
+    );
 
     let node_clip = inherited_clip.intersect(ClipRect {
         left: x,
@@ -693,7 +826,8 @@ fn paint_taffy_node(
             (fg, bg)
         }
         Some(NodeContext::Row { fg, bg, border })
-        | Some(NodeContext::Column { fg, bg, border }) => {
+        | Some(NodeContext::Column { fg, bg, border })
+        | Some(NodeContext::ScrollView { fg, bg, border, .. }) => {
             let fg = if *fg != 0 { *fg } else { parent_fg };
             let bg = if *bg != 0 { *bg } else { parent_bg };
             draw_background_at(buf, node_clip, x, y, w, h, bg, tw, th);
@@ -708,8 +842,8 @@ fn paint_taffy_node(
             taffy,
             child,
             buf,
-            abs_x + layout.location.x,
-            abs_y + layout.location.y,
+            abs_x + layout.location.x - scroll_x,
+            abs_y + layout.location.y - scroll_y,
             fg,
             bg,
             content_clip,

@@ -74,10 +74,10 @@ onKey(key: string, callback: () => void): void
 
 ## Wheel Routing Model
 
-- wheel events use SGR mouse input and dispatch to `onWheel` on `Row`/`Column` containers
-- dispatch starts at deepest container under cursor with a wheel handler
-- if handler returns `true`, bubbling stops; otherwise event bubbles to parent containers
-- current payload: `{ x, y, deltaY, raw }` with vertical `deltaY` only
+- wheel events use SGR mouse input and dispatch to the deepest `ScrollView` or box with `onWheel`
+- dispatch starts at the deepest scrollable node under the cursor
+- if the current node cannot consume more scroll, the event bubbles to parent containers
+- current payload: `{ x, y, deltaX, deltaY, shift, alt, ctrl, raw }`
 
 ## Input behavior
 
@@ -121,9 +121,8 @@ onKey("q", quit);
 
 ## Virtualization Rule
 
-- for large scrolling lists, keep a fixed slot pool (`setChildren` only on viewport-size changes)
-- bind slot content by updating text/style on stable nodes instead of creating/removing nodes per scroll tick
-- row-based slicing is done in JS by mapping scroll rows to visible line ranges
-- if virtualized rows are normal-flow children, overscan can feed back into layout (more slots -> taller viewport -> more slots)
-- virtual list now auto-disables overscan when this runaway growth pattern is detected and logs a warning
-- if you need overscan for smoothness, place virtualized slots in a clipped/fixed-height viewport container
+- `VirtualList` keeps a fixed slot pool and rebinds stable row nodes as scroll moves
+- normal scroll should not change subtree shape; viewport-size changes may resize the slot pool
+- fixed-row virtualization uses top spacer + visible slots + bottom spacer inside `ScrollView`
+- wrapped content should be flattened into visual rows before virtualization
+- `createVirtualListController(...)` remains legacy compatibility API for older examples

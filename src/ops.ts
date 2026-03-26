@@ -80,7 +80,9 @@ export type StylePropName =
   | "wrap"
   | "textOverflow"
   | "multiline"
-  | "cursorVisible";
+  | "cursorVisible"
+  | "scrollX"
+  | "scrollY";
 
 export type StylePropValue = number | string | undefined;
 
@@ -121,6 +123,8 @@ export const EMITTED_STYLE_PROPS = [
   "textOverflow",
   "multiline",
   "cursorVisible",
+  "scrollX",
+  "scrollY",
 ] as const satisfies readonly StylePropName[];
 
 function encodeShortString(value: string) {

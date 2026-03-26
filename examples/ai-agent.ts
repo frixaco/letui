@@ -3,8 +3,8 @@ import {
   Input,
   NODE_TYPE,
   Row,
+  ScrollView,
   Text,
-  createVirtualListController,
   ff,
   onKey,
   run,
@@ -489,13 +489,14 @@ const transcriptSubhead = Text({
   wrap: "word",
 });
 
-const transcriptViewport = Column({ gap: 0, flexGrow: 1, minHeight: 0 }, []);
-
-const transcriptVirtualizer = createVirtualListController({
-  container: transcriptViewport as any,
-  createSlot: () =>
-    Text({ text: "", foreground: THEME.text, wrap: "word" }),
-});
+const transcriptContent = Column({ gap: 0 }, []);
+const transcriptViewport = ScrollView(
+  {
+    flexGrow: 1,
+    minHeight: 0,
+  },
+  [transcriptContent],
+);
 
 const transcriptPanel = Column(
   {
@@ -744,26 +745,26 @@ function buildTranscriptLines(thread: PromptThread): StyledText[] {
 }
 
 let cachedTranscriptLines: StyledText[] = [];
+let transcriptNodes: ReturnType<typeof Text>[] = [];
+let lastTranscriptThreadIndex = -1;
 
 function renderTranscript(): void {
   const thread = THREADS[selectedIndex];
   if (!thread) return;
 
-  cachedTranscriptLines = buildTranscriptLines(thread);
-
-  transcriptVirtualizer.setItemCount(cachedTranscriptLines.length);
-  for (let i = 0; i < cachedTranscriptLines.length; i++) {
-    transcriptVirtualizer.setMeasuredRows(i, 1);
+  if (lastTranscriptThreadIndex !== selectedIndex) {
+    cachedTranscriptLines = buildTranscriptLines(thread);
+    transcriptNodes = cachedTranscriptLines.map((line) =>
+      Text({
+        text: line,
+        foreground: THEME.text,
+        wrap: "word",
+      })
+    );
+    transcriptContent.setChildren(transcriptNodes);
+    transcriptViewport.scrollToStart();
+    lastTranscriptThreadIndex = selectedIndex;
   }
-
-  transcriptVirtualizer.render((slot, slice) => {
-    if (!slice) {
-      slot.node.setText("");
-      return;
-    }
-    const line = cachedTranscriptLines[slice.itemIndex];
-    slot.node.setText(line ?? "");
-  });
 
   transcriptHeader.setText(
     styledLine([
@@ -772,7 +773,6 @@ function renderTranscript(): void {
     ]),
   );
 
-  const scrollInfo = transcriptVirtualizer.scrollRowsSignal();
   headerMeta.setText(
     styledLine([
       { text: "active thread ", foreground: THEME.muted },
@@ -783,14 +783,14 @@ function renderTranscript(): void {
       },
       { text: "   scroll ", foreground: THEME.muted },
       {
-        text: `${scrollInfo}`,
+        text: `${transcriptViewport.scrollY()}`,
         foreground: THEME.accent,
         bold: true,
       },
       { text: `/${cachedTranscriptLines.length} lines`, foreground: THEME.muted },
       { text: "\ntranscript viewport ", foreground: THEME.muted },
       {
-        text: `${Math.floor(transcriptViewport.frameWidth())}w`,
+        text: `${Math.floor(transcriptViewport.viewportWidth())}w`,
         foreground: THEME.lime,
       },
       { text: "   composer lines ", foreground: THEME.muted },
@@ -827,9 +827,8 @@ function moveSelection(delta: number): void {
 
 ff(() => {
   promptViewport.frameWidth();
-  transcriptViewport.frameWidth();
-  transcriptViewport.frameHeight();
-  transcriptVirtualizer.scrollRowsSignal();
+  transcriptViewport.scrollY();
+  transcriptViewport.viewportWidth();
   composer.props.text();
   refreshView();
 });

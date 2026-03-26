@@ -2,18 +2,18 @@ import { createOpencodeClient } from "@opencode-ai/sdk";
 import { createHighlighter, type Highlighter } from "shiki";
 
 import {
+  $,
   Button,
   Column,
   Input,
   Row,
   Text,
-  createVirtualListController,
+  VirtualList,
   ff,
   onKey,
   run,
 } from "../index.ts";
 import type { StyledText, TextSpan } from "../index.ts";
-import type { VirtualListSlice } from "../index.ts";
 
 type SidebarMode = "prompts" | "threads";
 type ThreadStatus = "idle" | "streaming" | "error";
@@ -852,19 +852,7 @@ function ensurePromptRows(count: number): void {
   );
 }
 
-function makeTranscriptSlot(slotIndex: number): ReturnType<typeof Text> {
-  return Text({
-    text: "",
-    foreground: THEME.text,
-    height: 1,
-    paddingX: 0,
-    background: undefined,
-  });
-}
-
-let transcriptVirtualizer: ReturnType<
-  typeof createVirtualListController<ReturnType<typeof Text>>
->;
+const transcriptItems = $<readonly TranscriptItem[]>([]);
 
 function trimTranscriptMessageLinesCache(maxEntries = 200): void {
   if (transcriptMessageLinesCache.size <= maxEntries) return;
@@ -883,24 +871,6 @@ function activeTranscriptItems(width: number): TranscriptItem[] {
   const items = buildTranscriptItems(thread, width);
   trimTranscriptMessageLinesCache();
   return items;
-}
-
-function lineForSlice(item: TranscriptItem, slice: VirtualListSlice): StyledText {
-  const firstLine = slice.itemTopCutRows;
-  const lastVisibleLineExclusive = Math.max(
-    firstLine,
-    item.rowCount - slice.itemBottomCutRows,
-  );
-  const line = item.lines[Math.min(firstLine, item.lines.length - 1)];
-  if (!line) {
-    return styledLine([]);
-  }
-
-  if (lastVisibleLineExclusive <= firstLine) {
-    return styledLine([]);
-  }
-
-  return line;
 }
 
 function syncSidebarRows(): void {
@@ -923,35 +893,9 @@ function syncSidebarRows(): void {
 }
 
 function syncTranscriptRows(): void {
-  const width = Math.max(1, Math.floor(transcriptViewport.frameWidth()) - 1);
+  const width = Math.max(1, Math.floor(transcriptViewport.viewportWidth()) - 1);
   const items = activeTranscriptItems(width);
-
-  transcriptVirtualizer.setItemCount(items.length);
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    if (!item) continue;
-    transcriptVirtualizer.setMeasuredRows(i, item.rowCount);
-  }
-
-  transcriptVirtualizer.render((slot, slice) => {
-    if (!slice) {
-      slot.node.setText("");
-      slot.node.setStyle({ foreground: THEME.text });
-      return;
-    }
-
-    const item = items[slice.itemIndex];
-    if (!item) {
-      slot.node.setText("");
-      return;
-    }
-
-    slot.node.setText(lineForSlice(item, slice));
-    slot.node.setStyle({ foreground: THEME.text });
-
-    const measuredRows = Math.max(1, Math.floor(slot.node.frameHeight()));
-    transcriptVirtualizer.setMeasuredRows(slice.itemIndex, measuredRows);
-  });
+  transcriptItems(items);
 }
 
 function metric(label: string, value: string, valueColor: number, bold = false): StyledSegment[] {
@@ -1093,7 +1037,7 @@ async function handleAgentStream(
   thread.messages.push({ id: `msg-${nextMessageId++}`, role: "user", content: prompt });
   thread.messages.push(assistantMessage);
   refreshView();
-  transcriptVirtualizer.scrollToEnd();
+  transcriptViewport.scrollToEnd();
 
   const startedAt = Date.now();
 
@@ -1171,7 +1115,7 @@ async function createNewThread(): Promise<void> {
   const newThread = await createThreadState();
   threads.unshift(newThread);
   activeThreadIndex = 0;
-  transcriptVirtualizer.setScrollRows(0);
+  transcriptViewport.scrollToStart();
   refreshView();
   composer.setText("");
   composer.focus();
@@ -1181,7 +1125,7 @@ function moveThreadSelection(delta: number): void {
   if (sidebarMode !== "threads" || threads.length === 0) return;
   activeThreadIndex = Math.max(0, Math.min(threads.length - 1, activeThreadIndex + delta));
   refreshView();
-  transcriptVirtualizer.scrollToEnd();
+  transcriptViewport.scrollToEnd();
 }
 
 function cycleFocus(delta: number): void {
@@ -1249,20 +1193,25 @@ const sidebar = Column(
   ],
 );
 
-const transcriptViewport = Column(
-  {
-    gap: 0,
-    flexGrow: 1,
-    minHeight: 0,
+const transcriptViewport = VirtualList<TranscriptItem, ReturnType<typeof Text>>({
+  items: transcriptItems,
+  rowHeight: 1,
+  overscanRows: 4,
+  flexGrow: 1,
+  minHeight: 0,
+  sticky: "end",
+  createRow: () =>
+    Text({
+      text: "",
+      foreground: THEME.text,
+      height: 1,
+      paddingX: 0,
+      background: undefined,
+    }),
+  bindRow: (row, item) => {
+    row.setText(item.lines[0] ?? styledLine([]));
+    row.setStyle({ foreground: THEME.text, background: undefined, paddingX: 0 });
   },
-  [],
-);
-
-transcriptVirtualizer = createVirtualListController({
-  container: transcriptViewport,
-  createSlot: makeTranscriptSlot,
-  overscanRows: 0,
-  wheelRowsPerStep: 2,
 });
 
 const transcriptPanel = Column(
@@ -1346,7 +1295,6 @@ const root = Column(
 );
 
 ff(() => {
-  transcriptVirtualizer.scrollRowsSignal();
   refreshView();
 });
 

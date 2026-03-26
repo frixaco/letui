@@ -5,7 +5,7 @@ import { existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { COLORS } from "../src/colors";
-import { Button, Column, Input, Row, Text, run, onKey } from "../src/components";
+import { Button, Column, Input, Row, ScrollView, Text, run, onKey } from "../src/components";
 import { LoadingBar } from "./progress-bar";
 import { $, ff } from "../src/signals";
 import { saveMetrics } from "../src/metrics";
@@ -323,7 +323,8 @@ const resultsSummary = Text({
   foreground: T.muted,
 });
 
-const resultsList = Column({ padding: "0 0", flexGrow: 1, gap: 0 }, []);
+const resultsContent = Column({ padding: "0 0", flexGrow: 1, gap: 0 }, []);
+const resultsList = ScrollView({ flexGrow: 1, minHeight: 0 }, [resultsContent]);
 
 const helpLine = Text({
   text: styled([
@@ -357,14 +358,6 @@ const resultsPanel = Column(
     padding: "0 1",
     flexGrow: 1,
     minHeight: 0,
-    onWheel: (event) => {
-      if (results().length === 0) return;
-      if (event.deltaY > 0) {
-        selectNext();
-      } else if (event.deltaY < 0) {
-        selectPrev();
-      }
-    },
   },
   [
     Row({ gap: 1, alignItems: "center" }, [resultsLabel, loadingBar.node]),
@@ -377,12 +370,10 @@ const resultsPanel = Column(
 // --- Layout ---
 const root = Column({ flexGrow: 1 }, [header, searchPanel, resultsPanel]);
 
-// --- Result Row Pool ---
-const viewport = {
-  buttons: [] as ReturnType<typeof Button>[],
-  start: 0,
+// --- Result Rows ---
+const renderedResults = {
   snapshot: null as ScrapeResultItem[] | null,
-  heights: new Map<number, number>(),
+  rows: [] as ResultRow[],
 };
 
 type ResultRow = {
@@ -391,8 +382,6 @@ type ResultRow = {
   meta: ReturnType<typeof Text>;
   setItem: (item: ScrapeResultItem, globalIdx: number, isActive: boolean) => void;
 };
-
-const resultRows: ResultRow[] = [];
 
 function createResultRow(): ResultRow {
   let globalIdx = 0;
@@ -457,10 +446,10 @@ function createResultRow(): ResultRow {
   };
 }
 
-function ensureResultRows(count: number): void {
-  while (resultRows.length < count) {
-    resultRows.push(createResultRow());
-  }
+function rebuildResultRows(items: ScrapeResultItem[]): void {
+  renderedResults.rows = items.map(() => createResultRow());
+  resultsContent.setChildren(renderedResults.rows.map((row) => row.button));
+  renderedResults.snapshot = items;
 }
 
 // --- Reactive effects ---
@@ -525,22 +514,10 @@ ff(() => {
     });
   }
 
-  if (all !== viewport.snapshot) {
-    viewport.heights.clear();
-    viewport.snapshot = all;
-  }
-
-  for (let i = 0; i < viewport.buttons.length; i++) {
-    const measuredHeight = Math.floor(viewport.buttons[i]?.frameHeight() ?? 0);
-    if (measuredHeight > 0) {
-      viewport.heights.set(viewport.start + i, measuredHeight);
-    }
-  }
-
   if (all.length === 0) {
-    viewport.start = 0;
-    viewport.buttons = [];
-    resultsList.setChildren?.([emptyState]);
+    renderedResults.snapshot = null;
+    renderedResults.rows = [];
+    resultsContent.setChildren([emptyState]);
     if (focusTarget() === "results") focusInput();
     return;
   }
@@ -551,59 +528,18 @@ ff(() => {
     return;
   }
 
-  // Virtual windowing
-  const availableHeight = Math.max(1, Math.floor(resultsList.frameHeight()));
-  const fallbackHeight = Math.max(
-    1,
-    Math.floor(
-      viewport.heights.get(selected) ??
-        viewport.buttons[0]?.frameHeight() ??
-        searchInput.frameHeight(),
-    ),
-  );
-  const itemHeightAt = (index: number) =>
-    Math.max(1, Math.floor(viewport.heights.get(index) ?? fallbackHeight));
-
-  let start = selected;
-  let usedHeight = 0;
-  while (start >= 0) {
-    const height = itemHeightAt(start);
-    if (usedHeight + height > availableHeight) {
-      if (usedHeight > 0) start += 1;
-      break;
-    }
-    usedHeight += height;
-    if (start === 0) break;
-    start -= 1;
-  }
-  start = Math.max(0, start);
-
-  let end = start;
-  let windowHeight = 0;
-  while (end < all.length) {
-    const height = itemHeightAt(end);
-    if (windowHeight + height > availableHeight) {
-      if (end === start) end += 1;
-      break;
-    }
-    windowHeight += height;
-    end += 1;
+  const rowsChanged = renderedResults.snapshot !== all || renderedResults.rows.length !== all.length;
+  if (rowsChanged) {
+    rebuildResultRows(all);
   }
 
-  const visible = all.slice(start, end);
-  viewport.start = start;
-  ensureResultRows(visible.length);
-  viewport.buttons = visible.map((item, i) => {
-    const globalIdx = start + i;
-    const isActive = globalIdx === selected;
-    const row = resultRows[i]!;
-    row.setItem(item, globalIdx, isActive);
-    return row.button;
-  });
+  for (let i = 0; i < all.length; i++) {
+    renderedResults.rows[i]?.setItem(all[i]!, i, i === selected);
+  }
 
-  resultsList.setChildren?.(viewport.buttons);
-
-  if (focusTarget() === "results") focusSelectedResult();
+  if (rowsChanged && focusTarget() === "results") {
+    focusSelectedResult();
+  }
 });
 
 // --- Keyboard navigation ---
@@ -627,23 +563,33 @@ onKey("q", () => {
 function selectNext() {
   if (focusTarget() !== "results") return;
   const max = results().length - 1;
-  if (selectedIndex() < max) selectedIndex(selectedIndex() + 1);
+  if (selectedIndex() < max) {
+    selectedIndex(selectedIndex() + 1);
+    focusSelectedResult();
+  }
 }
 
 function selectPrev() {
   if (focusTarget() !== "results") return;
-  if (selectedIndex() > 0) selectedIndex(selectedIndex() - 1);
+  if (selectedIndex() > 0) {
+    selectedIndex(selectedIndex() - 1);
+    focusSelectedResult();
+  }
 }
 
 function selectFirst() {
   if (focusTarget() !== "results") return;
   selectedIndex(0);
+  focusSelectedResult();
 }
 
 function selectLast() {
   if (focusTarget() !== "results") return;
   const max = results().length - 1;
-  if (max >= 0) selectedIndex(max);
+  if (max >= 0) {
+    selectedIndex(max);
+    focusSelectedResult();
+  }
 }
 
 function focusInput() {
@@ -657,13 +603,17 @@ function focusSelectedResult() {
     return;
   }
   focusTarget("results");
-  const selectedVisibleIndex = selectedIndex() - viewport.start;
-  const selectedButton = viewport.buttons[selectedVisibleIndex];
+  const selectedButton = renderedResults.rows[selectedIndex()]?.button;
   if (selectedButton) {
     selectedButton.focus();
+    resultsList.ensureVisible(selectedButton, "nearest");
     return;
   }
-  viewport.buttons[0]?.focus();
+  const firstButton = renderedResults.rows[0]?.button;
+  if (firstButton) {
+    firstButton.focus();
+    resultsList.ensureVisible(firstButton, "nearest");
+  }
 }
 
 function toggleFocusTarget() {
