@@ -1,5 +1,5 @@
 [package]
-name = "letui-ffi"
+name = "letui-core"
 version = "0.0.13"
 edition = "2024"
 
@@ -9,5 +9,5 @@ taffy = { version = "0.9.1", default-features = false, features = ["std", "taffy
 unicode-width = "0.2.2"
 
 [lib]
-name = "letui_ffi"
+name = "letui_core"
 crate-type = ["cdylib"]

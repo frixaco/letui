@@ -2,12 +2,14 @@
 // keyboard-first (j/k/h/l/tab/enter) with mouse support
 
 import { existsSync } from "fs";
-import { COLORS } from "@/colors";
-import { Button, Column, Input, Row, Text, run, onKey } from "@/components";
+import { COLORS } from "../src/colors";
+import { Button, Column, Input, Row, Text, run, onKey } from "../src/components";
 import { LoadingBar } from "./progress-bar";
-import { $, ff } from "@/signals";
-import { saveMetrics } from "@/metrics";
-import type { StyledText, TextSpan } from "@/types";
+import { tmpdir } from "os";
+import { join } from "path";
+import { $, ff } from "../src/signals";
+import { saveMetrics } from "../src/metrics";
+import type { StyledText, TextSpan } from "../src/types";
 
 // --- Theme ---
 const T = {
@@ -77,6 +79,28 @@ const loading = $(false);
 const selectedIndex = $(0);
 const focusTarget = $<"input" | "results">("input");
 const MPV_SOCKET_WAIT_MS = 5000;
+
+function createMpvIpcPath(): string {
+  const suffix = `${process.pid}-${Date.now()}`;
+
+  if (process.platform === "win32") {
+    return `\\\\.\\pipe\\mpv-socket-${suffix}`;
+  }
+
+  return join(tmpdir(), `mpv-socket-${suffix}`);
+}
+
+async function waitForMpvIpc(path: string, timeoutMs: number): Promise<void> {
+  if (process.platform === "win32") {
+    await Bun.sleep(Math.min(timeoutMs, 150));
+    return;
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  while (!existsSync(path) && Date.now() < deadline) {
+    await Bun.sleep(50);
+  }
+}
 
 // --- Loading Bar ---
 const loadingBar = LoadingBar({
@@ -153,16 +177,14 @@ async function streamResult(magnet: string) {
     const target = toStreamTarget(payload);
     if (!target) return;
     const streamUrl = `https://rqbit.anitrack.frixaco.com/torrents/${target.infoHash}/stream/${target.fileIndex}`;
-    const ipcPath = `/tmp/mpv-socket-${Date.now()}`;
+    const ipcPath = createMpvIpcPath();
     Bun.spawn({
       cmd: ["mpv", `--input-ipc-server=${ipcPath}`, streamUrl],
       stdout: "ignore",
       stderr: "ignore",
     });
-    const deadline = Date.now() + MPV_SOCKET_WAIT_MS;
-    while (!existsSync(ipcPath) && Date.now() < deadline) {
-      await Bun.sleep(50);
-    }
+
+    await waitForMpvIpc(ipcPath, MPV_SOCKET_WAIT_MS);
   } catch {
     // keep UI alive
   } finally {

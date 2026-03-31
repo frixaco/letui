@@ -315,6 +315,7 @@ for (const letter of "abcdefghijklmnopqrstuvwxyz") {
 }
 
 onKey(" ", () => handleTypedChar(" "));
+onKey("\x08", handleBackspace);
 onKey("\x7f", handleBackspace);
 onKey("\r", nextPrompt);
 onKey("\n", nextPrompt);

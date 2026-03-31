@@ -1,4 +1,4 @@
-import { prepareTextInput } from "./text-spans";
+import { prepareTextInput } from "./text";
 
 const IGNORED_INPUT_CONTROL_PATTERN = /[\x00-\x09\x0B\x0C\x0E-\x1F]/;
 
@@ -33,7 +33,7 @@ export function parseInputChunk(data: string): InputChunkOp[] {
   const buffer: string[] = [];
 
   for (const ch of normalized) {
-    if (ch === "\x7f") {
+    if (ch === "\x08" || ch === "\x7f") {
       pushInsertOp(ops, buffer);
       ops.push({ type: "backspace" });
       continue;

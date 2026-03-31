@@ -1,5 +1,5 @@
 use crate::shared::{
-    CELL_STRIDE, CONTINUATION_CELL, CURRENT_BUFFER, FIRST_DIFF, LAST_BUFFER, TERMINAL_SIZE,
+    FIELDS_PER_CELL, CONTINUATION_CELL, CURRENT_BUFFER, FIRST_DIFF, LAST_BUFFER, TERMINAL_SIZE,
     TEXT_ATTR_ALL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
 };
 use crossterm::{
@@ -20,7 +20,7 @@ use std::{
 #[unsafe(no_mangle)]
 pub extern "C" fn init_buffer() -> c_int {
     let (w, h) = size().unwrap();
-    let buffer_size = (w as usize) * (h as usize) * CELL_STRIDE;
+    let buffer_size = (w as usize) * (h as usize) * FIELDS_PER_CELL;
 
     let mut term_size = TERMINAL_SIZE.lock().unwrap();
     *term_size = (w, h);
@@ -142,7 +142,7 @@ fn first_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64]) {
     let mut char_seq = String::with_capacity(w as usize);
 
     for y in 0..h {
-        let row_start = (w * y) as usize * CELL_STRIDE;
+        let row_start = (w * y) as usize * FIELDS_PER_CELL;
         let first_idx = row_start;
         let mut prev_fg = buf[first_idx + 1];
         let mut prev_bg = buf[first_idx + 2];
@@ -159,7 +159,7 @@ fn first_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64]) {
         queue_text_attribute_delta(stdout, 0, prev_attrs);
 
         for x in 0..w {
-            let idx = row_start + x as usize * CELL_STRIDE;
+            let idx = row_start + x as usize * FIELDS_PER_CELL;
             let curr_char = char::from_u32(buf[idx] as u32).unwrap();
             let curr_fg = buf[idx + 1];
             let curr_bg = buf[idx + 2];
@@ -232,7 +232,7 @@ fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]
         let mut batch_cells = 0u16;
 
         for x in 0..w {
-            let idx = (w * y + x) as usize * CELL_STRIDE;
+            let idx = (w * y + x) as usize * FIELDS_PER_CELL;
             let curr_code = buf[idx];
             let curr_fg = buf[idx + 1];
             let curr_bg = buf[idx + 2];

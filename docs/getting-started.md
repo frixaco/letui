@@ -13,7 +13,7 @@
 bun run build-ffi
 ```
 
-What this does: compiles `letui-ffi` with `cargo build --release`.
+What this does: compiles `core/` with `cargo build --release`.
 
 ## 2. Create first demo file
 

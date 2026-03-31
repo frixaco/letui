@@ -2,7 +2,7 @@ import { dlopen, suffix } from "bun:ffi";
 import { fileURLToPath } from "url";
 
 const prefix = process.platform === "win32" ? "" : "lib";
-const filename = `${prefix}letui_ffi.${suffix}`;
+const filename = `${prefix}letui_core.${suffix}`;
 
 function debugLog(...args: unknown[]): void {
   if (process.env.LETUI_DEBUG_FFI === "1") {
@@ -14,7 +14,7 @@ function getLibraryPath(): string {
   const { platform, arch } = process;
 
   const localPath = fileURLToPath(
-    new URL(`../letui-ffi/target/release/${filename}`, import.meta.url),
+    new URL(`../core/target/release/${filename}`, import.meta.url),
   );
 
   try {

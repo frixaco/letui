@@ -4,12 +4,12 @@
 
 Symptom:
 
-- error around `dlopen` / missing `letui_ffi`
+- error around `dlopen` / missing `letui_core`
 
 Checks:
 
 1. run `bun run build-ffi`
-2. confirm release artifact exists under `letui-ffi/target/release`
+2. confirm release artifact exists under `core/target/release`
 3. rerun demo: `bun run examples/<file>.ts`
 
 ## App exits but terminal looks broken

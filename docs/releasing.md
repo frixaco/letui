@@ -22,7 +22,7 @@ Update all of these to same version before tagging:
 
 1. Root package version in `package.json`
 2. Binary package pins in `package.json` `optionalDependencies`
-3. Rust crate version in `letui-ffi/Cargo.toml`
+3. Rust crate version in `core/Cargo.toml`
 
 Why binary pins matter:
 
@@ -42,7 +42,7 @@ bun run check
 Expected:
 
 - `bun.lock` refreshed if package versions changed
-- `letui-ffi/Cargo.lock` may refresh after Rust commands
+- `core/Cargo.lock` may refresh after Rust commands
 - typecheck, Rust check, smoke all pass
 
 ## Publish
@@ -52,7 +52,7 @@ From clean local state:
 ```bash
 git checkout main
 git pull --ff-only
-git add package.json bun.lock letui-ffi/Cargo.toml letui-ffi/Cargo.lock
+git add package.json bun.lock core/Cargo.toml core/Cargo.lock
 git commit -m "release: v0.0.12"
 git push origin main
 git tag v0.0.12

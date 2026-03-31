@@ -39,7 +39,7 @@ jobs:
 
       - name: Build Rust (Release)
         run: |
-          cd letui-ffi
+          cd core
           cargo build --release --locked
 
       - name: Prepare Package
@@ -63,8 +63,8 @@ jobs:
             PREFIX="lib"
           fi
           
-          BINARY_NAME="${PREFIX}letui_ffi.${EXT}"
-          SRC="letui-ffi/target/release/$BINARY_NAME"
+          BINARY_NAME="${PREFIX}letui_core.${EXT}"
+          SRC="core/target/release/$BINARY_NAME"
           DEST="npm/letui-${{ matrix.platform }}-${{ matrix.arch }}/"
           
           echo "Copying $SRC to $DEST"

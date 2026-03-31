@@ -4,7 +4,7 @@ import { dirname } from "path";
 import api from "./ffi";
 import { $, ff, type Signal } from "./signals";
 import { getFocusedNode, getFocusVersion } from "./components";
-import { dispatchInputChunk } from "./input-dispatch";
+import { dispatchInputChunk } from "./input";
 import {
   NODE_TYPE,
   type Node,

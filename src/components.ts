@@ -1,5 +1,5 @@
 import { $, type Signal } from "./signals";
-import { normalizeStyledText, prepareTextInput } from "./text-spans";
+import { normalizeStyledText, prepareTextInput } from "./text";
 import { NODE_TYPE } from "./types";
 import type {
   Frame,
