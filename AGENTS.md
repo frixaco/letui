@@ -6,31 +6,35 @@ The API/wrapper for the library is written in TypeScript for acccess to a wide e
 Communication with Rust backend is achieved thanks to Bun's FFI support.
 TypeScript wrapper exposes component API to build UI elements.
 
-**Performance goal**: Achieve <8ms or 120hz response time in any practical use.
+**Performance goal**: Keep <1ms average response time for each render.
 
-# Runtime and environment
+## Runtime and environment
 
 Default to using Bun instead of Node.js.
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.md`.
 
-# Status
+## Status
 
 State management primitives, component API, diffing, number of optimizations are DONE.
 
-# Recent architecture updates (post `v0.0.11`)
-
-- Runtime keeps JS-side `previousSentTree`; compatible frames send deltas instead of rebuilding native tree
-- Text sync uses op stream (`SetText`, `DeleteTextRange`) rather than re-sending full text payloads each frame
-- Rust keeps persistent `TREE_STATE`, applies op buffers via `apply_ops`, then runs layout + paint
-- Metrics split frame into `serialize`, `textSync`, `rust`, `sync`, and `flush`
-- Frame rectangles sync back into JS nodes after render; hit-testing uses that synced data
-
 # General
 
-- Prefer explaining concepts and helping build mental model for solutions to problems, instead of providing ready-to-copy-paste code
-- Providing pseudo code is OK
-- When explaining, start from first principles
+- Prefer explaining concepts and building mental models over copy-paste code
+- Pseudo-code preferred unless actual code is requested
+- When explaining, reason from first principles
+
+# File structure
+
+Structure each source file top-down — most important code first:
+
+1. **Module doc** — one-liner purpose + data flow diagram (if non-trivial)
+2. **Public API** — exported functions first
+3. **Request/Result types** — types the caller constructs or receives
+4. **Internal state / accumulator types** — structs that hold state during computation
+5. **Internal algorithm** — private functions implementing the logic
+6. **Supporting/lower-level types** — internal data structures
+7. **Helpers** — small utility functions
 
 # Testing
 
@@ -44,4 +48,4 @@ Manual TUI testing:
 
 - `dump/` is for dump logs, metrics, screenshots, screen captures, and similar debug artifacts
 - `dump/` is tracked; it may be used for debugging and verification
-- If a task does not explicitly involve `dump/`, ignore it rather than cleaning it up
+- If a task does not explicitly involve `dump/`, ignore it rather than cleaning it up and reverting changes in it
