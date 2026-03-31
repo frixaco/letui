@@ -1,5 +1,9 @@
+// Smoke demo: minimal input flow used by automated terminal verification.
+
 import { COLORS, Column, Input, Text, ff, onKey, run } from "../index.ts";
 import { $ } from "../src/signals";
+
+// --- Internal state ---
 
 const border = {
   color: COLORS.default.bg_highlight,
@@ -16,6 +20,8 @@ function trace(event: string, value: string): void {
     process.stderr.write(`[smoke:${event}] ${value}\n`);
   }
 }
+
+// --- View state ---
 
 const status = $("booting");
 const title = Text({
@@ -52,10 +58,14 @@ const input = Input({
   onBlur: (self) => self.setStyle({ border }),
 });
 
+// --- Reactive sync ---
+
 ff(() => {
   statusLine.setText(`status: ${status()}`);
   trace("status", status());
 });
+
+// --- Runtime ---
 
 const root = Column(
   {

@@ -1,5 +1,8 @@
+/** Lightweight frame metrics collector for smoke tests and perf debugging. */
+
 import { writeFileSync } from "fs";
 
+// --- Request/Result types ---
 interface MetricsData {
   frameTimes: number[];
   opsTimes: number[];
@@ -12,6 +15,14 @@ interface MetricsData {
   frameCount: number;
 }
 
+interface Stats {
+  avg: number;
+  min: number;
+  max: number;
+  p99: number;
+}
+
+// --- Internal state ---
 const metrics: MetricsData = {
   frameTimes: [],
   opsTimes: [],
@@ -26,6 +37,7 @@ const metrics: MetricsData = {
 
 const MAX_SAMPLES = 120;
 
+// --- Public API ---
 export function startFrame(): number {
   return Bun.nanoseconds();
 }
@@ -75,13 +87,7 @@ export function endFrame(startTime: number): void {
   metrics.frameCount++;
 }
 
-interface Stats {
-  avg: number;
-  min: number;
-  max: number;
-  p99: number;
-}
-
+// --- Internal algorithm ---
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
   if (sorted.length === 1) return sorted[0]!;

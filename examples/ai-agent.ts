@@ -1,3 +1,5 @@
+// AI agent prompt browser demo: static threads, styled text, keyboard navigation.
+
 import {
   Column,
   Input,
@@ -9,6 +11,8 @@ import {
   run,
 } from "../index.ts";
 import type { StyledText, TextSpan } from "../index.ts";
+
+// --- Request/Result types ---
 
 type PromptThread = {
   title: string;
@@ -34,6 +38,8 @@ type PromptSection = {
   tone: PromptSectionTone;
   paragraphs: PromptParagraph[];
 };
+
+// --- Internal state ---
 
 const THREADS: PromptThread[] = [
   {

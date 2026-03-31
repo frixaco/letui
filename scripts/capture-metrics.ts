@@ -1,7 +1,13 @@
+// Capture smoke-test metrics and assert the expected phase markers exist.
+
 import { existsSync, readFileSync } from "fs";
 import { runSmokeExample } from "./run-smoke-example";
 
+// --- Internal state ---
+
 const metricsPath = "dump/smoke.txt";
+
+// --- Internal algorithm ---
 
 const result = await runSmokeExample({
   env: {
@@ -21,6 +27,7 @@ if (!existsSync(metricsPath)) {
 
 const metrics = readFileSync(metricsPath, "utf8");
 
+// Verify the metrics dump still reports each render phase we care about.
 for (const marker of ["serialize:", "textSync:", "rust:", "flush:"]) {
   if (!metrics.includes(marker)) {
     throw new Error(`Metrics output missing marker: ${marker}`);

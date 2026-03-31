@@ -1,3 +1,5 @@
+/** Text normalization and span preparation shared by text components and ops. */
+
 import type {
   NormalizedStyledText,
   NormalizedTextSpan,
@@ -5,6 +7,7 @@ import type {
   TextSpan,
 } from "./types";
 
+// --- Supporting types ---
 const textEncoder = new TextEncoder();
 const BOOLEAN_STYLE_KEYS = ["bold", "italic", "underline"] as const;
 
@@ -24,6 +27,7 @@ type PreparedTextInput = {
   boundaryMap: (number | null)[];
 };
 
+// --- Public API ---
 export function prepareTextInput(text: string): PreparedTextInput {
   const chars = Array.from(text);
   const normalizedChars: string[] = [];
@@ -57,6 +61,7 @@ export function prepareTextInput(text: string): PreparedTextInput {
   };
 }
 
+// --- Internal algorithm ---
 function compareSpans(a: IndexedTextSpan, b: IndexedTextSpan): number {
   if (a.start !== b.start) {
     return a.start - b.start;

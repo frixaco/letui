@@ -1,5 +1,4 @@
-// ANITRACK — torrent search + stream staging
-// keyboard-first (j/k/h/l/tab/enter) with mouse support
+// ANITRACK torrent search demo: keyboard-first results browsing with stream staging.
 
 import { existsSync } from "fs";
 import { COLORS } from "../src/colors";
@@ -186,7 +185,7 @@ async function streamResult(magnet: string) {
 
     await waitForMpvIpc(ipcPath, MPV_SOCKET_WAIT_MS);
   } catch {
-    // keep UI alive
+    // Ignore launch failures so the demo keeps responding.
   } finally {
     loadingBar.stop();
   }
@@ -430,7 +429,7 @@ ff(() => {
   const isLoading = loading();
   const activePane = focusTarget();
 
-  // Header badges
+  // Update header badges.
   if (isLoading) {
     statusBadge.setText(" searching ");
     statusBadge.setStyle({ background: T.warn });
@@ -447,7 +446,7 @@ ff(() => {
     background: all.length > 0 ? T.accent : undefined,
   });
 
-  // Header meta
+  // Update header metadata.
   headerMeta.setText(
     styled([
       { text: "focus ", foreground: T.muted },
@@ -469,7 +468,7 @@ ff(() => {
     ]),
   );
 
-  // Results summary
+  // Update the results summary line.
   resultsSummary.setText(
     all.length === 0
       ? "no results — enter a query to search"
@@ -505,7 +504,7 @@ ff(() => {
     return;
   }
 
-  // Virtual windowing
+  // Window the visible results to the measured viewport height.
   const availableHeight = Math.max(1, Math.floor(resultsList.frameHeight()));
   const fallbackHeight = Math.max(
     1,

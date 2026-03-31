@@ -1,10 +1,16 @@
+// Run the smoke example and assert visible output markers stay intact.
+
 import { runSmokeExample } from "./run-smoke-example";
+
+// --- Helpers ---
 
 function assertContains(haystack: string, needle: string): void {
   if (!haystack.includes(needle)) {
     throw new Error(`Missing smoke marker: ${needle}`);
   }
 }
+
+// --- Internal algorithm ---
 
 const result = await runSmokeExample({
   screenPath: "dump/screen.txt",

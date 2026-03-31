@@ -1,3 +1,5 @@
+//! Terminal lifecycle and flush routines exposed over the Rust FFI boundary.
+
 use crate::shared::{
     FIELDS_PER_CELL, CONTINUATION_CELL, CURRENT_BUFFER, FIRST_DIFF, LAST_BUFFER, TERMINAL_SIZE,
     TEXT_ATTR_ALL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
@@ -17,6 +19,7 @@ use std::{
     os::raw::c_int,
 };
 
+// --- Public API ---
 #[unsafe(no_mangle)]
 pub extern "C" fn init_buffer() -> c_int {
     let (w, h) = size().unwrap();
@@ -89,6 +92,7 @@ pub extern "C" fn get_height() -> u16 {
     term_size.1
 }
 
+// --- Helpers ---
 fn hex_to_color(hex: u64) -> Color {
     Color::Rgb {
         r: ((hex >> 16) & 0xFF) as u8,
@@ -134,6 +138,7 @@ fn push_render_char(char_seq: &mut String, ch: char) {
     }
 }
 
+// --- Flush pipeline ---
 fn first_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64]) {
     if w == 0 || h == 0 {
         return;

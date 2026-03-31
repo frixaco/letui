@@ -1,7 +1,24 @@
+// Visualizer demo: animated color-field bars that resize with the viewport.
+
 import { Column, Row, Text, run, onKey } from "@/components";
 import { $, ff } from "@/signals";
 import { saveMetrics } from "@/metrics";
 import type { Node } from "@/types";
+
+// --- Request/Result types ---
+
+type Bar = {
+  col: Node;
+  gap: Node;
+  bar: Node;
+};
+
+type Pattern = {
+  label: string;
+  fn: (barIndex: number, tick: number, totalBars: number) => number;
+};
+
+// --- Internal state ---
 
 const THEME = {
   bg: 0x060b13,
@@ -19,16 +36,7 @@ const TICK_MS = 60;
 const MIN_FILL = 0.05;
 const MAX_FILL = 0.95;
 
-type Bar = {
-  col: Node;
-  gap: Node;
-  bar: Node;
-};
-
-type Pattern = {
-  label: string;
-  fn: (barIndex: number, tick: number, totalBars: number) => number;
-};
+// --- Internal algorithm ---
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -136,6 +144,8 @@ function createBars(count: number): Bar[] {
   return Array.from({ length: total }, (_, index) => createBar(index, total));
 }
 
+// --- View state ---
+
 const tick = $(0);
 const paused = $(false);
 const patternIndex = $(0);
@@ -229,6 +239,8 @@ const root = Column(
   ],
 );
 
+// --- Reactive sync ---
+
 let bars = createBars(barCount());
 viewport.setChildren?.(bars.map((bar) => bar.col));
 
@@ -284,6 +296,8 @@ ff(() => {
     currentBar.gap.setStyle?.({ flexGrow: gapGrow });
   }
 });
+
+// --- Runtime ---
 
 const timer = setInterval(() => {
   if (paused()) return;

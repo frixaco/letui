@@ -1,19 +1,19 @@
+//! Layout, frame extraction, and terminal painting for the Rust renderer.
+
 use crate::shared::{
-    CURRENT_BUFFER, FIELDS_PER_CELL, FRAMES, TERMINAL_SIZE, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC,
-    TEXT_ATTR_UNDERLINE,
+    CURRENT_BUFFER, DEFAULT_BG, DEFAULT_FG, FIELDS_PER_CELL, FRAMES, TERMINAL_SIZE, TEXT_ATTR_BOLD,
+    TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
 };
 use crate::tree::{BorderStyle, Direction, NodeData, NodeType, ResolvedBorder, StyleDimension};
 use crate::tree::{TREE_STATE, TextSpanData, TreeState};
 use std::{cell::RefCell, os::raw::c_int};
 use taffy::{Overflow, Point, prelude::*};
 
-const DEFAULT_BG: u32 = 0x16181a;
-const DEFAULT_FG: u32 = 0xffffff;
-
 thread_local! {
     static TREE: RefCell<TaffyTree<NodeContext>> = RefCell::new(TaffyTree::new());
 }
 
+// --- Internal algorithm ---
 fn style_dimension_to_taffy(dim: StyleDimension) -> Dimension {
     match dim {
         StyleDimension::Auto => Dimension::auto(),
@@ -191,6 +191,7 @@ fn build_frames_array(
     }
 }
 
+// --- Supporting types ---
 enum NodeContext {
     Text {
         content: String,
@@ -609,6 +610,7 @@ fn paint_taffy_node(
     }
 }
 
+// --- Public API ---
 #[unsafe(no_mangle)]
 pub extern "C" fn render() -> c_int {
     let state = TREE_STATE.lock().unwrap();

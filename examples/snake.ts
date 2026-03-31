@@ -1,4 +1,23 @@
+// Snake demo: grid game state machine rendered through reusable text cells.
+
 import { Column, Row, Text, $, ff, onKey, run } from "../index.ts";
+
+// --- Request/Result types ---
+
+type Direction = "up" | "down" | "left" | "right";
+type Status = "running" | "paused" | "lost" | "won";
+type Point = { x: number; y: number };
+type GameState = {
+  snake: Point[];
+  direction: Direction;
+  food: Point;
+  status: Status;
+  score: number;
+  best: number;
+  tick: number;
+};
+
+// --- Internal state ---
 
 const BOARD_WIDTH = 16;
 const BOARD_HEIGHT = 12;
@@ -22,19 +41,6 @@ const THEME = {
   fail: 0xff5c7a,
   win: 0x7ed7ff,
 } as const;
-
-type Direction = "up" | "down" | "left" | "right";
-type Status = "running" | "paused" | "lost" | "won";
-type Point = { x: number; y: number };
-type GameState = {
-  snake: Point[];
-  direction: Direction;
-  food: Point;
-  status: Status;
-  score: number;
-  best: number;
-  tick: number;
-};
 
 const EMPTY = 0;
 const BODY = 1;
@@ -62,6 +68,8 @@ const FOOD_STYLE = {
   background: undefined,
   foreground: THEME.food,
 };
+
+// --- Internal algorithm ---
 
 function isSamePoint(a: Point, b: Point): boolean {
   return a.x === b.x && a.y === b.y;
@@ -186,6 +194,8 @@ function statusLabel(status: Status): string {
   return "running";
 }
 
+// --- View state ---
+
 const state = $(createInitialState());
 let pendingDirection: Direction | null = null;
 
@@ -241,6 +251,8 @@ const root = Column(
   },
   [title, statsLine, boardPanel],
 );
+
+// --- Rendering helpers ---
 
 function paintCell(x: number, y: number, kind: number): void {
   const node = cellNodes[y]?.[x];
@@ -356,6 +368,8 @@ function togglePause(): void {
     status: current.status === "paused" ? "running" : "paused",
   });
 }
+
+// --- Runtime ---
 
 const timer = setInterval(() => {
   const current = state();

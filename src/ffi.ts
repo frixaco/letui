@@ -1,9 +1,13 @@
+/** Native FFI loader that resolves the Rust shared library for letui. */
+
 import { dlopen, suffix } from "bun:ffi";
 import { fileURLToPath } from "url";
 
+// --- Internal state ---
 const prefix = process.platform === "win32" ? "" : "lib";
 const filename = `${prefix}letui_core.${suffix}`;
 
+// --- Internal algorithm ---
 function debugLog(...args: unknown[]): void {
   if (process.env.LETUI_DEBUG_FFI === "1") {
     console.error("[letui:ffi]", ...args);
@@ -41,6 +45,7 @@ function getLibraryPath(): string {
 
 const path = getLibraryPath();
 
+// --- Public API ---
 const { symbols: api } = dlopen(path, {
   init_letui: {
     args: [],

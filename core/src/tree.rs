@@ -1,3 +1,5 @@
+//! Persistent node state and binary op decoding for the Rust backend.
+
 use crate::shared::{
     DEFAULT_BG, DEFAULT_FG, TEXT_ATTR_ALL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
 };
@@ -9,6 +11,7 @@ use std::{
 };
 use taffy::prelude::*;
 
+// --- Internal state ---
 pub(crate) static TREE_STATE: LazyLock<Mutex<TreeState>> =
     LazyLock::new(|| Mutex::new(TreeState::default()));
 
@@ -30,6 +33,7 @@ const TEXT_SPAN_COLOR_FLAGS_SIZE: usize = 1;
 const TEXT_SPAN_RECORD_SIZE: usize =
     ID_SIZE * 2 + TEXT_SPAN_ATTR_FLAGS_SIZE + TEXT_SPAN_COLOR_FLAGS_SIZE + ID_SIZE * 2;
 
+// --- Shared state types ---
 #[derive(Debug, Default)]
 pub(crate) struct TreeState {
     pub(crate) root_id: Option<u32>,
@@ -58,6 +62,7 @@ pub(crate) struct NodeData {
     pub(crate) style: NodeStyle,
 }
 
+// --- Supporting types ---
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct BorderSide {
     pub(crate) width: f32,
@@ -242,6 +247,7 @@ impl OpType {
     }
 }
 
+// --- Internal algorithm ---
 fn remove_subtree(state: &mut TreeState, node_id: u32) {
     let children = match state.nodes.get(&node_id) {
         Some(node) => node.children.clone(),
@@ -367,7 +373,7 @@ fn parse_style_u32(value: f64) -> Option<u32> {
 
 fn parse_text_spans(payload: &[u8], text: &str) -> Option<Vec<TextSpanData>> {
     // JS already normalized spans, but Rust still validates the binary payload and
-    // byte ranges before accepting it into persistent tree state.
+    // byte ranges before storing them in persistent node state.
     let count_bytes: [u8; TEXT_SPAN_COUNT_SIZE] =
         payload.get(..TEXT_SPAN_COUNT_SIZE)?.try_into().ok()?;
     let count = u32::from_le_bytes(count_bytes) as usize;
@@ -682,6 +688,7 @@ fn apply_style_string(node: &mut NodeData, prop_name: &str, value: &str) -> bool
     true
 }
 
+// --- Public API ---
 #[unsafe(no_mangle)]
 pub extern "C" fn clear_tree_state() -> c_int {
     let mut state = TREE_STATE.lock().unwrap();

@@ -1,3 +1,7 @@
+// Legacy v0 terminal prototype: manual buffer handling, mouse hit maps, and input routing.
+
+// --- Runtime bootstrap ---
+
 init_buffer();
 
 const getBuffer = () => {
@@ -6,6 +10,8 @@ const getBuffer = () => {
 
   return new BigUint64Array(toArrayBuffer(bufPtr as Pointer, 0, bufLen * 8));
 };
+
+// --- Internal state ---
 
 let buffer = getBuffer();
 
@@ -31,6 +37,8 @@ const getHitComponent = (x: number, y: number): Button | Input => {
   const component = componentMap.get(hitMap.get(y * terminalWidth + x)!);
   return component!;
 };
+
+// --- Event handlers ---
 
 const handleMouseEvent = async (d: string) => {
   const i = d.indexOf("<") + 1;
@@ -80,14 +88,7 @@ init_letui();
 process.stdin.resume();
 Bun.write(debugLogPath, "");
 process.stdin.on("data", async (data) => {
-  // hex notation
-  // await appendFile(
-  //   debugLogPath,
-  //   Array.from(data)
-  //     .map((b) => `0x${b.toString(16).padStart(2, "0")}`)
-  //     .join(" ") + "\n",
-  // );
-  // unicode escape sequence (code point)
+  // Log the raw decoded chunk for debugging.
   await appendFile(debugLogPath, JSON.stringify(data.toString()) + "\n\n");
 
   const d = data.toString();
@@ -115,8 +116,6 @@ process.stdout.on("resize", () => {
   free_buffer();
   init_buffer();
   buffer = getBuffer();
-
-  // v.render();
 });
 
 type Border = "none" | "square" | "rounded";
@@ -556,7 +555,7 @@ class Button {
 
     this.prerender();
 
-    // top part
+    // Fill top padding.
     for (let cy = yo; cy < this.py + yo; cy++) {
       for (let cx = xo; cx < xo + this.size().w; cx++) {
         buffer.set(
@@ -570,7 +569,7 @@ class Button {
       }
     }
 
-    // bottom part
+    // Fill bottom padding.
     for (let cy = yo + this.size().h - this.py; cy < yo + this.size().h; cy++) {
       for (let cx = xo; cx < xo + this.size().w; cx++) {
         buffer.set(
@@ -584,7 +583,7 @@ class Button {
       }
     }
 
-    // middle part
+    // Fill side padding around the text row.
     for (
       let cy = yo + this.size().h - 2 * this.py;
       cy < yo + this.size().h - 2 * this.py + this.height;
@@ -604,7 +603,7 @@ class Button {
       }
     }
 
-    // actual text
+    // Draw the text row itself.
     buffer.set(
       this.prebuilt.subarray(0),
       (terminalWidth * (yo + this.py) + xo + this.px) * 3,

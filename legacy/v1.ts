@@ -1,3 +1,5 @@
+// Legacy v1 renderer core: buffered layout, input dispatch, and metrics capture.
+
 import { ptr, toArrayBuffer, type Pointer } from "bun:ffi";
 import { COLORS } from "./colors.ts";
 import api from "./ffi.ts";
@@ -11,8 +13,10 @@ import {
   formatMetrics,
 } from "./metrics.ts";
 
+// --- Helpers ---
+
 function log(_txt: string) {
-  // noop - for debugging
+  // Legacy debug hook.
 }
 
 const generateId = (() => {
@@ -21,6 +25,8 @@ const generateId = (() => {
     return counter++;
   };
 })();
+
+// --- Public API ---
 
 export function run(
   nodeFactory: (tw: number, th: number) => Node,
@@ -188,11 +194,7 @@ export function run(
     offset: number,
     texts: string[],
   ) {
-    // 1 - row
-    // 2 - column
-    // 3 - button
-    // 4 - input
-    // 5 - text
+    // Encode node kinds into the numeric format expected by the old Rust bridge.
     let nodeType =
       node.type === "row"
         ? 1
@@ -724,9 +726,7 @@ function getInitialFrame(): Frame {
   };
 }
 
-// I need to handle two types of mouse/keyboard events
-// 1. On action, something USER WANTS runs - make API call
-// 2. On cation, something TUI WANTS happens - change background color
+// Legacy event handling mixed user actions with TUI-internal state changes.
 
 export type Frame = {
   x: number;

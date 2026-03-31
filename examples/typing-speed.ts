@@ -1,4 +1,15 @@
+// Typing speed demo: keyboard trainer with live accuracy and pacing feedback.
+
 import { Column, Row, Text, $, ff, onKey, run } from "../index.ts";
+
+// --- Request/Result types ---
+
+type KeyNode = {
+  value: string;
+  node: ReturnType<typeof Text>;
+};
+
+// --- Internal state ---
 
 const PROMPTS = [
   "we drift toward a calmer typing rhythm",
@@ -43,10 +54,7 @@ const THEME = {
   ink: 0x071017,
 } as const;
 
-type KeyNode = {
-  value: string;
-  node: ReturnType<typeof Text>;
-};
+// --- Internal algorithm ---
 
 function cyclePrompt(index: number): number {
   return (index + 1) % PROMPTS.length;
@@ -90,6 +98,8 @@ function createKeyRow(keys: readonly string[], store: KeyNode[]): ReturnType<typ
   });
   return Row({ gap: KEY_GAP, justifyContent: "center" }, nodes);
 }
+
+// --- View state ---
 
 const promptIndex = $(0);
 const typed = $("");
@@ -199,6 +209,8 @@ const root = Column(
   [content],
 );
 
+// --- Interaction helpers ---
+
 function resetTest(nextIndex = promptIndex()): void {
   promptIndex(nextIndex);
   typed("");
@@ -229,6 +241,8 @@ function handleBackspace(): void {
   typed(current.slice(0, -1));
   if (finishedAt() !== null) finishedAt(null);
 }
+
+// --- Reactive sync ---
 
 ff(() => {
   const prompt = PROMPTS[promptIndex()] ?? PROMPTS[0]!;
@@ -294,6 +308,8 @@ ff(() => {
   hintLine.setText("type letters + space   backspace edit   enter next   esc quit");
   hintLine.setStyle({ foreground: THEME.muted });
 });
+
+// --- Runtime ---
 
 const clock = setInterval(() => {
   if (startedAt() === null || finishedAt() !== null) return;

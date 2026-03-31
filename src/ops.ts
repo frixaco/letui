@@ -1,3 +1,5 @@
+/** Binary operation encoder for syncing TS tree changes into Rust state. */
+
 import {
   NODE_KIND_ID,
   type NodeKind,
@@ -5,6 +7,7 @@ import {
   type NormalizedTextSpan,
 } from "./types";
 
+// --- Supporting types ---
 enum OpEnum {
   SetText = 1,
   DeleteTextRange = 2,
@@ -44,6 +47,7 @@ const TEXT_SPAN_COLOR_BACKGROUND = 1 << 1;
 
 const textEncoder = new TextEncoder();
 
+// --- Public API ---
 export type StylePropName =
   | "gap"
   | "padding"
@@ -123,6 +127,7 @@ export const EMITTED_STYLE_PROPS = [
   "cursorVisible",
 ] as const satisfies readonly StylePropName[];
 
+// --- Internal algorithm ---
 function encodeShortString(value: string) {
   const bytes = textEncoder.encode(value);
   if (bytes.length > 255) {

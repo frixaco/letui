@@ -1,3 +1,5 @@
+/** Component constructors, focus state, and type re-exports for the TS wrapper. */
+
 import { $, type Signal } from "./signals";
 import { normalizeStyledText, prepareTextInput } from "./text";
 import { NODE_TYPE } from "./types";
@@ -26,7 +28,9 @@ import type {
   _ButtonProps,
 } from "./types";
 
-// Re-export types for convenience
+// --- Public API ---
+
+// Re-export caller-facing types from one import path.
 export type {
   Frame,
   Node,
@@ -52,9 +56,7 @@ export type {
 } from "./types";
 export { NODE_TYPE } from "./types";
 
-// =============================================================================
-// INTERNALS
-// =============================================================================
+// --- Internal state ---
 
 const generateId = (() => {
   let counter = 1;
@@ -65,7 +67,7 @@ function getInitialFrame(): Frame {
   return { x: 0, y: 0, width: 0, height: 0 };
 }
 
-// --- Props-to-Signals Converters ---
+// --- Internal algorithm ---
 
 function createStyleSignals(input: StyleProps): _StyleProps {
   return {
@@ -173,7 +175,7 @@ function createButtonSignals(
   };
 }
 
-// --- Generic setStyle ---
+// --- Style helpers ---
 
 function makeSetStyle<T extends Record<string, Signal<any>>>(
   props: T,
@@ -195,9 +197,7 @@ function directionToBoxKind(direction: Direction | undefined): BoxKind {
   return direction?.startsWith("row") ? NODE_TYPE.Row : NODE_TYPE.Column;
 }
 
-// =============================================================================
-// FOCUS MANAGEMENT
-// =============================================================================
+// --- Focus state ---
 
 let focusedNode: Node | null = null;
 const focusVersion = $(0);
@@ -235,9 +235,7 @@ function blurNode(node: Node): void {
   if (handler) handler(node);
 }
 
-// =============================================================================
-// CONSTRUCTORS
-// =============================================================================
+// --- Constructors ---
 
 export function Box(input: BoxProps, children: Node[]): BoxNode {
   const props = createBoxSignals(input);
@@ -365,5 +363,5 @@ export function Button(input: ButtonProps, children: Node[] = []): ButtonNode {
 
 export { normalizeStyledText, prepareTextInput } from "./text-spans";
 
-// Re-export runtime
+// Re-export runtime helpers from the main component surface.
 export { run, onKey } from "./runtime";

@@ -1,4 +1,8 @@
+// Hello world playground: compact layout + style demo for the default letui surface.
+
 import { COLORS, Column, Row, Text, $, ff, onKey, run } from "../index.ts";
+
+// --- Internal state ---
 
 const THEME = {
   bg: 0x0d1420,
@@ -24,6 +28,8 @@ const MODES = [
   { label: "RECOVER", accent: THEME.lime, pulse: "cooldown and reset path" },
 ] as const;
 
+// --- Internal algorithm ---
+
 function chip(label: string, background: number, foreground = THEME.bg) {
   return Text({
     text: ` ${label} `,
@@ -43,6 +49,8 @@ function gauge(value: number, width: number): string {
   const fill = Math.round((normalized / 60) * safeWidth);
   return `${"█".repeat(fill)}${"·".repeat(Math.max(0, safeWidth - fill))}`;
 }
+
+// --- View state ---
 
 const heroTitle = Text({
   text: "LETUI // REACTIVE TERMINAL SURFACE",
@@ -167,6 +175,8 @@ const root = Column(
   ],
 );
 
+// --- Reactive sync ---
+
 ff(() => {
   const currentCount = count();
   const currentMode = MODES[modeIndex()] ?? MODES[0];
@@ -207,6 +217,8 @@ ff(() => {
     `responsive wrap: hero minWidth 32, utility minWidth 26   default palette still available via COLORS.fg=${COLORS.default.fg.toString(16)}`,
   );
 });
+
+// --- Runtime ---
 
 const app = run(root);
 

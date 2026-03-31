@@ -1,6 +1,10 @@
+// Build npm package metadata for a platform-specific prebuilt binary.
+
 import { write } from "bun";
 import { mkdir } from "node:fs/promises";
 import { join } from "path";
+
+// --- Internal state ---
 
 const args = process.argv.slice(2);
 if (args.length < 3) {
@@ -16,14 +20,14 @@ const fullPkgName = `${scope}/${pkgName}`;
 
 console.log(`Preparing ${fullPkgName} v${version}...`);
 
+// --- Internal algorithm ---
+
 const manifest = {
   name: fullPkgName,
   version,
   description: `Prebuilt binary for letui on ${platform}-${arch}`,
   os: [platform],
   cpu: [arch],
-  // We don't really need a 'main' since we resolve the file directly,
-  // but it's good practice.
   files: [
     "*.dylib",
     "*.so",
@@ -34,10 +38,9 @@ const manifest = {
 
 const outDir = join("npm", pkgName);
 
-// Ensure directory exists
+// Ensure directory exists before writing the package manifest.
 await mkdir(outDir, { recursive: true });
 
-// Write package.json
 await write(join(outDir, "package.json"), JSON.stringify(manifest, null, 2));
 
 console.log(`Created package manifest in ${outDir}`);

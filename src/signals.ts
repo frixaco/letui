@@ -1,3 +1,6 @@
+/** Minimal reactive signals used across the TypeScript component layer. */
+
+// --- Public API ---
 export type Signal<T> = {
   (): T;
   (next: T): void;
@@ -5,11 +8,13 @@ export type Signal<T> = {
 export type ReadonlySignal<T> = () => T;
 export type Sub = () => void;
 
+// --- Internal state ---
 let caller: null | Sub = null;
 
 let scheduled = new Set<Sub>();
 let flushing = false;
 
+// --- Internal algorithm ---
 function schedule(fn: Sub) {
   scheduled.add(fn);
 
@@ -22,7 +27,7 @@ function schedule(fn: Sub) {
         const snapshot = Array.from(scheduled);
         scheduled.clear();
         for (let s of snapshot) {
-          // Set caller so signals read during re-run create new subscriptions
+          // Track the active subscriber so reads during this run resubscribe it.
           let prev = caller;
           try {
             caller = s;
@@ -106,7 +111,7 @@ export function ff(fn: Sub): void {
   }
 }
 
-// TODO: improve types
+// Overloads cover the two supported async patterns: standalone fetches and source-driven fetches.
 export function af<T>(srcOrFn: () => Promise<T | null>): {
   data: Signal<T | null>;
   loading: Signal<boolean>;
@@ -171,28 +176,6 @@ export function af<T>(
   };
 }
 
-// const counter = $(0);
-
-// const { data, loading } = af(counter, async (c) => {
-//   console.log("--- async effect running");
-//   await wait();
-//   return c + 100;
-// });
-//
-// ff(() => {
-//   console.log(`loading: ${loading()} data: ${data()}`);
-// });
-
-// ff(() => {
-//   console.log(counter());
-// });
-//
-// counter(1);
-// console.log("first set called");
-//
-// counter(2);
-// console.log("second set called");
-
 export function wait(ms: number = 1000): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -200,19 +183,3 @@ export function wait(ms: number = 1000): Promise<void> {
 export function whenSettled(fn: Sub): void {
   schedule(fn);
 }
-
-// const doubleCounter = dd(() => counter.get() * 2);
-//
-// ff(() => {
-//   console.log("fc", counter.get() + 1); // prints 1 first time, 2 second time
-// });
-//
-// counter.set(1);
-// await Promise.resolve();
-// console.log("dc", doubleCounter.get()); // prints 2 cause of line above
-
-// Output:
-// ❯ bun run component-api.ts
-// fc 1
-// fc 2
-// dc 2

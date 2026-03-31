@@ -1,8 +1,12 @@
+// AI agent Codex demo: threaded chat UI with streamed responses and layout sync.
+
 import { Codex, type Thread as CodexThread, type ThreadEvent, type Usage } from "@openai/codex-sdk";
 import { createHighlighter, type Highlighter } from "shiki";
 
 import { Button, Column, Input, Row, Text, ff, onKey, run } from "../index.ts";
 import type { StyledText, TextSpan } from "../index.ts";
+
+// --- Request/Result types ---
 
 type SidebarMode = "prompts" | "threads";
 type ThreadStatus = "idle" | "streaming" | "error";
@@ -39,6 +43,8 @@ type MarkdownBlock =
   | { type: "heading"; level: 1 | 2 | 3; text: string }
   | { type: "paragraph"; text: string }
   | { type: "code"; lang: string | null; code: string };
+
+// --- Internal state ---
 
 const MODEL = "gpt-5.4";
 const REASONING: "medium" = "medium";
@@ -85,6 +91,8 @@ let promptRows: ReturnType<typeof Text>[] = [];
 let transcriptRows: ReturnType<typeof Text>[] = [];
 
 const codeBlockCache = new Map<string, StyledSegment[][]>();
+
+// --- Internal algorithm ---
 
 function createThreadState(): AgentThreadState {
   return {

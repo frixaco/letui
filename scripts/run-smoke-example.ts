@@ -1,5 +1,9 @@
+// Run the smoke example in a terminal and capture its rendered output.
+
 import { mkdirSync, writeFileSync } from "fs";
 import { dirname } from "path";
+
+// --- Public API ---
 
 export type SmokeRunOptions = {
   cols?: number;
@@ -13,20 +17,6 @@ export type SmokeRunResult = {
   screen: string;
   raw: string;
 };
-
-function stripAnsi(input: string): string {
-  return input
-    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "")
-    .replace(/\x1b[@-_][0-?]*[ -/]*[@-~]/g, "")
-    .replace(/\r/g, "");
-}
-
-function ensureParentDir(path: string): void {
-  const parent = dirname(path);
-  if (parent !== "." && parent.length > 0) {
-    mkdirSync(parent, { recursive: true });
-  }
-}
 
 export async function waitForOutput(
   readOutput: () => string,
@@ -103,4 +93,20 @@ export async function runSmokeExample(
   writeFileSync(options.screenPath, screen, "utf8");
 
   return { exitCode, screen, raw };
+}
+
+// --- Helpers ---
+
+function stripAnsi(input: string): string {
+  return input
+    .replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "")
+    .replace(/\x1b[@-_][0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\r/g, "");
+}
+
+function ensureParentDir(path: string): void {
+  const parent = dirname(path);
+  if (parent !== "." && parent.length > 0) {
+    mkdirSync(parent, { recursive: true });
+  }
 }

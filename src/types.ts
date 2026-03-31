@@ -1,8 +1,8 @@
+/** Public component, style, and node types shared by the TypeScript wrapper. */
+
 import type { Signal } from "./signals";
 
-// =============================================================================
-// CORE TYPES
-// =============================================================================
+// --- Public API ---
 
 export type Frame = {
   x: number;
@@ -73,9 +73,7 @@ export type NormalizedStyledText = {
   byteLength: number;
 };
 
-// =============================================================================
-// INTERNAL PROP TYPES (signal-based, used inside nodes)
-// =============================================================================
+// --- Internal state ---
 
 export type _StyleProps = {
   border: Signal<BorderProps | undefined>;
@@ -129,9 +127,7 @@ export type _ButtonProps = _StyleProps & {
   text: Signal<string>;
 };
 
-// =============================================================================
-// USER-FACING PROP TYPES (plain values, passed to constructors)
-// =============================================================================
+// --- Request/Result types ---
 
 export type StyleProps = {
   border?: BorderProps;
@@ -191,9 +187,7 @@ export type ButtonProps = StyleProps & {
   onBlur?: (self: Node) => void;
 };
 
-// =============================================================================
-// NODE KIND
-// =============================================================================
+// --- Public node kinds ---
 
 export const NODE_TYPE = {
   Row: "Row",
@@ -219,9 +213,7 @@ export const NODE_KIND_ID: Record<NodeKind, number> = {
 
 export type NodeKindNum = (typeof NODE_KIND_ID)[NodeKind];
 
-// =============================================================================
-// HANDLER TYPES (plain functions, not reactive)
-// =============================================================================
+// --- Supporting types ---
 
 export type BoxHandlers = {};
 
@@ -241,9 +233,7 @@ export type ButtonHandlers = {
   onBlur?: (self: Node) => void;
 };
 
-// =============================================================================
-// NODE TYPE
-// =============================================================================
+// --- Node shapes ---
 
 type CommonFields = {
   id: number;

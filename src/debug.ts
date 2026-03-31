@@ -1,3 +1,6 @@
+/** Debug log sink used by runtime instrumentation and smoke tooling. */
+
+// --- Internal helpers ---
 function createLogWriter() {
   try {
     return Bun.file("dump/logs.txt").writer();
@@ -9,6 +12,7 @@ function createLogWriter() {
   }
 }
 
+// --- Public API ---
 export const logWriter = createLogWriter();
 
 export function log(txt: string, ...args: string[]) {

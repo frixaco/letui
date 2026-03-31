@@ -1,3 +1,5 @@
+/** Runtime bridge that diffs the TS tree, syncs Rust ops, and drives terminal I/O. */
+
 import { toArrayBuffer, type Pointer } from "bun:ffi";
 import { mkdirSync, writeFileSync } from "fs";
 import { dirname } from "path";
@@ -33,10 +35,12 @@ import {
 } from "./metrics";
 import { logWriter } from "./debug";
 
+// --- Request/Result types ---
 export type RunOptions = {
   debug?: boolean;
 };
 
+// --- Internal state ---
 let terminalWidth: Signal<number>;
 let terminalHeight: Signal<number>;
 let spatialLookup: (number | undefined)[];
@@ -77,6 +81,7 @@ type ResolvedBorderState = {
   style?: "square" | "rounded";
 };
 
+// --- Internal algorithm ---
 function ensureParentDir(path: string): void {
   const parent = dirname(path);
   if (parent !== "." && parent.length > 0) {
@@ -426,8 +431,8 @@ function syncNodeText(
   const previousTail = previousChars.slice(prefixLength).join("");
   const currentTail = currentChars.slice(prefixLength).join("");
 
-  // Rust text ops only support deleting a byte range and appending new text.
-  // Use a prefix-only diff so every replacement can be expressed as:
+  // Rust text ops can only delete a byte range and append new text.
+  // A prefix diff keeps every edit expressible as:
   // keep prefix -> delete old tail -> append new tail.
   if (previousTail.length > 0) {
     const startByte = textEncoder.encode(sharedPrefix).length;
@@ -588,13 +593,13 @@ function dispatchToNode(node: Node, data: string): boolean {
   if (node.type === NODE_TYPE.Button) {
     const handlers = node.handlers;
 
-    // Enter or Space triggers click
+    // Enter and Space both activate buttons.
     if (data.includes("\r") || data.includes("\n") || data === " ") {
       handlers.onClick();
       return true;
     }
 
-    // Custom key handler
+    // Buttons can still handle other keys explicitly.
     if (handlers.onKeyDown) {
       handlers.onKeyDown(data);
       return true;
@@ -609,13 +614,13 @@ function dispatchToNode(node: Node, data: string): boolean {
 function handleKeyboardEvent(data: string): void {
   const focused = getFocusedNode();
 
-  // If a node is focused, try its handlers first
+  // Focused controls get first chance to handle keyboard input.
   if (focused) {
     const handled = dispatchToNode(focused, data);
     if (handled) return;
   }
 
-  // Fall back to global handlers
+  // Unhandled keys fall back to global shortcuts.
   const globalHandler = globalKeyHandlers.get(data);
   if (globalHandler) {
     globalHandler();
@@ -623,7 +628,7 @@ function handleKeyboardEvent(data: string): void {
 }
 
 function handleMouseEvent(data: string): void {
-  // Parse: \x1b[<btn;x;y[Mm]
+  // Mouse packets arrive as: \x1b[<btn;x;y[Mm]
   const i = data.indexOf("<") + 1;
   const j = data.length - 1;
   if (i <= 0 || j <= i) return;
@@ -673,7 +678,7 @@ function handleMouseEvent(data: string): void {
 }
 
 function handleInput(data: string): void {
-  // Ctrl+Q to quit
+  // Ctrl+Q exits the app.
   if (data === "\x11") {
     quitFn?.();
     return;
@@ -698,16 +703,17 @@ function handleInput(data: string): void {
 function handleResize(): void {
   api.update_terminal_size();
 
-  // Reallocate buffer BEFORE updating signals (which trigger render)
+  // Reallocate the Rust buffer before updating signals, because those updates re-render.
   api.free_buffer();
   api.init_buffer();
 
-  // Now update signals - this triggers render with correct buffer
+  // After the buffer is ready, publish the new size so the next render sees it.
   terminalWidth(api.get_width());
   terminalHeight(api.get_height());
   spatialLookup = new Array(terminalWidth() * terminalHeight());
 }
 
+// --- Public API ---
 export function onKey(key: string, callback: () => void): void {
   if (!globalKeyHandlers) {
     globalKeyHandlers = new Map();
@@ -716,7 +722,7 @@ export function onKey(key: string, callback: () => void): void {
 }
 
 export function run(root: Node, options?: RunOptions): { quit: () => void } {
-  // 1. Initialize terminal (Rust side) - MUST be first to set TERMINAL_SIZE
+  // 1. Initialize the Rust terminal state first so terminal size is available.
   if (api.init_buffer() !== 1) {
     throw new Error("Failed to initialize letui buffer");
   }
@@ -726,7 +732,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   }
   api.clear_tree_state();
 
-  // 2. Initialize state (after init_buffer so terminal size is available)
+  // 2. Initialize JS runtime state after terminal size is known.
   terminalWidth = $(api.get_width());
   terminalHeight = $(api.get_height());
   globalKeyHandlers = globalKeyHandlers ?? new Map();
@@ -786,34 +792,34 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   const handleUncaughtException = (error: unknown) => exitWith(1, error);
   const handleUnhandledRejection = (reason: unknown) => exitWith(1, reason);
 
-  // 3. Setup stdin for keyboard/mouse input
+  // 3. Wire keyboard and mouse input.
   process.stdin.on("data", stdinHandler);
 
-  // 4. Setup resize handler
+  // 4. Wire resize and process lifecycle handlers.
   process.stdout.on("resize", handleResize);
   process.on("SIGINT", handleSigint);
   process.on("SIGTERM", handleSigterm);
   process.on("uncaughtException", handleUncaughtException);
   process.on("unhandledRejection", handleUnhandledRejection);
 
-  // 5. Create render effect
+  // 5. Start the reactive render loop.
   ff(() => {
     if (!isRunning) return;
 
-    // Subscribe to terminal size changes (triggers re-render on resize)
+    // Reading these signals subscribes the render loop to resize and focus changes.
     terminalWidth();
     terminalHeight();
     getFocusVersion();
 
     const frameStart = options?.debug ? startFrame() : 0;
 
-    // Clear state for this frame
+    // Reset JS-side frame bookkeeping before rebuilding the snapshot.
     spatialLookup.fill(undefined);
     nodeRegistry.clear();
     const sentTree = buildSentNodeState(root);
 
-    // Keep the Rust-side tree alive across compatible frames. If structure changes,
-    // rebuild once; otherwise send only style/text deltas.
+    // Reuse Rust-side node state when the tree shape is unchanged.
+    // If structure changes, rebuild once; otherwise send only style and text deltas.
     const opsStart = options?.debug ? startPhase() : 0;
     const textSyncStart = options?.debug ? startPhase() : 0;
     const textStats: TextOpStats = { opCount: 0, byteCount: 0 };
@@ -834,17 +840,17 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     }
     previousSentTree = sentTree;
 
-    // Phase 2: Rust layout + paint
+    // Phase 2: Rust layout and paint.
     const renderStart = options?.debug ? startPhase() : 0;
     api.render();
     if (options?.debug) endRender(renderStart);
 
-    // Phase 3: Sync frame data back to JS nodes
+    // Phase 3: Copy measured frames back into JS nodes.
     const syncStart = options?.debug ? startPhase() : 0;
     updateNodeFrames(root);
     if (options?.debug) endSync(syncStart);
 
-    // Phase 4: Flush buffer to terminal
+    // Phase 4: Flush the rendered buffer to the terminal.
     const flushStart = options?.debug ? startPhase() : 0;
     api.flush();
     if (options?.debug) endFlush(flushStart);
@@ -852,7 +858,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     if (options?.debug) endFrame(frameStart);
   });
 
-  // 6. Create and store quit function
+  // 6. Expose a shared quit path.
   quitFn = () => {
     cleanup();
     process.exit(0);

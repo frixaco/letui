@@ -1,7 +1,11 @@
+/** Keyboard input parser that normalizes terminal chunks into text mutations. */
+
 import { prepareTextInput } from "./text";
 
+// --- Internal state ---
 const IGNORED_INPUT_CONTROL_PATTERN = /[\x00-\x09\x0B\x0C\x0E-\x1F]/;
 
+// --- Request/Result types ---
 type InputChunkOp =
   | { type: "insert"; text: string }
   | { type: "backspace" }
@@ -15,6 +19,7 @@ export type InputDispatchTarget = {
   onSubmit?: (value: string) => void;
 };
 
+// --- Helpers ---
 function deletePreviousCodepoint(text: string): string {
   const chars = Array.from(text);
   chars.pop();
@@ -27,6 +32,7 @@ function pushInsertOp(ops: InputChunkOp[], buffer: string[]): void {
   buffer.length = 0;
 }
 
+// --- Public API ---
 export function parseInputChunk(data: string): InputChunkOp[] {
   const normalized = prepareTextInput(data).text;
   const ops: InputChunkOp[] = [];

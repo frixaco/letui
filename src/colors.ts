@@ -1,3 +1,6 @@
+/** Shared color palettes for letui defaults and demos. */
+
+// --- Public API ---
 export const COLORS = {
 	default: {
 		bg: 0x16181a,
