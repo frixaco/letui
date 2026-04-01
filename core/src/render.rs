@@ -12,9 +12,8 @@ use taffy::{Overflow, Point, prelude::*};
 #[unsafe(no_mangle)]
 pub extern "C" fn render() -> c_int {
     let state = TREE_STATE.lock().unwrap();
-    let root_id = match state.root_id {
-        Some(id) => id,
-        None => return 0,
+    let Some(root_id) = state.root_id else {
+        return 0;
     };
 
     TREE.with_borrow_mut(|taffy| {
@@ -22,9 +21,8 @@ pub extern "C" fn render() -> c_int {
         let (tw, th) = *term_size;
         drop(term_size);
 
-        let taffy_root = match build_taffy_from_state(taffy, &state, root_id, None) {
-            Some(id) => id,
-            None => return 0,
+        let Some(taffy_root) = build_taffy_from_state(taffy, &state, root_id, None) else {
+            return 0;
         };
 
         let mut root_style = taffy.style(taffy_root).unwrap().clone();
@@ -63,18 +61,22 @@ pub extern "C" fn render() -> c_int {
 
         let mut cb = CURRENT_BUFFER.lock().unwrap();
         if let Some(ref mut buf) = *cb {
+            let mut surface = Surface { buf, tw, th };
+            let layout = taffy.layout(taffy_root).unwrap();
+            let root_rect = SurfaceRect {
+                x: 0.0,
+                y: 0.0,
+                w: layout.size.width,
+                h: layout.size.height,
+            };
+
             paint_taffy_node(
                 taffy,
                 taffy_root,
                 parent_fg,
                 parent_bg,
-                Buffer {
-                    buf,
-                    x: 0.0,
-                    y: 0.0,
-                    tw,
-                    th,
-                },
+                &mut surface,
+                root_rect,
             );
         }
 
@@ -325,9 +327,10 @@ fn measure_function(
     }
 
     let text = match node_context {
-        Some(NodeContext::Text { content, .. }) => content.as_str(),
         Some(NodeContext::Button { label, .. }) => label.as_str(),
-        Some(NodeContext::Input { content, .. }) => content.as_str(),
+        Some(NodeContext::Text { content, .. }) | Some(NodeContext::Input { content, .. }) => {
+            content.as_str()
+        }
         Some(NodeContext::Row { .. }) | Some(NodeContext::Column { .. }) => return Size::ZERO,
         None => return Size::ZERO,
     };
@@ -378,276 +381,41 @@ thread_local! {
     static TREE: RefCell<TaffyTree<NodeContext>> = RefCell::new(TaffyTree::new());
 }
 
-fn set_buffer_cell(
-    buf: &mut [u64],
-    col: u16,
-    row: u16,
-    ch: char,
-    fg: u32,
-    bg: u32,
-    attrs: u8,
-    tw: u16,
-    th: u16,
-) {
-    if col >= tw || row >= th {
-        return;
-    }
-
-    let idx = (tw * row + col) as usize * FIELDS_PER_CELL;
-    if idx + (FIELDS_PER_CELL - 1) >= buf.len() {
-        return;
-    }
-
-    buf[idx] = ch as u64;
-    buf[idx + 1] = fg as u64;
-    buf[idx + 2] = bg as u64;
-    buf[idx + 3] = attrs as u64;
-}
-
-fn draw_background_at(buf: &mut [u64], x: f32, y: f32, w: f32, h: f32, bg: u32, tw: u16, th: u16) {
-    let x_start = x as u16;
-    let y_start = y as u16;
-    let x_end = (x + w).min(tw as f32) as u16;
-    let y_end = (y + h).min(th as f32) as u16;
-
-    for row in y_start..y_end {
-        for col in x_start..x_end {
-            set_buffer_cell(buf, col, row, ' ', DEFAULT_FG, bg, 0, tw, th);
-        }
-    }
-}
-
-fn draw_text_at(buf: &mut [u64], x: f32, y: f32, text: &str, fg: u32, bg: u32, tw: u16, th: u16) {
-    let x_start = x as u16;
-    let y_row = y as u16;
-
-    if y_row >= th {
-        return;
-    }
-
-    for (i, ch) in text.chars().enumerate() {
-        let col = x_start + i as u16;
-        if col >= tw {
-            break;
-        }
-        set_buffer_cell(buf, col, y_row, ch, fg, bg, 0, tw, th);
-    }
-}
-
-fn draw_styled_text_at(
-    buf: &mut [u64],
-    x: f32,
-    y: f32,
-    text: &str,
-    spans: &[TextSpanData],
-    fg: u32,
-    bg: u32,
-    tw: u16,
-    th: u16,
-) {
-    let x_start = x as u16;
-    let y_row = y as u16;
-
-    if y_row >= th {
-        return;
-    }
-
-    let mut span_index = 0usize;
-    for (char_index, (byte_start, ch)) in text.char_indices().enumerate() {
-        let col = x_start + char_index as u16;
-        if col >= tw {
-            break;
-        }
-
-        while span_index < spans.len() && spans[span_index].end_byte <= byte_start {
-            span_index += 1;
-        }
-
-        let mut resolved_fg = fg;
-        let mut resolved_bg = bg;
-        let mut attrs = 0u8;
-
-        if let Some(span) = spans.get(span_index)
-            && byte_start >= span.start_byte
-            && byte_start < span.end_byte
-        {
-            resolved_fg = span.foreground.unwrap_or(fg);
-            resolved_bg = span.background.unwrap_or(bg);
-            attrs = text_span_attr_flags(span);
-        }
-
-        set_buffer_cell(buf, col, y_row, ch, resolved_fg, resolved_bg, attrs, tw, th);
-    }
-}
-
-fn set_border_cell(
-    buf: &mut [u64],
-    col: u16,
-    row: u16,
-    ch: char,
-    color: u32,
-    bg: u32,
-    tw: u16,
-    th: u16,
-) {
-    set_buffer_cell(buf, col, row, ch, color, bg, 0, tw, th);
-}
-
-fn draw_uniform_border_at(
-    buf: &mut [u64],
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    color: u32,
-    bg: u32,
-    style: BorderStyle,
-    tw: u16,
-    th: u16,
-) {
-    let x_start = x as u16;
-    let y_start = y as u16;
-    let x_end = ((x + w) as u16).saturating_sub(1).min(tw.saturating_sub(1));
-    let y_end = ((y + h) as u16).saturating_sub(1).min(th.saturating_sub(1));
-
-    let (tl, tr, bl, br, h_line, v_line) = match style {
-        BorderStyle::Rounded => ('╭', '╮', '╰', '╯', '─', '│'),
-        BorderStyle::Squared => ('┌', '┐', '└', '┘', '─', '│'),
-        BorderStyle::None => return,
-    };
-
-    set_border_cell(buf, x_start, y_start, tl, color, bg, tw, th);
-    set_border_cell(buf, x_end, y_start, tr, color, bg, tw, th);
-    set_border_cell(buf, x_start, y_end, bl, color, bg, tw, th);
-    set_border_cell(buf, x_end, y_end, br, color, bg, tw, th);
-
-    for col in (x_start + 1)..x_end {
-        set_border_cell(buf, col, y_start, h_line, color, bg, tw, th);
-        set_border_cell(buf, col, y_end, h_line, color, bg, tw, th);
-    }
-    for row in (y_start + 1)..y_end {
-        set_border_cell(buf, x_start, row, v_line, color, bg, tw, th);
-        set_border_cell(buf, x_end, row, v_line, color, bg, tw, th);
-    }
-}
-
-fn draw_resolved_border_at(
-    buf: &mut [u64],
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    border: ResolvedBorder,
-    bg: u32,
-    tw: u16,
-    th: u16,
-) {
-    if !border.has_any_visible_side() {
-        return;
-    }
-
-    if let Some((color, style)) = border.is_uniform_full_box() {
-        draw_uniform_border_at(buf, x, y, w, h, color, bg, style, tw, th);
-        return;
-    }
-
-    let x_start = x as u16;
-    let y_start = y as u16;
-    let x_end = ((x + w) as u16).saturating_sub(1).min(tw.saturating_sub(1));
-    let y_end = ((y + h) as u16).saturating_sub(1).min(th.saturating_sub(1));
-
-    let top = border.top.is_visible();
-    let right = border.right.is_visible();
-    let bottom = border.bottom.is_visible();
-    let left = border.left.is_visible();
-
-    if top {
-        for col in x_start..=x_end {
-            set_border_cell(buf, col, y_start, '─', border.top.color, bg, tw, th);
-        }
-    }
-    if bottom {
-        for col in x_start..=x_end {
-            set_border_cell(buf, col, y_end, '─', border.bottom.color, bg, tw, th);
-        }
-    }
-    if left {
-        for row in y_start..=y_end {
-            set_border_cell(buf, x_start, row, '│', border.left.color, bg, tw, th);
-        }
-    }
-    if right {
-        for row in y_start..=y_end {
-            set_border_cell(buf, x_end, row, '│', border.right.color, bg, tw, th);
-        }
-    }
-
-    if top && left {
-        set_border_cell(buf, x_start, y_start, '┌', border.top.color, bg, tw, th);
-    }
-    if top && right {
-        set_border_cell(buf, x_end, y_start, '┐', border.top.color, bg, tw, th);
-    }
-    if bottom && left {
-        set_border_cell(buf, x_start, y_end, '└', border.bottom.color, bg, tw, th);
-    }
-    if bottom && right {
-        set_border_cell(buf, x_end, y_end, '┘', border.bottom.color, bg, tw, th);
-    }
-}
-
-fn draw_cursor_at(
-    buf: &mut [u64],
-    x: f32,
-    y: f32,
-    text_len: f32,
-    fg: u32,
-    bg: u32,
-    tw: u16,
-    th: u16,
-) {
-    let col = (x + text_len) as u16;
-    let row = y as u16;
-
-    set_buffer_cell(buf, col, row, '█', fg, bg, 0, tw, th);
-}
-
 fn paint_taffy_node(
     taffy: &TaffyTree<NodeContext>,
     node_id: NodeId,
     parent_fg: u32,
     parent_bg: u32,
-    buf_state: Buffer,
+    surface: &mut Surface<'_>,
+    surface_rect: SurfaceRect,
 ) {
-    let Buffer {
-        buf,
-        x: abs_x,
-        y: abs_y,
-        tw,
-        th,
-    } = buf_state;
-
     let layout = taffy.layout(node_id).unwrap();
-    let x = abs_x + layout.location.x;
-    let y = abs_y + layout.location.y;
-    let w = layout.size.width;
-    let h = layout.size.height;
 
-    let content_x = abs_x + layout.content_box_x();
-    let content_y = abs_y + layout.content_box_y();
+    let rect = SurfaceRect {
+        x: surface_rect.x + layout.location.x,
+        y: surface_rect.y + layout.location.y,
+        w: layout.size.width,
+        h: layout.size.height,
+    };
 
-    let (fg, bg) = match taffy.get_node_context(node_id) {
+    let content_rect = SurfaceRect {
+        x: surface_rect.x + layout.content_box_x(),
+        y: surface_rect.y + layout.content_box_y(),
+        w: layout.content_box_width(),
+        h: layout.content_box_height(),
+    };
+
+    let CellStyle { fg, bg, attrs: _a } = match taffy.get_node_context(node_id) {
         Some(NodeContext::Text {
             content,
             spans,
             fg,
             bg,
         }) => {
-            let fg = if *fg != 0 { *fg } else { parent_fg };
-            let bg = if *bg != 0 { *bg } else { parent_bg };
-            draw_background_at(buf, x, y, w, h, bg, tw, th);
-            draw_styled_text_at(buf, content_x, content_y, content, spans, fg, bg, tw, th);
-            (fg, bg)
+            let style = inherited_style(*fg, *bg, parent_fg, parent_bg);
+            surface.draw_bg(rect, style.bg);
+            surface.draw_text(content_rect, content, style, spans);
+            style
         }
         Some(NodeContext::Button {
             label,
@@ -655,12 +423,11 @@ fn paint_taffy_node(
             bg,
             border,
         }) => {
-            let fg = if *fg != 0 { *fg } else { parent_fg };
-            let bg = if *bg != 0 { *bg } else { parent_bg };
-            draw_background_at(buf, x, y, w, h, bg, tw, th);
-            draw_resolved_border_at(buf, x, y, w, h, *border, bg, tw, th);
-            draw_text_at(buf, content_x, content_y, label, fg, bg, tw, th);
-            (fg, bg)
+            let style = inherited_style(*fg, *bg, parent_fg, parent_bg);
+            surface.draw_bg(rect, style.bg);
+            surface.draw_border(rect, *border, style.bg);
+            surface.draw_text(content_rect, label, style, &[]);
+            style
         }
         Some(NodeContext::Input {
             content,
@@ -668,43 +435,316 @@ fn paint_taffy_node(
             bg,
             border,
         }) => {
-            let fg = if *fg != 0 { *fg } else { parent_fg };
-            let bg = if *bg != 0 { *bg } else { parent_bg };
-            draw_background_at(buf, x, y, w, h, bg, tw, th);
-            draw_resolved_border_at(buf, x, y, w, h, *border, bg, tw, th);
-            draw_text_at(buf, content_x, content_y, content, fg, bg, tw, th);
-            draw_cursor_at(
-                buf,
-                content_x,
-                content_y,
-                content.chars().count() as f32,
-                fg,
-                bg,
-                tw,
-                th,
-            );
-            (fg, bg)
+            let style = inherited_style(*fg, *bg, parent_fg, parent_bg);
+            surface.draw_bg(rect, style.bg);
+            surface.draw_border(rect, *border, style.bg);
+            surface.draw_text(content_rect, content, style, &[]);
+            surface.draw_cursor(content_rect, content.chars().count() as f32, style);
+            style
         }
         Some(NodeContext::Row { fg, bg, border })
         | Some(NodeContext::Column { fg, bg, border }) => {
-            let fg = if *fg != 0 { *fg } else { parent_fg };
-            let bg = if *bg != 0 { *bg } else { parent_bg };
-            draw_background_at(buf, x, y, w, h, bg, tw, th);
-            draw_resolved_border_at(buf, x, y, w, h, *border, bg, tw, th);
-            (fg, bg)
+            let style = inherited_style(*fg, *bg, parent_fg, parent_bg);
+            surface.draw_bg(rect, style.bg);
+            surface.draw_border(rect, *border, style.bg);
+            style
         }
-        None => (parent_fg, parent_bg),
+        None => CellStyle {
+            fg: parent_fg,
+            bg: parent_bg,
+            attrs: 0,
+        },
     };
 
     for child in taffy.children(node_id).unwrap() {
-        paint_taffy_node(taffy, child, fg, bg, Buffer { buf, x, y, tw, th });
+        paint_taffy_node(taffy, child, fg, bg, surface, rect);
     }
 }
 
-struct Buffer<'a> {
+struct Surface<'a> {
     buf: &'a mut [u64],
     tw: u16,
     th: u16,
+}
+
+impl Surface<'_> {
+    fn draw_bg(&mut self, rect: SurfaceRect, color: u32) {
+        let SurfaceBounds {
+            x_start,
+            x_end,
+            y_start,
+            y_end,
+        } = rect.fill_bounds(self.tw, self.th);
+
+        for row in y_start..y_end {
+            for col in x_start..x_end {
+                self.set_cell(
+                    col,
+                    row,
+                    ' ',
+                    CellStyle {
+                        fg: DEFAULT_FG,
+                        bg: color,
+                        attrs: 0,
+                    },
+                );
+            }
+        }
+    }
+
+    fn set_cell(&mut self, col: u16, row: u16, ch: char, style: CellStyle) {
+        if col >= self.tw || row >= self.th {
+            return;
+        }
+
+        let idx = (self.tw * row + col) as usize * FIELDS_PER_CELL;
+        if idx + (FIELDS_PER_CELL - 1) >= self.buf.len() {
+            return;
+        }
+
+        self.buf[idx] = u64::from(ch);
+        self.buf[idx + 1] = u64::from(style.fg);
+        self.buf[idx + 2] = u64::from(style.bg);
+        self.buf[idx + 3] = u64::from(style.attrs);
+    }
+
+    fn draw_border(&mut self, rect: SurfaceRect, border: ResolvedBorder, bg: u32) {
+        if !border.has_any_visible_side() {
+            return;
+        }
+
+        let bounds = rect.border_bounds(self.tw, self.th);
+
+        if let Some((fg, style)) = border.is_uniform_full_box() {
+            self.draw_uniform_border(style, bounds, fg, bg);
+            return;
+        }
+
+        self.draw_mixed_border(bounds, border, bg);
+    }
+
+    fn draw_mixed_border(&mut self, bounds: SurfaceBounds, border: ResolvedBorder, bg: u32) {
+        let SurfaceBounds {
+            x_start,
+            x_end,
+            y_start,
+            y_end,
+        } = bounds;
+
+        let top = border.top.is_visible();
+        let right = border.right.is_visible();
+        let bottom = border.bottom.is_visible();
+        let left = border.left.is_visible();
+
+        let mut style = CellStyle {
+            fg: 0,
+            bg,
+            attrs: 0,
+        };
+
+        if top {
+            style.fg = border.top.color;
+            for col in x_start..=x_end {
+                self.set_cell(col, y_start, '─', style);
+            }
+        }
+        if bottom {
+            style.fg = border.bottom.color;
+            for col in x_start..=x_end {
+                self.set_cell(col, y_end, '─', style);
+            }
+        }
+        if left {
+            style.fg = border.left.color;
+            for row in y_start..=y_end {
+                self.set_cell(x_start, row, '│', style);
+            }
+        }
+        if right {
+            style.fg = border.right.color;
+            for row in y_start..=y_end {
+                self.set_cell(x_end, row, '│', style);
+            }
+        }
+
+        if top && left {
+            style.fg = border.top.color;
+            self.set_cell(x_start, y_start, '┌', style);
+        }
+        if top && right {
+            style.fg = border.top.color;
+            self.set_cell(x_end, y_start, '┐', style);
+        }
+        if bottom && left {
+            style.fg = border.bottom.color;
+            self.set_cell(x_start, y_end, '└', style);
+        }
+        if bottom && right {
+            style.fg = border.bottom.color;
+            self.set_cell(x_end, y_end, '┘', style);
+        }
+    }
+
+    fn draw_uniform_border(&mut self, style: BorderStyle, bounds: SurfaceBounds, fg: u32, bg: u32) {
+        let SurfaceBounds {
+            x_start,
+            x_end,
+            y_start,
+            y_end,
+        } = bounds;
+        let (tl, tr, bl, br, h_line, v_line) = match style {
+            BorderStyle::Rounded => ('╭', '╮', '╰', '╯', '─', '│'),
+            BorderStyle::Squared => ('┌', '┐', '└', '┘', '─', '│'),
+            BorderStyle::None => return,
+        };
+
+        let style = CellStyle { fg, bg, attrs: 0 };
+
+        self.set_cell(x_start, y_start, tl, style);
+        self.set_cell(x_end, y_start, tr, style);
+        self.set_cell(x_start, y_end, bl, style);
+        self.set_cell(x_end, y_end, br, style);
+
+        for col in (x_start + 1)..x_end {
+            self.set_cell(col, y_start, h_line, style);
+            self.set_cell(col, y_end, h_line, style);
+        }
+        for row in (y_start + 1)..y_end {
+            self.set_cell(x_start, row, v_line, style);
+            self.set_cell(x_end, row, v_line, style);
+        }
+        return;
+    }
+
+    fn draw_text(
+        &mut self,
+        rect: SurfaceRect,
+        text: &str,
+        style: CellStyle,
+        spans: &[TextSpanData],
+    ) {
+        let CellStyle { fg, bg, attrs: _a } = style;
+
+        let x_start = rect.x as u16;
+        let y_row = rect.y as u16;
+
+        if y_row >= self.th {
+            return;
+        }
+
+        if spans.is_empty() {
+            for (i, ch) in text.chars().enumerate() {
+                let col = x_start + i as u16;
+                if col >= self.tw {
+                    break;
+                }
+                self.set_cell(col, y_row, ch, style);
+            }
+            return;
+        }
+
+        let mut span_index = 0usize;
+        for (char_index, (byte_start, ch)) in text.char_indices().enumerate() {
+            let col = x_start + char_index as u16;
+            if col >= self.tw {
+                break;
+            }
+
+            while span_index < spans.len() && spans[span_index].end_byte <= byte_start {
+                span_index += 1;
+            }
+
+            let mut resolved_fg = fg;
+            let mut resolved_bg = bg;
+            let mut attrs = 0u8;
+
+            if let Some(span) = spans.get(span_index)
+                && byte_start >= span.start_byte
+                && byte_start < span.end_byte
+            {
+                resolved_fg = span.foreground.unwrap_or(fg);
+                resolved_bg = span.background.unwrap_or(bg);
+                attrs = text_span_attr_flags(span);
+            }
+
+            self.set_cell(
+                col,
+                y_row,
+                ch,
+                CellStyle {
+                    fg: resolved_fg,
+                    bg: resolved_bg,
+                    attrs,
+                },
+            );
+        }
+    }
+
+    fn draw_cursor(&mut self, rect: SurfaceRect, text_len: f32, style: CellStyle) {
+        self.set_cell((rect.x + text_len) as u16, rect.y as u16, '█', style);
+    }
+}
+
+#[derive(Clone, Copy)]
+struct SurfaceRect {
     x: f32,
     y: f32,
+    w: f32,
+    h: f32,
+}
+
+struct SurfaceBounds {
+    x_start: u16,
+    x_end: u16,
+    y_start: u16,
+    y_end: u16,
+}
+
+impl SurfaceRect {
+    fn fill_bounds(&self, max_w: u16, max_h: u16) -> SurfaceBounds {
+        let x_start = self.x as u16;
+        let y_start = self.y as u16;
+        let x_end = (self.x + self.w).min(max_w as f32) as u16;
+        let y_end = (self.y + self.h).min(max_h as f32) as u16;
+
+        SurfaceBounds {
+            x_start,
+            x_end,
+            y_start,
+            y_end,
+        }
+    }
+
+    fn border_bounds(&self, max_w: u16, max_h: u16) -> SurfaceBounds {
+        let x_start = self.x as u16;
+        let y_start = self.y as u16;
+        let x_end = ((self.x + self.w) as u16)
+            .saturating_sub(1)
+            .min(max_w.saturating_sub(1));
+        let y_end = ((self.y + self.h) as u16)
+            .saturating_sub(1)
+            .min(max_h.saturating_sub(1));
+
+        SurfaceBounds {
+            x_start,
+            x_end,
+            y_start,
+            y_end,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct CellStyle {
+    fg: u32,
+    bg: u32,
+    attrs: u8,
+}
+
+fn inherited_style(local_fg: u32, local_bg: u32, parent_fg: u32, parent_bg: u32) -> CellStyle {
+    CellStyle {
+        fg: if local_fg != 0 { local_fg } else { parent_fg },
+        bg: if local_bg != 0 { local_bg } else { parent_bg },
+        attrs: 0,
+    }
 }
