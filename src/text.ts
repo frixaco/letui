@@ -7,27 +7,6 @@ import type {
   TextSpan,
 } from "./types";
 
-// --- Supporting types ---
-const textEncoder = new TextEncoder();
-const BOOLEAN_STYLE_KEYS = ["bold", "italic", "underline"] as const;
-
-type BooleanStyleKey = (typeof BOOLEAN_STYLE_KEYS)[number];
-type TextSpanStyle = Pick<
-  TextSpan,
-  "foreground" | "background" | BooleanStyleKey
->;
-type IndexedTextSpan = TextSpan & {
-  sourceIndex: number;
-};
-type PreparedTextSpan = NormalizedTextSpan & {
-  sourceIndex: number;
-};
-type PreparedTextInput = {
-  text: string;
-  boundaryMap: (number | null)[];
-};
-
-// --- Public API ---
 export function prepareTextInput(text: string): PreparedTextInput {
   const chars = Array.from(text);
   const normalizedChars: string[] = [];
@@ -61,7 +40,53 @@ export function prepareTextInput(text: string): PreparedTextInput {
   };
 }
 
-// --- Internal algorithm ---
+export function normalizeStyledText(input: StyledText): NormalizedStyledText {
+  if (!input || typeof input !== "object") {
+    throw new Error("Invalid StyledText: expected an object");
+  }
+
+  if (typeof input.text !== "string") {
+    throw new Error("Invalid StyledText: text must be a string");
+  }
+
+  if (!Array.isArray(input.spans)) {
+    throw new Error("Invalid StyledText: spans must be an array");
+  }
+
+  const preparedText = prepareTextInput(input.text);
+  const { length, byteLength, byteOffsets } = getCodePointMetadata(
+    preparedText.text,
+  );
+  const spans = prepareSpans(
+    input.spans,
+    byteOffsets,
+    preparedText.boundaryMap,
+  ).map(({ sourceIndex: _sourceIndex, ...span }) => span);
+
+  return {
+    text: preparedText.text,
+    spans,
+    length,
+    byteLength,
+  };
+}
+
+type BooleanStyleKey = (typeof BOOLEAN_STYLE_KEYS)[number];
+type TextSpanStyle = Pick<
+  TextSpan,
+  "foreground" | "background" | BooleanStyleKey
+>;
+type IndexedTextSpan = TextSpan & {
+  sourceIndex: number;
+};
+type PreparedTextSpan = NormalizedTextSpan & {
+  sourceIndex: number;
+};
+type PreparedTextInput = {
+  text: string;
+  boundaryMap: (number | null)[];
+};
+
 function compareSpans(a: IndexedTextSpan, b: IndexedTextSpan): number {
   if (a.start !== b.start) {
     return a.start - b.start;
@@ -204,33 +229,5 @@ function prepareSpans(
   return normalized;
 }
 
-export function normalizeStyledText(input: StyledText): NormalizedStyledText {
-  if (!input || typeof input !== "object") {
-    throw new Error("Invalid StyledText: expected an object");
-  }
-
-  if (typeof input.text !== "string") {
-    throw new Error("Invalid StyledText: text must be a string");
-  }
-
-  if (!Array.isArray(input.spans)) {
-    throw new Error("Invalid StyledText: spans must be an array");
-  }
-
-  const preparedText = prepareTextInput(input.text);
-  const { length, byteLength, byteOffsets } = getCodePointMetadata(
-    preparedText.text,
-  );
-  const spans = prepareSpans(
-    input.spans,
-    byteOffsets,
-    preparedText.boundaryMap,
-  ).map(({ sourceIndex: _sourceIndex, ...span }) => span);
-
-  return {
-    text: preparedText.text,
-    spans,
-    length,
-    byteLength,
-  };
-}
+const textEncoder = new TextEncoder();
+const BOOLEAN_STYLE_KEYS = ["bold", "italic", "underline"] as const;

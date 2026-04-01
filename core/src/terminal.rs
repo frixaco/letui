@@ -1,7 +1,7 @@
 //! Terminal lifecycle and flush routines exposed over the Rust FFI boundary.
 
 use crate::shared::{
-    FIELDS_PER_CELL, CONTINUATION_CELL, CURRENT_BUFFER, FIRST_DIFF, LAST_BUFFER, TERMINAL_SIZE,
+    CONTINUATION_CELL, CURRENT_BUFFER, FIELDS_PER_CELL, FIRST_DIFF, LAST_BUFFER, TERMINAL_SIZE,
     TEXT_ATTR_ALL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
 };
 use crossterm::{
@@ -19,7 +19,6 @@ use std::{
     os::raw::c_int,
 };
 
-// --- Public API ---
 #[unsafe(no_mangle)]
 pub extern "C" fn init_buffer() -> c_int {
     let (w, h) = size().unwrap();
@@ -92,53 +91,95 @@ pub extern "C" fn get_height() -> u16 {
     term_size.1
 }
 
-// --- Helpers ---
-fn hex_to_color(hex: u64) -> Color {
-    Color::Rgb {
-        r: ((hex >> 16) & 0xFF) as u8,
-        g: ((hex >> 8) & 0xFF) as u8,
-        b: (hex & 0xFf) as u8,
+#[unsafe(no_mangle)]
+pub extern "C" fn flush() -> c_int {
+    let cb = CURRENT_BUFFER.lock().unwrap();
+    let mut lb = LAST_BUFFER.lock().unwrap();
+    let term_size = TERMINAL_SIZE.lock().unwrap();
+    let (w, h) = *term_size;
+    let mut stdout = stdout();
+
+    let Some(ref buf) = *cb else {
+        return 1;
+    };
+    let Some(ref mut last_buf) = *lb else {
+        return 1;
+    };
+
+    queue!(stdout, BeginSynchronizedUpdate).unwrap();
+
+    let mut first_diff = FIRST_DIFF.lock().unwrap();
+
+    if *first_diff {
+        first_flush(w, h, &mut stdout, buf);
+        *first_diff = false;
+    } else {
+        next_flush(w, h, &mut stdout, buf, last_buf);
+    }
+    queue!(stdout, EndSynchronizedUpdate).unwrap();
+    stdout.flush().unwrap();
+
+    last_buf.copy_from_slice(buf);
+
+    1
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_buffer_ptr() -> *mut u64 {
+    let cb = CURRENT_BUFFER.lock().unwrap();
+    match *cb {
+        Some(ref buf) => buf.as_ptr() as *mut u64,
+        None => std::ptr::null_mut(),
     }
 }
 
-fn queue_text_attribute_delta(stdout: &mut Stdout, previous: u8, current: u8) {
-    // Terminal attrs are sticky state. Diff the previous/current bitfields and emit
-    // only the ANSI toggles needed to reach the next style.
-    let previous = previous & TEXT_ATTR_ALL;
-    let current = current & TEXT_ATTR_ALL;
-
-    if previous == current {
-        return;
-    }
-
-    if (previous & TEXT_ATTR_BOLD) != 0 && (current & TEXT_ATTR_BOLD) == 0 {
-        queue!(stdout, SetAttribute(Attribute::NormalIntensity)).unwrap();
-    }
-    if (previous & TEXT_ATTR_ITALIC) != 0 && (current & TEXT_ATTR_ITALIC) == 0 {
-        queue!(stdout, SetAttribute(Attribute::NoItalic)).unwrap();
-    }
-    if (previous & TEXT_ATTR_UNDERLINE) != 0 && (current & TEXT_ATTR_UNDERLINE) == 0 {
-        queue!(stdout, SetAttribute(Attribute::NoUnderline)).unwrap();
-    }
-
-    if (previous & TEXT_ATTR_BOLD) == 0 && (current & TEXT_ATTR_BOLD) != 0 {
-        queue!(stdout, SetAttribute(Attribute::Bold)).unwrap();
-    }
-    if (previous & TEXT_ATTR_ITALIC) == 0 && (current & TEXT_ATTR_ITALIC) != 0 {
-        queue!(stdout, SetAttribute(Attribute::Italic)).unwrap();
-    }
-    if (previous & TEXT_ATTR_UNDERLINE) == 0 && (current & TEXT_ATTR_UNDERLINE) != 0 {
-        queue!(stdout, SetAttribute(Attribute::Underlined)).unwrap();
+#[unsafe(no_mangle)]
+pub extern "C" fn get_buffer_len() -> u64 {
+    let cb = CURRENT_BUFFER.lock().unwrap();
+    match *cb {
+        Some(ref buf) => buf.len() as u64,
+        None => 0,
     }
 }
 
-fn push_render_char(char_seq: &mut String, ch: char) {
-    if ch != CONTINUATION_CELL {
-        char_seq.push(ch);
+#[unsafe(no_mangle)]
+pub extern "C" fn free_buffer() -> c_int {
+    *CURRENT_BUFFER.lock().unwrap() = None;
+    *LAST_BUFFER.lock().unwrap() = None;
+    *FIRST_DIFF.lock().unwrap() = true;
+
+    execute!(
+        stdout(),
+        SetAttribute(Attribute::Reset),
+        SetBackgroundColor(Color::Reset),
+        SetForegroundColor(Color::Reset),
+        Clear(ClearType::All)
+    )
+    .unwrap();
+    1
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn update_terminal_size() -> c_int {
+    let mut term_size = TERMINAL_SIZE.lock().unwrap();
+    *term_size = size().unwrap();
+    1
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn debug_buffer(idx: u64) -> u64 {
+    let cb = CURRENT_BUFFER.lock().unwrap();
+    if let Some(ref buf) = *cb {
+        if buf.len() < idx as usize {
+            return 0;
+        }
+        println!("{}", buf[idx as usize]);
+        buf[idx as usize]
+    } else {
+        0
     }
 }
 
-// --- Flush pipeline ---
 fn first_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64]) {
     if w == 0 || h == 0 {
         return;
@@ -311,91 +352,47 @@ fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn flush() -> c_int {
-    let cb = CURRENT_BUFFER.lock().unwrap();
-    let mut lb = LAST_BUFFER.lock().unwrap();
-    let term_size = TERMINAL_SIZE.lock().unwrap();
-    let (w, h) = *term_size;
-    let mut stdout = stdout();
-
-    let Some(ref buf) = *cb else {
-        return 1;
-    };
-    let Some(ref mut last_buf) = *lb else {
-        return 1;
-    };
-
-    queue!(stdout, BeginSynchronizedUpdate).unwrap();
-
-    let mut first_diff = FIRST_DIFF.lock().unwrap();
-
-    if *first_diff {
-        first_flush(w, h, &mut stdout, buf);
-        *first_diff = false;
-    } else {
-        next_flush(w, h, &mut stdout, buf, last_buf);
-    }
-    queue!(stdout, EndSynchronizedUpdate).unwrap();
-    stdout.flush().unwrap();
-
-    last_buf.copy_from_slice(buf);
-
-    1
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn get_buffer_ptr() -> *mut u64 {
-    let cb = CURRENT_BUFFER.lock().unwrap();
-    match *cb {
-        Some(ref buf) => buf.as_ptr() as *mut u64,
-        None => std::ptr::null_mut(),
+fn hex_to_color(hex: u64) -> Color {
+    Color::Rgb {
+        r: ((hex >> 16) & 0xFF) as u8,
+        g: ((hex >> 8) & 0xFF) as u8,
+        b: (hex & 0xFF) as u8,
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn get_buffer_len() -> u64 {
-    let cb = CURRENT_BUFFER.lock().unwrap();
-    match *cb {
-        Some(ref buf) => buf.len() as u64,
-        None => 0,
+fn queue_text_attribute_delta(stdout: &mut Stdout, previous: u8, current: u8) {
+    // Terminal attrs are sticky state. Diff the previous/current bitfields and emit
+    // only the ANSI toggles needed to reach the next style.
+    let previous = previous & TEXT_ATTR_ALL;
+    let current = current & TEXT_ATTR_ALL;
+
+    if previous == current {
+        return;
+    }
+
+    if (previous & TEXT_ATTR_BOLD) != 0 && (current & TEXT_ATTR_BOLD) == 0 {
+        queue!(stdout, SetAttribute(Attribute::NormalIntensity)).unwrap();
+    }
+    if (previous & TEXT_ATTR_ITALIC) != 0 && (current & TEXT_ATTR_ITALIC) == 0 {
+        queue!(stdout, SetAttribute(Attribute::NoItalic)).unwrap();
+    }
+    if (previous & TEXT_ATTR_UNDERLINE) != 0 && (current & TEXT_ATTR_UNDERLINE) == 0 {
+        queue!(stdout, SetAttribute(Attribute::NoUnderline)).unwrap();
+    }
+
+    if (previous & TEXT_ATTR_BOLD) == 0 && (current & TEXT_ATTR_BOLD) != 0 {
+        queue!(stdout, SetAttribute(Attribute::Bold)).unwrap();
+    }
+    if (previous & TEXT_ATTR_ITALIC) == 0 && (current & TEXT_ATTR_ITALIC) != 0 {
+        queue!(stdout, SetAttribute(Attribute::Italic)).unwrap();
+    }
+    if (previous & TEXT_ATTR_UNDERLINE) == 0 && (current & TEXT_ATTR_UNDERLINE) != 0 {
+        queue!(stdout, SetAttribute(Attribute::Underlined)).unwrap();
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn free_buffer() -> c_int {
-    *CURRENT_BUFFER.lock().unwrap() = None;
-    *LAST_BUFFER.lock().unwrap() = None;
-    *FIRST_DIFF.lock().unwrap() = true;
-
-    execute!(
-        stdout(),
-        SetAttribute(Attribute::Reset),
-        SetBackgroundColor(Color::Reset),
-        SetForegroundColor(Color::Reset),
-        Clear(ClearType::All)
-    )
-    .unwrap();
-    1
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn update_terminal_size() -> c_int {
-    let mut term_size = TERMINAL_SIZE.lock().unwrap();
-    *term_size = size().unwrap();
-    1
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn debug_buffer(idx: u64) -> u64 {
-    let cb = CURRENT_BUFFER.lock().unwrap();
-    if let Some(ref buf) = *cb {
-        if buf.len() < idx as usize {
-            return 0;
-        }
-        println!("{}", buf[idx as usize]);
-        return buf[idx as usize];
-    } else {
-        0
+fn push_render_char(char_seq: &mut String, ch: char) {
+    if ch != CONTINUATION_CELL {
+        char_seq.push(ch);
     }
 }

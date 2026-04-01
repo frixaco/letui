@@ -3,8 +3,8 @@
 import { Codex, type Thread as CodexThread, type ThreadEvent, type Usage } from "@openai/codex-sdk";
 import { createHighlighter, type Highlighter } from "shiki";
 
-import { Button, Column, Input, Row, Text, ff, onKey, run } from "../index.ts";
-import type { StyledText, TextSpan } from "../index.ts";
+import { Button, Column, Input, Row, Text, ff, onKey, run } from "@";
+import type { StyledText, TextSpan } from "@";
 
 // --- Request/Result types ---
 

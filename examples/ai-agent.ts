@@ -9,8 +9,8 @@ import {
   ff,
   onKey,
   run,
-} from "../index.ts";
-import type { StyledText, TextSpan } from "../index.ts";
+} from "@";
+import type { StyledText, TextSpan } from "@";
 
 // --- Request/Result types ---
 

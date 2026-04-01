@@ -9,11 +9,129 @@ use crate::tree::{TREE_STATE, TextSpanData, TreeState};
 use std::{cell::RefCell, os::raw::c_int};
 use taffy::{Overflow, Point, prelude::*};
 
-thread_local! {
-    static TREE: RefCell<TaffyTree<NodeContext>> = RefCell::new(TaffyTree::new());
+#[unsafe(no_mangle)]
+pub extern "C" fn render() -> c_int {
+    let state = TREE_STATE.lock().unwrap();
+    let root_id = match state.root_id {
+        Some(id) => id,
+        None => return 0,
+    };
+
+    TREE.with_borrow_mut(|taffy| {
+        let term_size = TERMINAL_SIZE.lock().unwrap();
+        let (tw, th) = *term_size;
+        drop(term_size);
+
+        let taffy_root = match build_taffy_from_state(taffy, &state, root_id, None) {
+            Some(id) => id,
+            None => return 0,
+        };
+
+        let mut root_style = taffy.style(taffy_root).unwrap().clone();
+        root_style.size = Size {
+            width: length(tw),
+            height: length(th),
+        };
+        taffy.set_style(taffy_root, root_style).unwrap();
+
+        let _ = taffy.compute_layout_with_measure(
+            taffy_root,
+            Size {
+                width: length(tw),
+                height: length(th),
+            },
+            |known_dimensions, available_space, node_id, node_context, style| {
+                measure_function(
+                    known_dimensions,
+                    available_space,
+                    node_id,
+                    node_context,
+                    style,
+                )
+            },
+        );
+
+        let mut frame_lock = FRAMES.lock().unwrap();
+        let frames_vec = frame_lock.get_or_insert_with(Vec::new);
+        frames_vec.clear();
+        build_frames_array(taffy, taffy_root, frames_vec, 0.0, 0.0);
+        drop(frame_lock);
+
+        let root_data = state.nodes.get(&root_id);
+        let parent_fg = root_data.map_or(DEFAULT_FG, |d| d.style.fg);
+        let parent_bg = root_data.map_or(DEFAULT_BG, |d| d.style.bg);
+
+        let mut cb = CURRENT_BUFFER.lock().unwrap();
+        if let Some(ref mut buf) = *cb {
+            paint_taffy_node(
+                taffy,
+                taffy_root,
+                parent_fg,
+                parent_bg,
+                Buffer {
+                    buf,
+                    x: 0.0,
+                    y: 0.0,
+                    tw,
+                    th,
+                },
+            );
+        }
+
+        taffy.clear();
+        1
+    })
 }
 
-// --- Internal algorithm ---
+#[unsafe(no_mangle)]
+pub extern "C" fn get_frames_ptr() -> *const f32 {
+    let frames = FRAMES.lock().unwrap();
+    match *frames {
+        Some(ref vec) => vec.as_ptr(),
+        None => std::ptr::null(),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_frames_len() -> u64 {
+    let frames = FRAMES.lock().unwrap();
+    match *frames {
+        Some(ref vec) => vec.len() as u64,
+        None => 0,
+    }
+}
+
+enum NodeContext {
+    Text {
+        content: String,
+        spans: Vec<TextSpanData>,
+        fg: u32,
+        bg: u32,
+    },
+    Button {
+        label: String,
+        fg: u32,
+        bg: u32,
+        border: ResolvedBorder,
+    },
+    Input {
+        content: String,
+        fg: u32,
+        bg: u32,
+        border: ResolvedBorder,
+    },
+    Row {
+        bg: u32,
+        fg: u32,
+        border: ResolvedBorder,
+    },
+    Column {
+        bg: u32,
+        fg: u32,
+        border: ResolvedBorder,
+    },
+}
+
 fn style_dimension_to_taffy(dim: StyleDimension) -> Dimension {
     match dim {
         StyleDimension::Auto => Dimension::auto(),
@@ -191,38 +309,6 @@ fn build_frames_array(
     }
 }
 
-// --- Supporting types ---
-enum NodeContext {
-    Text {
-        content: String,
-        spans: Vec<TextSpanData>,
-        fg: u32,
-        bg: u32,
-    },
-    Button {
-        label: String,
-        fg: u32,
-        bg: u32,
-        border: ResolvedBorder,
-    },
-    Input {
-        content: String,
-        fg: u32,
-        bg: u32,
-        border: ResolvedBorder,
-    },
-    Row {
-        bg: u32,
-        fg: u32,
-        border: ResolvedBorder,
-    },
-    Column {
-        bg: u32,
-        fg: u32,
-        border: ResolvedBorder,
-    },
-}
-
 fn measure_function(
     known_dimensions: Size<Option<f32>>,
     available_space: Size<AvailableSpace>,
@@ -288,6 +374,10 @@ fn measure_function(
     }
 }
 
+thread_local! {
+    static TREE: RefCell<TaffyTree<NodeContext>> = RefCell::new(TaffyTree::new());
+}
+
 fn set_buffer_cell(
     buf: &mut [u64],
     col: u16,
@@ -299,7 +389,6 @@ fn set_buffer_cell(
     tw: u16,
     th: u16,
 ) {
-    // Single write path for the 4-slot cell layout: char + fg + bg + text attrs.
     if col >= tw || row >= th {
         return;
     }
@@ -356,8 +445,6 @@ fn draw_styled_text_at(
     tw: u16,
     th: u16,
 ) {
-    // Spans are pre-sorted/non-overlapping, so painting can walk text once with a
-    // single forward-moving span pointer.
     let x_start = x as u16;
     let y_row = y as u16;
 
@@ -380,12 +467,13 @@ fn draw_styled_text_at(
         let mut resolved_bg = bg;
         let mut attrs = 0u8;
 
-        if let Some(span) = spans.get(span_index) {
-            if byte_start >= span.start_byte && byte_start < span.end_byte {
-                resolved_fg = span.foreground.unwrap_or(fg);
-                resolved_bg = span.background.unwrap_or(bg);
-                attrs = text_span_attr_flags(span);
-            }
+        if let Some(span) = spans.get(span_index)
+            && byte_start >= span.start_byte
+            && byte_start < span.end_byte
+        {
+            resolved_fg = span.foreground.unwrap_or(fg);
+            resolved_bg = span.background.unwrap_or(bg);
+            attrs = text_span_attr_flags(span);
         }
 
         set_buffer_cell(buf, col, y_row, ch, resolved_fg, resolved_bg, attrs, tw, th);
@@ -527,21 +615,24 @@ fn draw_cursor_at(
 fn paint_taffy_node(
     taffy: &TaffyTree<NodeContext>,
     node_id: NodeId,
-    buf: &mut [u64],
-    abs_x: f32,
-    abs_y: f32,
     parent_fg: u32,
     parent_bg: u32,
-    tw: u16,
-    th: u16,
+    buf_state: Buffer,
 ) {
+    let Buffer {
+        buf,
+        x: abs_x,
+        y: abs_y,
+        tw,
+        th,
+    } = buf_state;
+
     let layout = taffy.layout(node_id).unwrap();
     let x = abs_x + layout.location.x;
     let y = abs_y + layout.location.y;
     let w = layout.size.width;
     let h = layout.size.height;
 
-    // Content box position (inside border + padding)
     let content_x = abs_x + layout.content_box_x();
     let content_y = abs_y + layout.content_box_y();
 
@@ -606,90 +697,14 @@ fn paint_taffy_node(
     };
 
     for child in taffy.children(node_id).unwrap() {
-        paint_taffy_node(taffy, child, buf, x, y, fg, bg, tw, th);
+        paint_taffy_node(taffy, child, fg, bg, Buffer { buf, x, y, tw, th });
     }
 }
 
-// --- Public API ---
-#[unsafe(no_mangle)]
-pub extern "C" fn render() -> c_int {
-    let state = TREE_STATE.lock().unwrap();
-    let root_id = match state.root_id {
-        Some(id) => id,
-        None => return 0,
-    };
-
-    TREE.with_borrow_mut(|taffy| {
-        let term_size = TERMINAL_SIZE.lock().unwrap();
-        let (tw, th) = *term_size;
-        drop(term_size);
-
-        let taffy_root = match build_taffy_from_state(taffy, &state, root_id, None) {
-            Some(id) => id,
-            None => return 0,
-        };
-
-        // Force root to fill terminal
-        let mut root_style = taffy.style(taffy_root).unwrap().clone();
-        root_style.size = Size {
-            width: length(tw),
-            height: length(th),
-        };
-        taffy.set_style(taffy_root, root_style).unwrap();
-
-        let _ = taffy.compute_layout_with_measure(
-            taffy_root,
-            Size {
-                width: length(tw),
-                height: length(th),
-            },
-            |known_dimensions, available_space, node_id, node_context, style| {
-                measure_function(
-                    known_dimensions,
-                    available_space,
-                    node_id,
-                    node_context,
-                    style,
-                )
-            },
-        );
-
-        let mut frame_lock = FRAMES.lock().unwrap();
-        let frames_vec = frame_lock.get_or_insert_with(Vec::new);
-        frames_vec.clear();
-        build_frames_array(taffy, taffy_root, frames_vec, 0.0, 0.0);
-        drop(frame_lock);
-
-        let root_data = state.nodes.get(&root_id);
-        let parent_fg = root_data.map_or(DEFAULT_FG, |d| d.style.fg);
-        let parent_bg = root_data.map_or(DEFAULT_BG, |d| d.style.bg);
-
-        let mut cb = CURRENT_BUFFER.lock().unwrap();
-        if let Some(ref mut buf) = *cb {
-            paint_taffy_node(
-                taffy, taffy_root, buf, 0.0, 0.0, parent_fg, parent_bg, tw, th,
-            );
-        }
-
-        taffy.clear();
-        1
-    })
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn get_frames_ptr() -> *const f32 {
-    let frames = FRAMES.lock().unwrap();
-    match *frames {
-        Some(ref vec) => vec.as_ptr(),
-        None => std::ptr::null(),
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn get_frames_len() -> u64 {
-    let frames = FRAMES.lock().unwrap();
-    match *frames {
-        Some(ref vec) => vec.len() as u64,
-        None => 0,
-    }
+struct Buffer<'a> {
+    buf: &'a mut [u64],
+    tw: u16,
+    th: u16,
+    x: f32,
+    y: f32,
 }

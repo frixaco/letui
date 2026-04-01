@@ -1,6 +1,6 @@
 // Typing speed demo: keyboard trainer with live accuracy and pacing feedback.
 
-import { Column, Row, Text, $, ff, onKey, run } from "../index.ts";
+import { Column, Row, Text, $, ff, onKey, run } from "@";
 
 // --- Request/Result types ---
 

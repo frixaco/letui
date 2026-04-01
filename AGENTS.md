@@ -26,15 +26,16 @@ State management primitives, component API, diffing, number of optimizations are
 
 # File structure
 
-Structure each source file top-down — most important code first:
+Structure each source file for **learning flow** — a stranger should be able to read top-down and build understanding progressively.
 
 1. **Module doc** — one-liner purpose + data flow diagram (if non-trivial)
-2. **Public API** — exported functions first
-3. **Request/Result types** — types the caller constructs or receives
-4. **Internal state / accumulator types** — structs that hold state during computation
-5. **Internal algorithm** — private functions implementing the logic
-6. **Supporting/lower-level types** — internal data structures
-7. **Helpers** — small utility functions
+2. **Primary abstraction** — the main exported class or function that embodies what the module does. Include its public methods inline so readers see the full API at once.
+3. **Domain vocabulary** — enums, types that define operation names/payloads. Pairs naturally with the primary abstraction.
+4. **Core algorithm** — functions that transform data (encode, decode, diff, etc.)
+5. **Binary layout** — size constants, magic numbers, format specifications
+6. **Supporting types** — Request/Result types, style types, other domain-specific types
+7. **Internal state** — accumulators, intermediate structures used during computation
+8. **Helpers** — small utility functions, singletons (TextEncoder, etc.)
 
 # Testing
 

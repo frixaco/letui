@@ -1,6 +1,7 @@
 // Visualizer demo: animated color-field bars that resize with the viewport.
 
-import { Column, Row, Text, run, onKey } from "@/components";
+import { Column, Row, Text } from "@/components";
+import { onKey, run } from "@/runtime";
 import { $, ff } from "@/signals";
 import { saveMetrics } from "@/metrics";
 import type { Node } from "@/types";

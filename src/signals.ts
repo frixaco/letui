@@ -1,48 +1,6 @@
 /** Minimal reactive signals used across the TypeScript component layer. */
 
-// --- Public API ---
-export type Signal<T> = {
-  (): T;
-  (next: T): void;
-};
-export type ReadonlySignal<T> = () => T;
-export type Sub = () => void;
-
-// --- Internal state ---
-let caller: null | Sub = null;
-
-let scheduled = new Set<Sub>();
-let flushing = false;
-
-// --- Internal algorithm ---
-function schedule(fn: Sub) {
-  scheduled.add(fn);
-
-  if (flushing) return;
-
-  flushing = true;
-  queueMicrotask(() => {
-    try {
-      while (scheduled.size) {
-        const snapshot = Array.from(scheduled);
-        scheduled.clear();
-        for (let s of snapshot) {
-          // Track the active subscriber so reads during this run resubscribe it.
-          let prev = caller;
-          try {
-            caller = s;
-            s();
-          } finally {
-            caller = prev;
-          }
-        }
-      }
-    } finally {
-      flushing = false;
-    }
-  });
-}
-
+export function $<T>(defaultValue: T): Signal<T>;
 export function $<T>(defaultValue: T): Signal<T> {
   let v: T = defaultValue;
   let subs = new Set<Sub>();
@@ -111,7 +69,6 @@ export function ff(fn: Sub): void {
   }
 }
 
-// Overloads cover the two supported async patterns: standalone fetches and source-driven fetches.
 export function af<T>(srcOrFn: () => Promise<T | null>): {
   data: Signal<T | null>;
   loading: Signal<boolean>;
@@ -123,7 +80,6 @@ export function af<T>(
   data: Signal<T | null>;
   loading: Signal<boolean>;
 };
-
 export function af<T>(
   srcOrFn: Signal<T> | (() => Promise<T | null>),
   fn?: (src: T) => Promise<T | null>,
@@ -183,3 +139,42 @@ export function wait(ms: number = 1000): Promise<void> {
 export function whenSettled(fn: Sub): void {
   schedule(fn);
 }
+
+export type Signal<T> = {
+  (): T;
+  (next: T): void;
+};
+export type ReadonlySignal<T> = () => T;
+export type Sub = () => void;
+
+function schedule(fn: Sub) {
+  scheduled.add(fn);
+
+  if (flushing) return;
+
+  flushing = true;
+  queueMicrotask(() => {
+    try {
+      while (scheduled.size) {
+        const snapshot = Array.from(scheduled);
+        scheduled.clear();
+        for (let s of snapshot) {
+          let prev = caller;
+          try {
+            caller = s;
+            s();
+          } finally {
+            caller = prev;
+          }
+        }
+      }
+    } finally {
+      flushing = false;
+    }
+  });
+}
+
+let caller: null | Sub = null;
+
+let scheduled = new Set<Sub>();
+let flushing = false;

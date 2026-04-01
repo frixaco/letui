@@ -1,4 +1,6 @@
-/** Component constructors, focus state, and type re-exports for the TS wrapper. */
+/**
+ * Component constructors, focus state, and focus management for the TS wrapper.
+ */
 
 import { $, type Signal } from "./signals";
 import { normalizeStyledText, prepareTextInput } from "./text";
@@ -27,215 +29,6 @@ import type {
   _InputProps,
   _ButtonProps,
 } from "./types";
-
-// --- Public API ---
-
-// Re-export caller-facing types from one import path.
-export type {
-  Frame,
-  Node,
-  BoxProps,
-  TextProps,
-  InputProps,
-  ButtonProps,
-  StyleProps,
-  AxisPair,
-  Direction,
-  AlignItems,
-  JustifyContent,
-  FlexWrap,
-  TextWrap,
-  TextOverflow,
-  BorderStyle,
-  BorderProps,
-  BorderSideProps,
-  TextSpan,
-  StyledText,
-  NormalizedTextSpan,
-  NormalizedStyledText,
-} from "./types";
-export { NODE_TYPE } from "./types";
-
-// --- Internal state ---
-
-const generateId = (() => {
-  let counter = 1;
-  return () => counter++;
-})();
-
-function getInitialFrame(): Frame {
-  return { x: 0, y: 0, width: 0, height: 0 };
-}
-
-// --- Internal algorithm ---
-
-function createStyleSignals(input: StyleProps): _StyleProps {
-  return {
-    border: $(input.border),
-    borderTop: $(input.borderTop),
-    borderRight: $(input.borderRight),
-    borderBottom: $(input.borderBottom),
-    borderLeft: $(input.borderLeft),
-    padding: $(input.padding),
-    paddingX: $(input.paddingX),
-    paddingY: $(input.paddingY),
-    background: $(input.background),
-    foreground: $(input.foreground),
-    flexGrow: $(input.flexGrow),
-    width: $(input.width),
-    height: $(input.height),
-    minWidth: $(input.minWidth),
-    minHeight: $(input.minHeight),
-    maxWidth: $(input.maxWidth),
-    maxHeight: $(input.maxHeight),
-    margin: $(input.margin),
-    marginX: $(input.marginX),
-    marginY: $(input.marginY),
-    alignItems: $(input.alignItems),
-    justifyContent: $(input.justifyContent),
-    alignSelf: $(input.alignSelf),
-    flexShrink: $(input.flexShrink),
-    flexBasis: $(input.flexBasis),
-    flexWrap: $(input.flexWrap),
-  };
-}
-
-function createBoxSignals(input: BoxProps): _BoxProps {
-  return {
-    ...createStyleSignals(input),
-    gap: $(input.gap),
-    direction: $(input.direction),
-  };
-}
-
-function resolveTextValue(input: string | StyledText): {
-  text: string;
-  styledText: NormalizedStyledText | undefined;
-} {
-  if (typeof input === "string") {
-    return {
-      text: prepareTextInput(input).text,
-      styledText: undefined,
-    };
-  }
-
-  const styledText = normalizeStyledText(input);
-  return {
-    text: styledText.text,
-    styledText,
-  };
-}
-
-function setTextSignals(props: _TextProps, input: string | StyledText): void {
-  if (typeof input === "string") {
-    props.text(prepareTextInput(input).text);
-    props.styledText(undefined);
-    return;
-  }
-
-  const styledText = normalizeStyledText(input);
-  props.text(styledText.text);
-  props.styledText(styledText);
-}
-
-function createTextSignals(input: TextProps): _TextProps {
-  const resolved = resolveTextValue(input.text);
-
-  return {
-    ...createStyleSignals(input),
-    text: $(resolved.text),
-    styledText: $(resolved.styledText),
-    wrap: $(input.wrap),
-    textOverflow: $(input.textOverflow),
-  };
-}
-
-function createInputSignals(
-  input: {
-    placeholder?: string;
-    multiline?: boolean;
-    wrap?: Exclude<TextWrap, "none">;
-  } & StyleProps,
-): _InputProps {
-  return {
-    ...createStyleSignals(input),
-    text: $(""),
-    placeholder: $(input.placeholder),
-    multiline: $(input.multiline),
-    wrap: $(input.wrap),
-  };
-}
-
-function createButtonSignals(
-  input: { text: string } & StyleProps,
-): _ButtonProps {
-  return {
-    ...createStyleSignals(input),
-    text: $(prepareTextInput(input.text).text),
-  };
-}
-
-// --- Style helpers ---
-
-function makeSetStyle<T extends Record<string, Signal<any>>>(
-  props: T,
-): (
-  newProps: Partial<{
-    [K in keyof T]: T[K] extends Signal<infer V> ? V : never;
-  }>,
-) => void {
-  return (newProps) => {
-    for (const [key, value] of Object.entries(newProps)) {
-      if (key in props) {
-        (props as any)[key](value);
-      }
-    }
-  };
-}
-
-function directionToBoxKind(direction: Direction | undefined): BoxKind {
-  return direction?.startsWith("row") ? NODE_TYPE.Row : NODE_TYPE.Column;
-}
-
-// --- Focus state ---
-
-let focusedNode: Node | null = null;
-const focusVersion = $(0);
-
-export function getFocusedNode(): Node | null {
-  return focusedNode;
-}
-
-export function getFocusVersion(): number {
-  return focusVersion();
-}
-
-export function focusNode(node: Node): void {
-  if (focusedNode === node) return;
-
-  if (focusedNode) {
-    const prev = focusedNode;
-    focusedNode = null;
-    focusVersion(focusVersion() + 1);
-    const handler = (prev.handlers as any).onBlur;
-    if (handler) handler(prev);
-  }
-
-  focusedNode = node;
-  focusVersion(focusVersion() + 1);
-  const handler = (node.handlers as any).onFocus;
-  if (handler) handler(node);
-}
-
-function blurNode(node: Node): void {
-  if (focusedNode !== node) return;
-  focusedNode = null;
-  focusVersion(focusVersion() + 1);
-  const handler = (node.handlers as any).onBlur;
-  if (handler) handler(node);
-}
-
-// --- Constructors ---
 
 export function Box(input: BoxProps, children: Node[]): BoxNode {
   const props = createBoxSignals(input);
@@ -361,7 +154,173 @@ export function Button(input: ButtonProps, children: Node[] = []): ButtonNode {
   return node;
 }
 
-export { normalizeStyledText, prepareTextInput } from "./text-spans";
+export function getFocusedNode(): Node | null {
+  return focusedNode;
+}
 
-// Re-export runtime helpers from the main component surface.
-export { run, onKey } from "./runtime";
+export function getFocusVersion(): number {
+  return focusVersion();
+}
+
+export function focusNode(node: Node): void {
+  if (focusedNode === node) return;
+
+  if (focusedNode) {
+    const prev = focusedNode;
+    focusedNode = null;
+    focusVersion(focusVersion() + 1);
+    const handler = (prev.handlers as any).onBlur;
+    if (handler) handler(prev);
+  }
+
+  focusedNode = node;
+  focusVersion(focusVersion() + 1);
+  const handler = (node.handlers as any).onFocus;
+  if (handler) handler(node);
+}
+
+function createStyleSignals(input: StyleProps): _StyleProps {
+  return {
+    border: $(input.border),
+    borderTop: $(input.borderTop),
+    borderRight: $(input.borderRight),
+    borderBottom: $(input.borderBottom),
+    borderLeft: $(input.borderLeft),
+    padding: $(input.padding),
+    paddingX: $(input.paddingX),
+    paddingY: $(input.paddingY),
+    background: $(input.background),
+    foreground: $(input.foreground),
+    flexGrow: $(input.flexGrow),
+    width: $(input.width),
+    height: $(input.height),
+    minWidth: $(input.minWidth),
+    minHeight: $(input.minHeight),
+    maxWidth: $(input.maxWidth),
+    maxHeight: $(input.maxHeight),
+    margin: $(input.margin),
+    marginX: $(input.marginX),
+    marginY: $(input.marginY),
+    alignItems: $(input.alignItems),
+    justifyContent: $(input.justifyContent),
+    alignSelf: $(input.alignSelf),
+    flexShrink: $(input.flexShrink),
+    flexBasis: $(input.flexBasis),
+    flexWrap: $(input.flexWrap),
+  };
+}
+
+function createBoxSignals(input: BoxProps): _BoxProps {
+  return {
+    ...createStyleSignals(input),
+    gap: $(input.gap),
+    direction: $(input.direction),
+  };
+}
+
+function resolveTextValue(input: string | StyledText): {
+  text: string;
+  styledText: NormalizedStyledText | undefined;
+} {
+  if (typeof input === "string") {
+    return {
+      text: prepareTextInput(input).text,
+      styledText: undefined,
+    };
+  }
+
+  const styledText = normalizeStyledText(input);
+  return {
+    text: styledText.text,
+    styledText,
+  };
+}
+
+function setTextSignals(props: _TextProps, input: string | StyledText): void {
+  if (typeof input === "string") {
+    props.text(prepareTextInput(input).text);
+    props.styledText(undefined);
+    return;
+  }
+
+  const styledText = normalizeStyledText(input);
+  props.text(styledText.text);
+  props.styledText(styledText);
+}
+
+function createTextSignals(input: TextProps): _TextProps {
+  const resolved = resolveTextValue(input.text);
+
+  return {
+    ...createStyleSignals(input),
+    text: $(resolved.text),
+    styledText: $(resolved.styledText),
+    wrap: $(input.wrap),
+    textOverflow: $(input.textOverflow),
+  };
+}
+
+function createInputSignals(
+  input: {
+    placeholder?: string;
+    multiline?: boolean;
+    wrap?: Exclude<TextWrap, "none">;
+  } & StyleProps,
+): _InputProps {
+  return {
+    ...createStyleSignals(input),
+    text: $(""),
+    placeholder: $(input.placeholder),
+    multiline: $(input.multiline),
+    wrap: $(input.wrap),
+  };
+}
+
+function createButtonSignals(
+  input: { text: string } & StyleProps,
+): _ButtonProps {
+  return {
+    ...createStyleSignals(input),
+    text: $(prepareTextInput(input.text).text),
+  };
+}
+
+const generateId = (() => {
+  let counter = 1;
+  return () => counter++;
+})();
+
+let focusedNode: Node | null = null;
+const focusVersion = $(0);
+
+function getInitialFrame(): Frame {
+  return { x: 0, y: 0, width: 0, height: 0 };
+}
+
+function makeSetStyle<T extends Record<string, Signal<any>>>(
+  props: T,
+): (
+  newProps: Partial<{
+    [K in keyof T]: T[K] extends Signal<infer V> ? V : never;
+  }>,
+) => void {
+  return (newProps) => {
+    for (const [key, value] of Object.entries(newProps)) {
+      if (key in props) {
+        (props as any)[key](value);
+      }
+    }
+  };
+}
+
+function directionToBoxKind(direction: Direction | undefined): BoxKind {
+  return direction?.startsWith("row") ? NODE_TYPE.Row : NODE_TYPE.Column;
+}
+
+function blurNode(node: Node): void {
+  if (focusedNode !== node) return;
+  focusedNode = null;
+  focusVersion(focusVersion() + 1);
+  const handler = (node.handlers as any).onBlur;
+  if (handler) handler(node);
+}

@@ -1,7 +1,6 @@
 // Smoke demo: minimal input flow used by automated terminal verification.
 
-import { COLORS, Column, Input, Text, ff, onKey, run } from "../index.ts";
-import { $ } from "../src/signals";
+import { $, COLORS, Column, Input, Text, ff, onKey, run } from "@";
 
 // --- Internal state ---
 

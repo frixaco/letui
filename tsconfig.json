@@ -10,10 +10,11 @@
 
     // Bundler mode
     "moduleResolution": "bundler",
-    "types": ["bun"],
     "baseUrl": ".",
+    "types": ["bun"],
     "paths": {
-      "@/*": ["src/*"]
+      "@": ["./index.ts"],
+      "@/*": ["./src/*"]
     },
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,

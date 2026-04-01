@@ -1,14 +1,12 @@
 // ANITRACK torrent search demo: keyboard-first results browsing with stream staging.
 
 import { existsSync } from "fs";
-import { COLORS } from "../src/colors";
-import { Button, Column, Input, Row, Text, run, onKey } from "../src/components";
+import { COLORS, Button, Column, Input, Row, Text, $, ff, onKey, run } from "@";
 import { LoadingBar } from "./progress-bar";
 import { tmpdir } from "os";
 import { join } from "path";
-import { $, ff } from "../src/signals";
-import { saveMetrics } from "../src/metrics";
-import type { StyledText, TextSpan } from "../src/types";
+import { saveMetrics } from "@/metrics";
+import type { StyledText, TextSpan } from "@";
 
 // --- Theme ---
 const T = {

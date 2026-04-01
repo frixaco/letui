@@ -1,6 +1,6 @@
 // Hello world playground: compact layout + style demo for the default letui surface.
 
-import { COLORS, Column, Row, Text, $, ff, onKey, run } from "../index.ts";
+import { COLORS, Column, Row, Text, $, ff, onKey, run } from "@";
 
 // --- Internal state ---
 

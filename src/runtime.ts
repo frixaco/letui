@@ -1,4 +1,6 @@
-/** Runtime bridge that diffs the TS tree, syncs Rust ops, and drives terminal I/O. */
+/**
+ * Runtime bridge that diffs the TS tree, syncs Rust ops, and drives terminal I/O.
+ */
 
 import { toArrayBuffer, type Pointer } from "bun:ffi";
 import { mkdirSync, writeFileSync } from "fs";
@@ -35,22 +37,149 @@ import {
 } from "./metrics";
 import { logWriter } from "./debug";
 
-// --- Request/Result types ---
 export type RunOptions = {
   debug?: boolean;
 };
 
-// --- Internal state ---
-let terminalWidth: Signal<number>;
-let terminalHeight: Signal<number>;
-let spatialLookup: (number | undefined)[];
-let nodeRegistry: Map<number, Node>;
-let globalKeyHandlers: Map<string, () => void>;
-let pressedNodeId: number | null = null;
-let isRunning = false;
-let quitFn: (() => void) | null = null;
-let ops: OpQueue;
-let previousSentTree: SentNodeState | null = null;
+export function run(root: Node, options?: RunOptions): { quit: () => void } {
+  if (api.init_buffer() !== 1) {
+    throw new Error("Failed to initialize letui buffer");
+  }
+  if (api.init_letui() !== 1) {
+    api.free_buffer();
+    throw new Error("Failed to initialize letui terminal");
+  }
+  api.clear_tree_state();
+
+  terminalWidth = $(api.get_width());
+  terminalHeight = $(api.get_height());
+  globalKeyHandlers = globalKeyHandlers ?? new Map();
+  nodeRegistry = new Map();
+  ops = new OpQueue();
+  previousSentTree = null;
+  spatialLookup = new Array(terminalWidth() * terminalHeight());
+  pressedNodeId = null;
+  isRunning = true;
+  let cleanedUp = false;
+
+  const stdinHandler = (data: Buffer) => handleInput(data.toString());
+  const writeDebugMetrics = () => {
+    if (!options?.debug) return;
+    const metricsPath = resolveMetricsPath();
+    ensureParentDir(metricsPath);
+    const stats = formatMetrics();
+    writeFileSync(metricsPath, stats + "\n", "utf8");
+    console.log(stats);
+    logWriter.flush();
+  };
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    isRunning = false;
+    process.stdin.off("data", stdinHandler);
+    process.stdout.off("resize", handleResize);
+    process.off("SIGINT", handleSigint);
+    process.off("SIGTERM", handleSigterm);
+    process.off("uncaughtException", handleUncaughtException);
+    process.off("unhandledRejection", handleUnhandledRejection);
+
+    try {
+      api.clear_tree_state();
+    } catch {}
+    previousSentTree = null;
+
+    try {
+      api.free_buffer();
+    } catch {}
+
+    try {
+      api.deinit_letui();
+    } catch {}
+
+    writeDebugMetrics();
+  };
+  const exitWith = (code: number, error?: unknown) => {
+    cleanup();
+    if (error) {
+      console.error(error);
+    }
+    process.exit(code);
+  };
+  const handleSigint = () => exitWith(130);
+  const handleSigterm = () => exitWith(143);
+  const handleUncaughtException = (error: unknown) => exitWith(1, error);
+  const handleUnhandledRejection = (reason: unknown) => exitWith(1, reason);
+
+  process.stdin.on("data", stdinHandler);
+
+  process.stdout.on("resize", handleResize);
+  process.on("SIGINT", handleSigint);
+  process.on("SIGTERM", handleSigterm);
+  process.on("uncaughtException", handleUncaughtException);
+  process.on("unhandledRejection", handleUnhandledRejection);
+
+  ff(() => {
+    if (!isRunning) return;
+
+    terminalWidth();
+    terminalHeight();
+    getFocusVersion();
+
+    const frameStart = options?.debug ? startFrame() : 0;
+
+    spatialLookup.fill(undefined);
+    nodeRegistry.clear();
+    const sentTree = buildSentNodeState(root);
+
+    const opsStart = options?.debug ? startPhase() : 0;
+    const textSyncStart = options?.debug ? startPhase() : 0;
+    const textStats: TextOpStats = { opCount: 0, byteCount: 0 };
+    if (!previousSentTree || !hasSameNodeShape(previousSentTree, sentTree)) {
+      api.clear_tree_state();
+      queueFullTreeInsert(sentTree, textStats);
+      ops.setRoot(sentTree.id);
+    } else {
+      syncRenderTree(previousSentTree, sentTree, textStats);
+    }
+    const opBuffer = ops.drain();
+    if (opBuffer.length > 0) {
+      api.apply_ops(opBuffer, opBuffer.length);
+    }
+    if (options?.debug) endOps(opsStart);
+    if (options?.debug) {
+      endTextSync(textSyncStart, textStats.opCount, textStats.byteCount);
+    }
+    previousSentTree = sentTree;
+
+    const renderStart = options?.debug ? startPhase() : 0;
+    api.render();
+    if (options?.debug) endRender(renderStart);
+
+    const syncStart = options?.debug ? startPhase() : 0;
+    updateNodeFrames(root);
+    if (options?.debug) endSync(syncStart);
+
+    const flushStart = options?.debug ? startPhase() : 0;
+    api.flush();
+    if (options?.debug) endFlush(flushStart);
+
+    if (options?.debug) endFrame(frameStart);
+  });
+
+  quitFn = () => {
+    cleanup();
+    process.exit(0);
+  };
+
+  return { quit: quitFn };
+}
+
+export function onKey(key: string, callback: () => void): void {
+  if (!globalKeyHandlers) {
+    globalKeyHandlers = new Map();
+  }
+  globalKeyHandlers.set(key, callback);
+}
 
 type SentStyleState = Partial<Record<StylePropName, StylePropValue>>;
 
@@ -67,7 +196,6 @@ type TextOpStats = {
   opCount: number;
   byteCount: number;
 };
-const textEncoder = new TextEncoder();
 
 type ResolvedBorderState = {
   topWidth?: 1;
@@ -81,61 +209,53 @@ type ResolvedBorderState = {
   style?: "square" | "rounded";
 };
 
-// --- Internal algorithm ---
-function ensureParentDir(path: string): void {
-  const parent = dirname(path);
-  if (parent !== "." && parent.length > 0) {
-    mkdirSync(parent, { recursive: true });
-  }
-}
-
-function getNodeAt(x: number, y: number): Node | undefined {
-  const id = spatialLookup[y * terminalWidth() + x];
-  return id !== undefined ? nodeRegistry.get(id) : undefined;
-}
-
 const MOUSE_EVENT_PATTERN = /\x1b\[<\d+;\d+;\d+[Mm]/g;
 
-function resolveBorderState(props: any): ResolvedBorderState {
-  const border = props.border?.();
-  const borderTop = props.borderTop?.();
-  const borderRight = props.borderRight?.();
-  const borderBottom = props.borderBottom?.();
-  const borderLeft = props.borderLeft?.();
-
-  const topColor = borderTop?.color ?? border?.color;
-  const rightColor = borderRight?.color ?? border?.color;
-  const bottomColor = borderBottom?.color ?? border?.color;
-  const leftColor = borderLeft?.color ?? border?.color;
-
-  const hasAnySide =
-    topColor !== undefined ||
-    rightColor !== undefined ||
-    bottomColor !== undefined ||
-    leftColor !== undefined;
-  const hasSideOverride =
-    borderTop !== undefined ||
-    borderRight !== undefined ||
-    borderBottom !== undefined ||
-    borderLeft !== undefined;
-  const fullBorderStyle =
-    border !== undefined && !hasSideOverride
-      ? border.style === "rounded"
-        ? "rounded"
-        : "square"
-      : undefined;
+function buildSentNodeState(node: Node): SentNodeState {
+  const text =
+    node.type === NODE_TYPE.Text ||
+    node.type === NODE_TYPE.Input ||
+    node.type === NODE_TYPE.Button
+      ? ((node.props as any).text?.() ?? "")
+      : "";
+  const styledText =
+    node.type === NODE_TYPE.Text ? (node.props as any).styledText?.() : undefined;
+  const children = node.children?.() ?? [];
 
   return {
-    topWidth: topColor !== undefined ? 1 : undefined,
-    rightWidth: rightColor !== undefined ? 1 : undefined,
-    bottomWidth: bottomColor !== undefined ? 1 : undefined,
-    leftWidth: leftColor !== undefined ? 1 : undefined,
-    topColor,
-    rightColor,
-    bottomColor,
-    leftColor,
-    style: hasAnySide ? fullBorderStyle : undefined,
+    id: node.id,
+    type: node.type,
+    style: readSentStyleState(node),
+    text,
+    styledText,
+    children: children.map(buildSentNodeState),
   };
+}
+
+function hasSameNodeShape(
+  previous: SentNodeState,
+  current: SentNodeState,
+): boolean {
+  if (previous.id !== current.id || previous.type !== current.type) {
+    return false;
+  }
+
+  if (previous.children.length !== current.children.length) {
+    return false;
+  }
+
+  for (let i = 0; i < previous.children.length; i++) {
+    const previousChild = previous.children[i];
+    const currentChild = current.children[i];
+    if (!previousChild || !currentChild) {
+      return false;
+    }
+    if (!hasSameNodeShape(previousChild, currentChild)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function readSentStyleState(node: Node): SentStyleState {
@@ -314,24 +434,45 @@ function readSentStyleState(node: Node): SentStyleState {
   return style;
 }
 
-function buildSentNodeState(node: Node): SentNodeState {
-  const text =
-    node.type === NODE_TYPE.Text ||
-    node.type === NODE_TYPE.Input ||
-    node.type === NODE_TYPE.Button
-      ? ((node.props as any).text?.() ?? "")
-      : "";
-  const styledText =
-    node.type === NODE_TYPE.Text ? (node.props as any).styledText?.() : undefined;
-  const children = node.children?.() ?? [];
+function resolveBorderState(props: any): ResolvedBorderState {
+  const border = props.border?.();
+  const borderTop = props.borderTop?.();
+  const borderRight = props.borderRight?.();
+  const borderBottom = props.borderBottom?.();
+  const borderLeft = props.borderLeft?.();
+
+  const topColor = borderTop?.color ?? border?.color;
+  const rightColor = borderRight?.color ?? border?.color;
+  const bottomColor = borderBottom?.color ?? border?.color;
+  const leftColor = borderLeft?.color ?? border?.color;
+
+  const hasAnySide =
+    topColor !== undefined ||
+    rightColor !== undefined ||
+    bottomColor !== undefined ||
+    leftColor !== undefined;
+  const hasSideOverride =
+    borderTop !== undefined ||
+    borderRight !== undefined ||
+    borderBottom !== undefined ||
+    borderLeft !== undefined;
+  const fullBorderStyle =
+    border !== undefined && !hasSideOverride
+      ? border.style === "rounded"
+        ? "rounded"
+        : "square"
+      : undefined;
 
   return {
-    id: node.id,
-    type: node.type,
-    style: readSentStyleState(node),
-    text,
-    styledText,
-    children: children.map(buildSentNodeState),
+    topWidth: topColor !== undefined ? 1 : undefined,
+    rightWidth: rightColor !== undefined ? 1 : undefined,
+    bottomWidth: bottomColor !== undefined ? 1 : undefined,
+    leftWidth: leftColor !== undefined ? 1 : undefined,
+    topColor,
+    rightColor,
+    bottomColor,
+    leftColor,
+    style: hasAnySide ? fullBorderStyle : undefined,
   };
 }
 
@@ -368,29 +509,6 @@ function queueFullTreeInsert(node: SentNodeState, textStats: TextOpStats): void 
     queueFullTreeInsert(child, textStats);
     ops.appendChild(child.id, node.id);
   }
-}
-
-function hasSameNodeShape(previous: SentNodeState, current: SentNodeState): boolean {
-  if (previous.id !== current.id || previous.type !== current.type) {
-    return false;
-  }
-
-  if (previous.children.length !== current.children.length) {
-    return false;
-  }
-
-  for (let i = 0; i < previous.children.length; i++) {
-    const previousChild = previous.children[i];
-    const currentChild = current.children[i];
-    if (!previousChild || !currentChild) {
-      return false;
-    }
-    if (!hasSameNodeShape(previousChild, currentChild)) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 function syncNodeStyle(
@@ -431,9 +549,6 @@ function syncNodeText(
   const previousTail = previousChars.slice(prefixLength).join("");
   const currentTail = currentChars.slice(prefixLength).join("");
 
-  // Rust text ops can only delete a byte range and append new text.
-  // A prefix diff keeps every edit expressible as:
-  // keep prefix -> delete old tail -> append new tail.
   if (previousTail.length > 0) {
     const startByte = textEncoder.encode(sharedPrefix).length;
     const endByte = startByte + textEncoder.encode(previousTail).length;
@@ -593,13 +708,11 @@ function dispatchToNode(node: Node, data: string): boolean {
   if (node.type === NODE_TYPE.Button) {
     const handlers = node.handlers;
 
-    // Enter and Space both activate buttons.
     if (data.includes("\r") || data.includes("\n") || data === " ") {
       handlers.onClick();
       return true;
     }
 
-    // Buttons can still handle other keys explicitly.
     if (handlers.onKeyDown) {
       handlers.onKeyDown(data);
       return true;
@@ -614,13 +727,11 @@ function dispatchToNode(node: Node, data: string): boolean {
 function handleKeyboardEvent(data: string): void {
   const focused = getFocusedNode();
 
-  // Focused controls get first chance to handle keyboard input.
   if (focused) {
     const handled = dispatchToNode(focused, data);
     if (handled) return;
   }
 
-  // Unhandled keys fall back to global shortcuts.
   const globalHandler = globalKeyHandlers.get(data);
   if (globalHandler) {
     globalHandler();
@@ -628,7 +739,6 @@ function handleKeyboardEvent(data: string): void {
 }
 
 function handleMouseEvent(data: string): void {
-  // Mouse packets arrive as: \x1b[<btn;x;y[Mm]
   const i = data.indexOf("<") + 1;
   const j = data.length - 1;
   if (i <= 0 || j <= i) return;
@@ -649,7 +759,7 @@ function handleMouseEvent(data: string): void {
   }
 
   const btn = rawBtn & 0b11;
-  const x = rawX - 1; // 1-indexed -> 0-indexed
+  const x = rawX - 1;
   const y = rawY - 1;
 
   const isLeftButton = btn === 0;
@@ -678,7 +788,6 @@ function handleMouseEvent(data: string): void {
 }
 
 function handleInput(data: string): void {
-  // Ctrl+Q exits the app.
   if (data === "\x11") {
     quitFn?.();
     return;
@@ -703,166 +812,35 @@ function handleInput(data: string): void {
 function handleResize(): void {
   api.update_terminal_size();
 
-  // Reallocate the Rust buffer before updating signals, because those updates re-render.
   api.free_buffer();
   api.init_buffer();
 
-  // After the buffer is ready, publish the new size so the next render sees it.
   terminalWidth(api.get_width());
   terminalHeight(api.get_height());
   spatialLookup = new Array(terminalWidth() * terminalHeight());
 }
 
-// --- Public API ---
-export function onKey(key: string, callback: () => void): void {
-  if (!globalKeyHandlers) {
-    globalKeyHandlers = new Map();
-  }
-  globalKeyHandlers.set(key, callback);
+let terminalWidth: Signal<number>;
+let terminalHeight: Signal<number>;
+let spatialLookup: (number | undefined)[];
+let nodeRegistry: Map<number, Node>;
+let globalKeyHandlers: Map<string, () => void>;
+let pressedNodeId: number | null = null;
+let isRunning = false;
+let quitFn: (() => void) | null = null;
+let ops: OpQueue;
+let previousSentTree: SentNodeState | null = null;
+
+const textEncoder = new TextEncoder();
+
+function getNodeAt(x: number, y: number): Node | undefined {
+  const id = spatialLookup[y * terminalWidth() + x];
+  return id !== undefined ? nodeRegistry.get(id) : undefined;
 }
 
-export function run(root: Node, options?: RunOptions): { quit: () => void } {
-  // 1. Initialize the Rust terminal state first so terminal size is available.
-  if (api.init_buffer() !== 1) {
-    throw new Error("Failed to initialize letui buffer");
+function ensureParentDir(path: string): void {
+  const parent = dirname(path);
+  if (parent !== "." && parent.length > 0) {
+    mkdirSync(parent, { recursive: true });
   }
-  if (api.init_letui() !== 1) {
-    api.free_buffer();
-    throw new Error("Failed to initialize letui terminal");
-  }
-  api.clear_tree_state();
-
-  // 2. Initialize JS runtime state after terminal size is known.
-  terminalWidth = $(api.get_width());
-  terminalHeight = $(api.get_height());
-  globalKeyHandlers = globalKeyHandlers ?? new Map();
-  nodeRegistry = new Map();
-  ops = new OpQueue();
-  previousSentTree = null;
-  spatialLookup = new Array(terminalWidth() * terminalHeight());
-  pressedNodeId = null;
-  isRunning = true;
-  let cleanedUp = false;
-
-  const stdinHandler = (data: Buffer) => handleInput(data.toString());
-  const writeDebugMetrics = () => {
-    if (!options?.debug) return;
-    const metricsPath = resolveMetricsPath();
-    ensureParentDir(metricsPath);
-    const stats = formatMetrics();
-    writeFileSync(metricsPath, stats + "\n", "utf8");
-    console.log(stats);
-    logWriter.flush();
-  };
-  const cleanup = () => {
-    if (cleanedUp) return;
-    cleanedUp = true;
-    isRunning = false;
-    process.stdin.off("data", stdinHandler);
-    process.stdout.off("resize", handleResize);
-    process.off("SIGINT", handleSigint);
-    process.off("SIGTERM", handleSigterm);
-    process.off("uncaughtException", handleUncaughtException);
-    process.off("unhandledRejection", handleUnhandledRejection);
-
-    try {
-      api.clear_tree_state();
-    } catch {}
-    previousSentTree = null;
-
-    try {
-      api.free_buffer();
-    } catch {}
-
-    try {
-      api.deinit_letui();
-    } catch {}
-
-    writeDebugMetrics();
-  };
-  const exitWith = (code: number, error?: unknown) => {
-    cleanup();
-    if (error) {
-      console.error(error);
-    }
-    process.exit(code);
-  };
-  const handleSigint = () => exitWith(130);
-  const handleSigterm = () => exitWith(143);
-  const handleUncaughtException = (error: unknown) => exitWith(1, error);
-  const handleUnhandledRejection = (reason: unknown) => exitWith(1, reason);
-
-  // 3. Wire keyboard and mouse input.
-  process.stdin.on("data", stdinHandler);
-
-  // 4. Wire resize and process lifecycle handlers.
-  process.stdout.on("resize", handleResize);
-  process.on("SIGINT", handleSigint);
-  process.on("SIGTERM", handleSigterm);
-  process.on("uncaughtException", handleUncaughtException);
-  process.on("unhandledRejection", handleUnhandledRejection);
-
-  // 5. Start the reactive render loop.
-  ff(() => {
-    if (!isRunning) return;
-
-    // Reading these signals subscribes the render loop to resize and focus changes.
-    terminalWidth();
-    terminalHeight();
-    getFocusVersion();
-
-    const frameStart = options?.debug ? startFrame() : 0;
-
-    // Reset JS-side frame bookkeeping before rebuilding the snapshot.
-    spatialLookup.fill(undefined);
-    nodeRegistry.clear();
-    const sentTree = buildSentNodeState(root);
-
-    // Reuse Rust-side node state when the tree shape is unchanged.
-    // If structure changes, rebuild once; otherwise send only style and text deltas.
-    const opsStart = options?.debug ? startPhase() : 0;
-    const textSyncStart = options?.debug ? startPhase() : 0;
-    const textStats: TextOpStats = { opCount: 0, byteCount: 0 };
-    if (!previousSentTree || !hasSameNodeShape(previousSentTree, sentTree)) {
-      api.clear_tree_state();
-      queueFullTreeInsert(sentTree, textStats);
-      ops.setRoot(sentTree.id);
-    } else {
-      syncRenderTree(previousSentTree, sentTree, textStats);
-    }
-    const opBuffer = ops.drain();
-    if (opBuffer.length > 0) {
-      api.apply_ops(opBuffer, opBuffer.length);
-    }
-    if (options?.debug) endOps(opsStart);
-    if (options?.debug) {
-      endTextSync(textSyncStart, textStats.opCount, textStats.byteCount);
-    }
-    previousSentTree = sentTree;
-
-    // Phase 2: Rust layout and paint.
-    const renderStart = options?.debug ? startPhase() : 0;
-    api.render();
-    if (options?.debug) endRender(renderStart);
-
-    // Phase 3: Copy measured frames back into JS nodes.
-    const syncStart = options?.debug ? startPhase() : 0;
-    updateNodeFrames(root);
-    if (options?.debug) endSync(syncStart);
-
-    // Phase 4: Flush the rendered buffer to the terminal.
-    const flushStart = options?.debug ? startPhase() : 0;
-    api.flush();
-    if (options?.debug) endFlush(flushStart);
-
-    if (options?.debug) endFrame(frameStart);
-  });
-
-  // 6. Expose a shared quit path.
-  quitFn = () => {
-    cleanup();
-    process.exit(0);
-  };
-
-  return { quit: quitFn };
 }

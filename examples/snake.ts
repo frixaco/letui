@@ -1,6 +1,6 @@
 // Snake demo: grid game state machine rendered through reusable text cells.
 
-import { Column, Row, Text, $, ff, onKey, run } from "../index.ts";
+import { Column, Row, Text, $, ff, onKey, run } from "@";
 
 // --- Request/Result types ---
 

@@ -1,38 +1,9 @@
-/** Keyboard input parser that normalizes terminal chunks into text mutations. */
+/**
+ * Keyboard input parser that normalizes terminal chunks into text mutations.
+ */
 
 import { prepareTextInput } from "./text";
 
-// --- Internal state ---
-const IGNORED_INPUT_CONTROL_PATTERN = /[\x00-\x09\x0B\x0C\x0E-\x1F]/;
-
-// --- Request/Result types ---
-type InputChunkOp =
-  | { type: "insert"; text: string }
-  | { type: "backspace" }
-  | { type: "newline" };
-
-export type InputDispatchTarget = {
-  getText: () => string;
-  setText: (value: string) => void;
-  multiline: boolean;
-  onChange?: (value: string) => void;
-  onSubmit?: (value: string) => void;
-};
-
-// --- Helpers ---
-function deletePreviousCodepoint(text: string): string {
-  const chars = Array.from(text);
-  chars.pop();
-  return chars.join("");
-}
-
-function pushInsertOp(ops: InputChunkOp[], buffer: string[]): void {
-  if (buffer.length === 0) return;
-  ops.push({ type: "insert", text: buffer.join("") });
-  buffer.length = 0;
-}
-
-// --- Public API ---
 export function parseInputChunk(data: string): InputChunkOp[] {
   const normalized = prepareTextInput(data).text;
   const ops: InputChunkOp[] = [];
@@ -122,4 +93,31 @@ export function dispatchInputChunk(
 
   commitDraft();
   return handled;
+}
+
+type InputChunkOp =
+  | { type: "insert"; text: string }
+  | { type: "backspace" }
+  | { type: "newline" };
+
+const IGNORED_INPUT_CONTROL_PATTERN = /[\x00-\x09\x0B\x0C\x0E-\x1F]/;
+
+export type InputDispatchTarget = {
+  getText: () => string;
+  setText: (value: string) => void;
+  multiline: boolean;
+  onChange?: (value: string) => void;
+  onSubmit?: (value: string) => void;
+};
+
+function deletePreviousCodepoint(text: string): string {
+  const chars = Array.from(text);
+  chars.pop();
+  return chars.join("");
+}
+
+function pushInsertOp(ops: InputChunkOp[], buffer: string[]): void {
+  if (buffer.length === 0) return;
+  ops.push({ type: "insert", text: buffer.join("") });
+  buffer.length = 0;
 }
