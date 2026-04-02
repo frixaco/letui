@@ -21,8 +21,15 @@ pub extern "C" fn clear_tree_state() -> c_int {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
+    match apply_ops_inner(ops_ptr, ops_len) {
+        Some(()) => 1,
+        None => 0,
+    }
+}
+
+fn apply_ops_inner(ops_ptr: *const u8, ops_len: u32) -> Option<()> {
     if ops_len > 0 && ops_ptr.is_null() {
-        return 0;
+        return None;
     }
 
     let ops_bytes: &[u8] = if ops_len == 0 {
@@ -32,55 +39,38 @@ pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
     };
 
     if ops_bytes.is_empty() {
-        return 1;
+        return Some(());
     }
 
     let mut state = TREE_STATE.lock().unwrap();
     let mut offset = 0usize;
     while offset < ops_bytes.len() {
-        let header = match ops_bytes.get(offset..offset + RECORD_HEADER_SIZE) {
-            Some(header) => header,
-            None => return 0,
-        };
+        let header = ops_bytes.get(offset..offset + RECORD_HEADER_SIZE)?;
 
-        let op = match OpType::from_u8(header[0]) {
-            Some(op) => op,
-            None => return 0,
-        };
+        let op = OpType::from_u8(header[0])?;
 
-        let node_id = match header[OP_SIZE..OP_SIZE + ID_SIZE].try_into().ok() {
-            Some(bytes) => u32::from_le_bytes(bytes),
-            None => return 0,
-        };
+        let node_id = u32::from_le_bytes(header[OP_SIZE..OP_SIZE + ID_SIZE].try_into().ok()?);
 
-        let payload_len = match header[OP_SIZE + ID_SIZE..RECORD_HEADER_SIZE]
-            .try_into()
-            .ok()
-        {
-            Some(bytes) => u32::from_le_bytes(bytes) as usize,
-            None => return 0,
-        };
+        let payload_len = u32::from_le_bytes(
+            header[OP_SIZE + ID_SIZE..RECORD_HEADER_SIZE]
+                .try_into()
+                .ok()?,
+        ) as usize;
 
         offset += RECORD_HEADER_SIZE;
 
-        let payload = match ops_bytes.get(offset..offset + payload_len) {
-            Some(payload) => payload,
-            None => return 0,
-        };
+        let payload = ops_bytes.get(offset..offset + payload_len)?;
 
         match op {
             OpType::AddNode => {
                 if payload.len() != KIND_SIZE {
-                    return 0;
+                    return None;
                 }
                 if state.nodes.contains_key(&node_id) {
-                    return 0;
+                    return None;
                 }
 
-                let kind = match NodeType::from_u8(payload[0]) {
-                    Some(kind) => kind,
-                    None => return 0,
-                };
+                let kind = NodeType::from_u8(payload[0])?;
 
                 state.nodes.insert(
                     node_id,
@@ -95,83 +85,63 @@ pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
                 );
             }
             OpType::SetText => {
-                let appended_text = match std::str::from_utf8(payload) {
-                    Ok(text) => text,
-                    Err(_) => return 0,
-                };
+                let appended_text = std::str::from_utf8(payload).ok()?;
 
-                let node = match state.nodes.get_mut(&node_id) {
-                    Some(node) => node,
-                    None => return 0,
-                };
+                let node = state.nodes.get_mut(&node_id)?;
 
                 if !node.kind.supports_text() {
-                    return 0;
+                    return None;
                 }
 
                 node.text.push_str(appended_text);
             }
             OpType::DeleteTextRange => {
                 if payload.len() != ID_SIZE * 2 {
-                    return 0;
+                    return None;
                 }
 
-                let start_byte = match payload[0..ID_SIZE].try_into().ok() {
-                    Some(bytes) => u32::from_le_bytes(bytes) as usize,
-                    None => return 0,
-                };
+                let start_byte = u32::from_le_bytes(payload[0..ID_SIZE].try_into().ok()?) as usize;
 
-                let end_byte = match payload[ID_SIZE..ID_SIZE * 2].try_into().ok() {
-                    Some(bytes) => u32::from_le_bytes(bytes) as usize,
-                    None => return 0,
-                };
+                let end_byte =
+                    u32::from_le_bytes(payload[ID_SIZE..ID_SIZE * 2].try_into().ok()?) as usize;
 
-                let node = match state.nodes.get_mut(&node_id) {
-                    Some(node) => node,
-                    None => return 0,
-                };
+                let node = state.nodes.get_mut(&node_id)?;
 
                 if !node.kind.supports_text() {
-                    return 0;
+                    return None;
                 }
 
                 if start_byte > end_byte || end_byte > node.text.len() {
-                    return 0;
+                    return None;
                 }
 
                 if !node.text.is_char_boundary(start_byte) || !node.text.is_char_boundary(end_byte)
                 {
-                    return 0;
+                    return None;
                 }
 
                 node.text.replace_range(start_byte..end_byte, "");
             }
             OpType::SetTextSpans => {
-                let node = match state.nodes.get_mut(&node_id) {
-                    Some(node) => node,
-                    None => return 0,
-                };
+                let node = state.nodes.get_mut(&node_id)?;
 
                 if node.kind != NodeType::Text {
-                    return 0;
+                    return None;
                 }
 
-                let spans = match parse_text_spans(payload, &node.text) {
-                    Some(spans) => spans,
-                    None => return 0,
-                };
+                let spans = parse_text_spans(payload, &node.text)?;
 
                 node.text_spans = spans;
             }
             OpType::SetRoot => {
                 if !payload.is_empty() || !state.nodes.contains_key(&node_id) {
-                    return 0;
+                    return None;
                 }
                 state.root_id = Some(node_id);
             }
             OpType::DeleteNode => {
                 if !payload.is_empty() || !state.nodes.contains_key(&node_id) {
-                    return 0;
+                    return None;
                 }
 
                 let deleted_node_parent_id = state.nodes.get(&node_id).and_then(|node| node.parent);
@@ -189,35 +159,28 @@ pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
             }
             OpType::AppendChild => {
                 if payload.len() != ID_SIZE {
-                    return 0;
+                    return None;
                 }
 
                 let parent_id = node_id;
-                let child_id = match payload.try_into().ok() {
-                    Some(bytes) => u32::from_le_bytes(bytes),
-                    None => return 0,
-                };
+                let child_id = u32::from_le_bytes(payload.try_into().ok()?);
 
                 if parent_id == child_id {
-                    return 0;
+                    return None;
                 }
 
                 if !state.nodes.contains_key(&parent_id) || !state.nodes.contains_key(&child_id) {
-                    return 0;
+                    return None;
                 }
 
-                let child_parent_id = match state.nodes.get(&child_id) {
-                    Some(child) => child.parent,
-                    None => return 0,
-                };
-                if child_parent_id.is_some() {
-                    return 0;
+                if state.nodes.get(&child_id)?.parent.is_some() {
+                    return None;
                 }
 
                 let mut current_parent_id = Some(parent_id);
                 while let Some(parent_id_in_chain) = current_parent_id {
                     if parent_id_in_chain == child_id {
-                        return 0;
+                        return None;
                     }
                     current_parent_id = state
                         .nodes
@@ -228,77 +191,44 @@ pub extern "C" fn apply_ops(ops_ptr: *const u8, ops_len: u32) -> c_int {
                 if let Some(parent) = state.nodes.get_mut(&parent_id) {
                     parent.children.push(child_id);
                 } else {
-                    return 0;
+                    return None;
                 }
 
                 if let Some(child) = state.nodes.get_mut(&child_id) {
                     child.parent = Some(parent_id);
                 } else {
-                    return 0;
+                    return None;
                 }
             }
             OpType::UpdateStyle => {
                 if payload.len() < 2 {
-                    return 0;
+                    return None;
                 }
 
                 let prop_name_len = payload[0] as usize;
                 if prop_name_len == 0 || payload.len() < 1 + prop_name_len + 1 {
-                    return 0;
+                    return None;
                 }
 
                 let prop_name_end = 1 + prop_name_len;
-                let prop_name = match std::str::from_utf8(&payload[1..prop_name_end]) {
-                    Ok(prop_name) => prop_name,
-                    Err(_) => return 0,
-                };
+                let prop_name = std::str::from_utf8(&payload[1..prop_name_end]).ok()?;
+                let prop = StyleProp::parse(prop_name)?;
+                let value =
+                    StyleValue::parse(payload[prop_name_end], &payload[prop_name_end + 1..])?;
 
-                let value_kind = payload[prop_name_end];
-                let value_payload = &payload[prop_name_end + 1..];
-
-                let node = match state.nodes.get_mut(&node_id) {
-                    Some(node) => node,
-                    None => return 0,
-                };
-
-                let success = match value_kind {
-                    STYLE_VALUE_RESET => {
-                        if !value_payload.is_empty() {
-                            return 0;
-                        }
-                        apply_style_reset(node, prop_name)
-                    }
-                    STYLE_VALUE_NUMBER => {
-                        let value = match parse_style_number(value_payload) {
-                            Some(value) => value,
-                            None => return 0,
-                        };
-                        apply_style_number(node, prop_name, value)
-                    }
-                    STYLE_VALUE_STRING => {
-                        let value = match parse_style_string(value_payload) {
-                            Some(value) => value,
-                            None => return 0,
-                        };
-                        apply_style_string(node, prop_name, value)
-                    }
-                    _ => return 0,
-                };
-
-                if !success {
-                    return 0;
-                }
+                let node = state.nodes.get_mut(&node_id)?;
+                apply_style(node, prop, value)?;
             }
         }
 
         offset += payload_len;
     }
 
-    1
+    Some(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum NodeType {
+pub enum NodeType {
     Row = 1,
     Column = 2,
     Button = 3,
@@ -318,17 +248,24 @@ impl NodeType {
         }
     }
 
-    pub(crate) fn supports_text(self) -> bool {
+    pub fn supports_text(self) -> bool {
         matches!(self, NodeType::Text | NodeType::Button | NodeType::Input)
     }
 
-    pub(crate) fn is_box(self) -> bool {
+    pub fn is_box(self) -> bool {
         matches!(self, NodeType::Row | NodeType::Column)
+    }
+
+    pub fn default_text_wrap(self) -> TextWrap {
+        match self {
+            NodeType::Text => TextWrap::Word,
+            NodeType::Input | NodeType::Button | NodeType::Row | NodeType::Column => TextWrap::None,
+        }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum Direction {
+pub enum Direction {
     Row = 1,
     Column = 2,
     RowReverse = 3,
@@ -336,7 +273,7 @@ pub(crate) enum Direction {
 }
 
 impl Direction {
-    pub(crate) fn from_node_type(kind: NodeType) -> Self {
+    pub fn from_node_type(kind: NodeType) -> Self {
         match kind {
             NodeType::Row => Direction::Row,
             NodeType::Column => Direction::Column,
@@ -346,7 +283,7 @@ impl Direction {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum BorderStyle {
+pub enum BorderStyle {
     None = 0,
     Rounded = 1,
     Squared = 2,
@@ -381,20 +318,126 @@ impl OpType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum TextWrap {
+enum StyleProp {
+    Gap,
+    Padding,
+    PaddingX,
+    PaddingY,
+    BorderTopWidth,
+    BorderRightWidth,
+    BorderBottomWidth,
+    BorderLeftWidth,
+    Background,
+    Foreground,
+    BorderTopColor,
+    BorderRightColor,
+    BorderBottomColor,
+    BorderLeftColor,
+    BorderStyle,
+    FlexGrow,
+    Direction,
+    Width,
+    Height,
+    MinWidth,
+    MinHeight,
+    MaxWidth,
+    MaxHeight,
+    Margin,
+    MarginX,
+    MarginY,
+    AlignItems,
+    JustifyContent,
+    AlignSelf,
+    FlexShrink,
+    FlexBasis,
+    FlexWrap,
+    Wrap,
+    TextOverflow,
+    Multiline,
+    CursorVisible,
+}
+
+impl StyleProp {
+    fn parse(name: &str) -> Option<Self> {
+        match name {
+            "gap" => Some(Self::Gap),
+            "padding" => Some(Self::Padding),
+            "paddingX" => Some(Self::PaddingX),
+            "paddingY" => Some(Self::PaddingY),
+            "borderTopWidth" => Some(Self::BorderTopWidth),
+            "borderRightWidth" => Some(Self::BorderRightWidth),
+            "borderBottomWidth" => Some(Self::BorderBottomWidth),
+            "borderLeftWidth" => Some(Self::BorderLeftWidth),
+            "background" => Some(Self::Background),
+            "foreground" => Some(Self::Foreground),
+            "borderTopColor" => Some(Self::BorderTopColor),
+            "borderRightColor" => Some(Self::BorderRightColor),
+            "borderBottomColor" => Some(Self::BorderBottomColor),
+            "borderLeftColor" => Some(Self::BorderLeftColor),
+            "borderStyle" => Some(Self::BorderStyle),
+            "flexGrow" => Some(Self::FlexGrow),
+            "direction" => Some(Self::Direction),
+            "width" => Some(Self::Width),
+            "height" => Some(Self::Height),
+            "minWidth" => Some(Self::MinWidth),
+            "minHeight" => Some(Self::MinHeight),
+            "maxWidth" => Some(Self::MaxWidth),
+            "maxHeight" => Some(Self::MaxHeight),
+            "margin" => Some(Self::Margin),
+            "marginX" => Some(Self::MarginX),
+            "marginY" => Some(Self::MarginY),
+            "alignItems" => Some(Self::AlignItems),
+            "justifyContent" => Some(Self::JustifyContent),
+            "alignSelf" => Some(Self::AlignSelf),
+            "flexShrink" => Some(Self::FlexShrink),
+            "flexBasis" => Some(Self::FlexBasis),
+            "flexWrap" => Some(Self::FlexWrap),
+            "wrap" => Some(Self::Wrap),
+            "textOverflow" => Some(Self::TextOverflow),
+            "multiline" => Some(Self::Multiline),
+            "cursorVisible" => Some(Self::CursorVisible),
+            _ => None,
+        }
+    }
+}
+
+enum StyleValue<'a> {
+    Reset,
+    Number(f64),
+    String(&'a str),
+}
+
+impl<'a> StyleValue<'a> {
+    fn parse(kind: u8, payload: &'a [u8]) -> Option<Self> {
+        match kind {
+            STYLE_VALUE_RESET => {
+                if !payload.is_empty() {
+                    return None;
+                }
+                Some(Self::Reset)
+            }
+            STYLE_VALUE_NUMBER => Some(Self::Number(parse_style_number(payload)?)),
+            STYLE_VALUE_STRING => Some(Self::String(parse_style_string(payload)?)),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TextWrap {
     None,
     Word,
     Char,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum TextOverflow {
+pub enum TextOverflow {
     Clip,
     Ellipsis,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum StyleDimension {
+pub enum StyleDimension {
     Auto,
     Points(f32),
 }
@@ -596,245 +639,178 @@ fn parse_text_spans(payload: &[u8], text: &str) -> Option<Vec<TextSpanData>> {
     Some(spans)
 }
 
-fn apply_style_reset(node: &mut NodeData, prop_name: &str) -> bool {
-    match prop_name {
-        "gap" => node.style.gap = 0.0,
-        "padding" => {
-            node.style.padding_x = 0.0;
-            node.style.padding_y = 0.0;
+fn apply_style(node: &mut NodeData, prop: StyleProp, value: StyleValue<'_>) -> Option<()> {
+    match prop {
+        StyleProp::Gap => apply_f32(&mut node.style.gap, 0.0, value),
+        StyleProp::Padding => {
+            apply_axis_pair_value(&mut node.style.padding_x, &mut node.style.padding_y, value)
         }
-        "paddingX" => node.style.padding_x = 0.0,
-        "paddingY" => node.style.padding_y = 0.0,
-        "borderTopWidth" => node.style.border.top.width = 0.0,
-        "borderRightWidth" => node.style.border.right.width = 0.0,
-        "borderBottomWidth" => node.style.border.bottom.width = 0.0,
-        "borderLeftWidth" => node.style.border.left.width = 0.0,
-        "background" => node.style.bg = DEFAULT_BG,
-        "foreground" => node.style.fg = DEFAULT_FG,
-        "borderTopColor" => node.style.border.top.color = DEFAULT_BG,
-        "borderRightColor" => node.style.border.right.color = DEFAULT_BG,
-        "borderBottomColor" => node.style.border.bottom.color = DEFAULT_BG,
-        "borderLeftColor" => node.style.border.left.color = DEFAULT_BG,
-        "borderStyle" => node.style.border.style = BorderStyle::None,
-        "flexGrow" => node.style.flex_grow = 0.0,
-        "direction" => {
-            if !node.kind.is_box() {
-                return false;
-            }
-            node.style.direction = Direction::from_node_type(node.kind);
+        StyleProp::PaddingX => apply_f32(&mut node.style.padding_x, 0.0, value),
+        StyleProp::PaddingY => apply_f32(&mut node.style.padding_y, 0.0, value),
+        StyleProp::BorderTopWidth => apply_f32(&mut node.style.border.top.width, 0.0, value),
+        StyleProp::BorderRightWidth => apply_f32(&mut node.style.border.right.width, 0.0, value),
+        StyleProp::BorderBottomWidth => apply_f32(&mut node.style.border.bottom.width, 0.0, value),
+        StyleProp::BorderLeftWidth => apply_f32(&mut node.style.border.left.width, 0.0, value),
+        StyleProp::Background => apply_u32(&mut node.style.bg, DEFAULT_BG, value),
+        StyleProp::Foreground => apply_u32(&mut node.style.fg, DEFAULT_FG, value),
+        StyleProp::BorderTopColor => apply_u32(&mut node.style.border.top.color, DEFAULT_BG, value),
+        StyleProp::BorderRightColor => {
+            apply_u32(&mut node.style.border.right.color, DEFAULT_BG, value)
         }
-        "width" => node.style.width = StyleDimension::Auto,
-        "height" => node.style.height = StyleDimension::Auto,
-        "minWidth" => node.style.min_width = StyleDimension::Auto,
-        "minHeight" => node.style.min_height = StyleDimension::Auto,
-        "maxWidth" => node.style.max_width = StyleDimension::Auto,
-        "maxHeight" => node.style.max_height = StyleDimension::Auto,
-        "margin" => {
-            node.style.margin_x = 0.0;
-            node.style.margin_y = 0.0;
+        StyleProp::BorderBottomColor => {
+            apply_u32(&mut node.style.border.bottom.color, DEFAULT_BG, value)
         }
-        "marginX" => node.style.margin_x = 0.0,
-        "marginY" => node.style.margin_y = 0.0,
-        "alignItems" => node.style.align_items = None,
-        "justifyContent" => node.style.justify_content = None,
-        "alignSelf" => node.style.align_self = None,
-        "flexShrink" => node.style.flex_shrink = 1.0,
-        "flexBasis" => node.style.flex_basis = StyleDimension::Auto,
-        "flexWrap" => node.style.flex_wrap = FlexWrap::NoWrap,
-        "wrap" => {
-            node.style.text_wrap = match node.kind {
-                NodeType::Text => TextWrap::Word,
-                NodeType::Input | NodeType::Button => TextWrap::None,
-                NodeType::Row | NodeType::Column => return false,
-            }
+        StyleProp::BorderLeftColor => {
+            apply_u32(&mut node.style.border.left.color, DEFAULT_BG, value)
         }
-        "textOverflow" => node.style.text_overflow = TextOverflow::Clip,
-        "multiline" => node.style.multiline = false,
-        "cursorVisible" => node.style.cursor_visible = false,
-        _ => return false,
+        StyleProp::BorderStyle => apply_border_style_value(&mut node.style.border.style, value),
+        StyleProp::FlexGrow => apply_f32(&mut node.style.flex_grow, 0.0, value),
+        StyleProp::Direction => apply_direction_value(node, value),
+        StyleProp::Width => apply_dimension(&mut node.style.width, value),
+        StyleProp::Height => apply_dimension(&mut node.style.height, value),
+        StyleProp::MinWidth => apply_dimension(&mut node.style.min_width, value),
+        StyleProp::MinHeight => apply_dimension(&mut node.style.min_height, value),
+        StyleProp::MaxWidth => apply_dimension(&mut node.style.max_width, value),
+        StyleProp::MaxHeight => apply_dimension(&mut node.style.max_height, value),
+        StyleProp::Margin => {
+            apply_axis_pair_value(&mut node.style.margin_x, &mut node.style.margin_y, value)
+        }
+        StyleProp::MarginX => apply_f32(&mut node.style.margin_x, 0.0, value),
+        StyleProp::MarginY => apply_f32(&mut node.style.margin_y, 0.0, value),
+        StyleProp::AlignItems => apply_align_items(&mut node.style.align_items, value),
+        StyleProp::JustifyContent => apply_justify_content(&mut node.style.justify_content, value),
+        StyleProp::AlignSelf => apply_align_items(&mut node.style.align_self, value),
+        StyleProp::FlexShrink => apply_f32(&mut node.style.flex_shrink, 1.0, value),
+        StyleProp::FlexBasis => apply_dimension(&mut node.style.flex_basis, value),
+        StyleProp::FlexWrap => apply_flex_wrap_value(&mut node.style.flex_wrap, value),
+        StyleProp::Wrap => apply_text_wrap_value(node, value),
+        StyleProp::TextOverflow => apply_text_overflow_value(&mut node.style.text_overflow, value),
+        StyleProp::Multiline => apply_bool(&mut node.style.multiline, value),
+        StyleProp::CursorVisible => apply_bool(&mut node.style.cursor_visible, value),
     }
-
-    true
 }
 
-fn apply_style_number(node: &mut NodeData, prop_name: &str, value: f64) -> bool {
-    match prop_name {
-        "gap" => match parse_style_f32(value) {
-            Some(value) => node.style.gap = value,
-            None => return false,
-        },
-        "padding" => match parse_style_f32(value) {
-            Some(value) => {
-                node.style.padding_x = value;
-                node.style.padding_y = value;
-            }
-            None => return false,
-        },
-        "paddingX" => match parse_style_f32(value) {
-            Some(value) => node.style.padding_x = value,
-            None => return false,
-        },
-        "paddingY" => match parse_style_f32(value) {
-            Some(value) => node.style.padding_y = value,
-            None => return false,
-        },
-        "borderTopWidth" => match parse_style_f32(value) {
-            Some(value) => node.style.border.top.width = value,
-            None => return false,
-        },
-        "borderRightWidth" => match parse_style_f32(value) {
-            Some(value) => node.style.border.right.width = value,
-            None => return false,
-        },
-        "borderBottomWidth" => match parse_style_f32(value) {
-            Some(value) => node.style.border.bottom.width = value,
-            None => return false,
-        },
-        "borderLeftWidth" => match parse_style_f32(value) {
-            Some(value) => node.style.border.left.width = value,
-            None => return false,
-        },
-        "background" => match parse_style_u32(value) {
-            Some(value) => node.style.bg = value,
-            None => return false,
-        },
-        "foreground" => match parse_style_u32(value) {
-            Some(value) => node.style.fg = value,
-            None => return false,
-        },
-        "borderTopColor" => match parse_style_u32(value) {
-            Some(value) => node.style.border.top.color = value,
-            None => return false,
-        },
-        "borderRightColor" => match parse_style_u32(value) {
-            Some(value) => node.style.border.right.color = value,
-            None => return false,
-        },
-        "borderBottomColor" => match parse_style_u32(value) {
-            Some(value) => node.style.border.bottom.color = value,
-            None => return false,
-        },
-        "borderLeftColor" => match parse_style_u32(value) {
-            Some(value) => node.style.border.left.color = value,
-            None => return false,
-        },
-        "flexGrow" => match parse_style_f32(value) {
-            Some(value) => node.style.flex_grow = value,
-            None => return false,
-        },
-        "width" => match parse_style_f32(value) {
-            Some(value) => node.style.width = StyleDimension::Points(value),
-            None => return false,
-        },
-        "height" => match parse_style_f32(value) {
-            Some(value) => node.style.height = StyleDimension::Points(value),
-            None => return false,
-        },
-        "minWidth" => match parse_style_f32(value) {
-            Some(value) => node.style.min_width = StyleDimension::Points(value),
-            None => return false,
-        },
-        "minHeight" => match parse_style_f32(value) {
-            Some(value) => node.style.min_height = StyleDimension::Points(value),
-            None => return false,
-        },
-        "maxWidth" => match parse_style_f32(value) {
-            Some(value) => node.style.max_width = StyleDimension::Points(value),
-            None => return false,
-        },
-        "maxHeight" => match parse_style_f32(value) {
-            Some(value) => node.style.max_height = StyleDimension::Points(value),
-            None => return false,
-        },
-        "margin" => match parse_style_f32(value) {
-            Some(value) => {
-                node.style.margin_x = value;
-                node.style.margin_y = value;
-            }
-            None => return false,
-        },
-        "marginX" => match parse_style_f32(value) {
-            Some(value) => node.style.margin_x = value,
-            None => return false,
-        },
-        "marginY" => match parse_style_f32(value) {
-            Some(value) => node.style.margin_y = value,
-            None => return false,
-        },
-        "flexShrink" => match parse_style_f32(value) {
-            Some(value) => node.style.flex_shrink = value,
-            None => return false,
-        },
-        "flexBasis" => match parse_style_f32(value) {
-            Some(value) => node.style.flex_basis = StyleDimension::Points(value),
-            None => return false,
-        },
-        "multiline" => node.style.multiline = value != 0.0,
-        "cursorVisible" => node.style.cursor_visible = value != 0.0,
-        _ => return false,
+fn apply_f32(slot: &mut f32, reset: f32, value: StyleValue<'_>) -> Option<()> {
+    match value {
+        StyleValue::Reset => *slot = reset,
+        StyleValue::Number(value) => *slot = parse_style_f32(value)?,
+        StyleValue::String(_) => return None,
     }
-
-    true
+    Some(())
 }
 
-fn apply_style_string(node: &mut NodeData, prop_name: &str, value: &str) -> bool {
-    match prop_name {
-        "padding" => match parse_axis_pair(value) {
-            Some((x, y)) => {
-                node.style.padding_x = x;
-                node.style.padding_y = y;
-            }
-            None => return false,
-        },
-        "margin" => match parse_axis_pair(value) {
-            Some((x, y)) => {
-                node.style.margin_x = x;
-                node.style.margin_y = y;
-            }
-            None => return false,
-        },
-        "borderStyle" => match parse_border_style(value) {
-            Some(value) => node.style.border.style = value,
-            None => return false,
-        },
-        "direction" => {
-            if !node.kind.is_box() {
-                return false;
-            }
+fn apply_u32(slot: &mut u32, reset: u32, value: StyleValue<'_>) -> Option<()> {
+    match value {
+        StyleValue::Reset => *slot = reset,
+        StyleValue::Number(value) => *slot = parse_style_u32(value)?,
+        StyleValue::String(_) => return None,
+    }
+    Some(())
+}
 
-            node.style.direction = match parse_direction(value) {
-                Some(value) => value,
-                None => return false,
-            };
+fn apply_bool(slot: &mut bool, value: StyleValue<'_>) -> Option<()> {
+    match value {
+        StyleValue::Reset => *slot = false,
+        StyleValue::Number(value) => *slot = value != 0.0,
+        StyleValue::String(_) => return None,
+    }
+    Some(())
+}
+
+fn apply_dimension(slot: &mut StyleDimension, value: StyleValue<'_>) -> Option<()> {
+    match value {
+        StyleValue::Reset => *slot = StyleDimension::Auto,
+        StyleValue::Number(value) => *slot = StyleDimension::Points(parse_style_f32(value)?),
+        StyleValue::String(_) => return None,
+    }
+    Some(())
+}
+
+fn apply_axis_pair_value(x: &mut f32, y: &mut f32, value: StyleValue<'_>) -> Option<()> {
+    match value {
+        StyleValue::Reset => {
+            *x = 0.0;
+            *y = 0.0;
         }
-        "alignItems" => match parse_align_items(value) {
-            Some(value) => node.style.align_items = Some(value),
-            None => return false,
-        },
-        "justifyContent" => match parse_justify_content(value) {
-            Some(value) => node.style.justify_content = Some(value),
-            None => return false,
-        },
-        "alignSelf" => match parse_align_items(value) {
-            Some(value) => node.style.align_self = Some(value),
-            None => return false,
-        },
-        "flexWrap" => match parse_flex_wrap(value) {
-            Some(value) => node.style.flex_wrap = value,
-            None => return false,
-        },
-        "wrap" => match parse_text_wrap(value) {
-            Some(value) => node.style.text_wrap = value,
-            None => return false,
-        },
-        "textOverflow" => match parse_text_overflow(value) {
-            Some(value) => node.style.text_overflow = value,
-            None => return false,
-        },
-        _ => return false,
+        StyleValue::Number(value) => {
+            let value = parse_style_f32(value)?;
+            *x = value;
+            *y = value;
+        }
+        StyleValue::String(value) => {
+            let (parsed_x, parsed_y) = parse_axis_pair(value)?;
+            *x = parsed_x;
+            *y = parsed_y;
+        }
+    }
+    Some(())
+}
+
+fn apply_align_items(slot: &mut Option<AlignItems>, value: StyleValue<'_>) -> Option<()> {
+    match value {
+        StyleValue::Reset => *slot = None,
+        StyleValue::String(value) => *slot = Some(parse_align_items(value)?),
+        StyleValue::Number(_) => return None,
+    }
+    Some(())
+}
+
+fn apply_justify_content(slot: &mut Option<AlignContent>, value: StyleValue<'_>) -> Option<()> {
+    match value {
+        StyleValue::Reset => *slot = None,
+        StyleValue::String(value) => *slot = Some(parse_justify_content(value)?),
+        StyleValue::Number(_) => return None,
+    }
+    Some(())
+}
+
+fn apply_border_style_value(slot: &mut BorderStyle, value: StyleValue<'_>) -> Option<()> {
+    match value {
+        StyleValue::Reset => *slot = BorderStyle::None,
+        StyleValue::String(value) => *slot = parse_border_style(value)?,
+        StyleValue::Number(_) => return None,
+    }
+    Some(())
+}
+
+fn apply_direction_value(node: &mut NodeData, value: StyleValue<'_>) -> Option<()> {
+    if !node.kind.is_box() {
+        return None;
     }
 
-    true
+    match value {
+        StyleValue::Reset => node.style.direction = Direction::from_node_type(node.kind),
+        StyleValue::String(value) => node.style.direction = parse_direction(value)?,
+        StyleValue::Number(_) => return None,
+    }
+    Some(())
+}
+
+fn apply_flex_wrap_value(slot: &mut FlexWrap, value: StyleValue<'_>) -> Option<()> {
+    match value {
+        StyleValue::Reset => *slot = FlexWrap::NoWrap,
+        StyleValue::String(value) => *slot = parse_flex_wrap(value)?,
+        StyleValue::Number(_) => return None,
+    }
+    Some(())
+}
+
+fn apply_text_wrap_value(node: &mut NodeData, value: StyleValue<'_>) -> Option<()> {
+    match value {
+        StyleValue::Reset => node.style.text_wrap = node.kind.default_text_wrap(),
+        StyleValue::String(value) => node.style.text_wrap = parse_text_wrap(value)?,
+        StyleValue::Number(_) => return None,
+    }
+    Some(())
+}
+
+fn apply_text_overflow_value(slot: &mut TextOverflow, value: StyleValue<'_>) -> Option<()> {
+    match value {
+        StyleValue::Reset => *slot = TextOverflow::Clip,
+        StyleValue::String(value) => *slot = parse_text_overflow(value)?,
+        StyleValue::Number(_) => return None,
+    }
+    Some(())
 }
 
 const STYLE_VALUE_RESET: u8 = 0;
@@ -854,62 +830,62 @@ const TEXT_SPAN_RECORD_SIZE: usize =
     ID_SIZE * 2 + TEXT_SPAN_ATTR_FLAGS_SIZE + TEXT_SPAN_COLOR_FLAGS_SIZE + ID_SIZE * 2;
 
 #[derive(Debug, Default)]
-pub(crate) struct TreeState {
-    pub(crate) root_id: Option<u32>,
-    pub(crate) nodes: HashMap<u32, NodeData>,
+pub struct TreeState {
+    pub root_id: Option<u32>,
+    pub nodes: HashMap<u32, NodeData>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct TextSpanData {
-    pub(crate) start_byte: usize,
-    pub(crate) end_byte: usize,
-    pub(crate) foreground: Option<u32>,
-    pub(crate) background: Option<u32>,
-    pub(crate) bold: bool,
-    pub(crate) italic: bool,
-    pub(crate) underline: bool,
+pub struct TextSpanData {
+    pub start_byte: usize,
+    pub end_byte: usize,
+    pub foreground: Option<u32>,
+    pub background: Option<u32>,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct NodeData {
-    pub(crate) kind: NodeType,
-    pub(crate) parent: Option<u32>,
-    pub(crate) children: Vec<u32>,
-    pub(crate) text: String,
-    pub(crate) text_spans: Vec<TextSpanData>,
-    pub(crate) style: NodeStyle,
+pub struct NodeData {
+    pub kind: NodeType,
+    pub parent: Option<u32>,
+    pub children: Vec<u32>,
+    pub text: String,
+    pub text_spans: Vec<TextSpanData>,
+    pub style: NodeStyle,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct BorderSide {
-    pub(crate) width: f32,
-    pub(crate) color: u32,
+pub struct BorderSide {
+    pub width: f32,
+    pub color: u32,
 }
 
 impl BorderSide {
-    pub(crate) const fn none() -> Self {
+    pub const fn none() -> Self {
         Self {
             width: 0.0,
             color: DEFAULT_BG,
         }
     }
 
-    pub(crate) fn is_visible(&self) -> bool {
+    pub fn is_visible(&self) -> bool {
         self.width > 0.0
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct ResolvedBorder {
-    pub(crate) top: BorderSide,
-    pub(crate) right: BorderSide,
-    pub(crate) bottom: BorderSide,
-    pub(crate) left: BorderSide,
-    pub(crate) style: BorderStyle,
+pub struct ResolvedBorder {
+    pub top: BorderSide,
+    pub right: BorderSide,
+    pub bottom: BorderSide,
+    pub left: BorderSide,
+    pub style: BorderStyle,
 }
 
 impl ResolvedBorder {
-    pub(crate) const fn none() -> Self {
+    pub const fn none() -> Self {
         Self {
             top: BorderSide::none(),
             right: BorderSide::none(),
@@ -919,14 +895,14 @@ impl ResolvedBorder {
         }
     }
 
-    pub(crate) fn has_any_visible_side(&self) -> bool {
+    pub fn has_any_visible_side(&self) -> bool {
         self.top.is_visible()
             || self.right.is_visible()
             || self.bottom.is_visible()
             || self.left.is_visible()
     }
 
-    pub(crate) fn is_uniform_full_box(&self) -> Option<(u32, BorderStyle)> {
+    pub fn is_uniform_full_box(&self) -> Option<(u32, BorderStyle)> {
         if !self.top.is_visible()
             || !self.right.is_visible()
             || !self.bottom.is_visible()
@@ -949,37 +925,37 @@ impl ResolvedBorder {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct NodeStyle {
-    pub(crate) gap: f32,
-    pub(crate) padding_x: f32,
-    pub(crate) padding_y: f32,
-    pub(crate) border: ResolvedBorder,
-    pub(crate) bg: u32,
-    pub(crate) fg: u32,
-    pub(crate) flex_grow: f32,
-    pub(crate) direction: Direction,
-    pub(crate) width: StyleDimension,
-    pub(crate) height: StyleDimension,
-    pub(crate) min_width: StyleDimension,
-    pub(crate) min_height: StyleDimension,
-    pub(crate) max_width: StyleDimension,
-    pub(crate) max_height: StyleDimension,
-    pub(crate) margin_x: f32,
-    pub(crate) margin_y: f32,
-    pub(crate) align_items: Option<AlignItems>,
-    pub(crate) justify_content: Option<AlignContent>,
-    pub(crate) align_self: Option<AlignItems>,
-    pub(crate) flex_shrink: f32,
-    pub(crate) flex_basis: StyleDimension,
-    pub(crate) flex_wrap: FlexWrap,
-    pub(crate) text_wrap: TextWrap,
-    pub(crate) text_overflow: TextOverflow,
-    pub(crate) multiline: bool,
-    pub(crate) cursor_visible: bool,
+pub struct NodeStyle {
+    pub gap: f32,
+    pub padding_x: f32,
+    pub padding_y: f32,
+    pub border: ResolvedBorder,
+    pub bg: u32,
+    pub fg: u32,
+    pub flex_grow: f32,
+    pub direction: Direction,
+    pub width: StyleDimension,
+    pub height: StyleDimension,
+    pub min_width: StyleDimension,
+    pub min_height: StyleDimension,
+    pub max_width: StyleDimension,
+    pub max_height: StyleDimension,
+    pub margin_x: f32,
+    pub margin_y: f32,
+    pub align_items: Option<AlignItems>,
+    pub justify_content: Option<AlignContent>,
+    pub align_self: Option<AlignItems>,
+    pub flex_shrink: f32,
+    pub flex_basis: StyleDimension,
+    pub flex_wrap: FlexWrap,
+    pub text_wrap: TextWrap,
+    pub text_overflow: TextOverflow,
+    pub multiline: bool,
+    pub cursor_visible: bool,
 }
 
 impl NodeStyle {
-    pub(crate) fn default_for_kind(kind: NodeType) -> Self {
+    pub fn default_for_kind(kind: NodeType) -> Self {
         Self {
             gap: 0.0,
             padding_x: 0.0,
@@ -1003,11 +979,7 @@ impl NodeStyle {
             flex_shrink: 1.0,
             flex_basis: StyleDimension::Auto,
             flex_wrap: FlexWrap::NoWrap,
-            text_wrap: match kind {
-                NodeType::Text => TextWrap::Word,
-                NodeType::Input | NodeType::Button => TextWrap::None,
-                NodeType::Row | NodeType::Column => TextWrap::None,
-            },
+            text_wrap: kind.default_text_wrap(),
             text_overflow: TextOverflow::Clip,
             multiline: false,
             cursor_visible: false,
@@ -1015,5 +987,5 @@ impl NodeStyle {
     }
 }
 
-pub(crate) static TREE_STATE: LazyLock<Mutex<TreeState>> =
+pub static TREE_STATE: LazyLock<Mutex<TreeState>> =
     LazyLock::new(|| Mutex::new(TreeState::default()));

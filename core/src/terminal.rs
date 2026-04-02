@@ -202,7 +202,8 @@ fn first_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64]) {
             SetBackgroundColor(hex_to_color(prev_bg))
         )
         .unwrap();
-        queue_text_attribute_delta(stdout, 0, prev_attrs);
+
+        queue_text_attr_update(stdout, 0, prev_attrs);
 
         for x in 0..w {
             let idx = row_start + x as usize * FIELDS_PER_CELL;
@@ -216,41 +217,12 @@ fn first_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64]) {
                 continue;
             }
 
-            let fg_changed = curr_fg != prev_fg;
-            let bg_changed = curr_bg != prev_bg;
-
-            match (fg_changed, bg_changed) {
-                (true, true) => {
-                    queue!(
-                        stdout,
-                        Print(&char_seq),
-                        SetForegroundColor(hex_to_color(curr_fg)),
-                        SetBackgroundColor(hex_to_color(curr_bg))
-                    )
-                    .unwrap();
-                }
-                (true, false) => {
-                    queue!(
-                        stdout,
-                        Print(&char_seq),
-                        SetForegroundColor(hex_to_color(curr_fg))
-                    )
-                    .unwrap();
-                }
-                (false, true) => {
-                    queue!(
-                        stdout,
-                        Print(&char_seq),
-                        SetBackgroundColor(hex_to_color(curr_bg))
-                    )
-                    .unwrap();
-                }
-                (false, false) => {
-                    queue!(stdout, Print(&char_seq)).unwrap();
-                }
+            if !char_seq.is_empty() {
+                queue!(stdout, Print(&char_seq)).unwrap();
             }
 
-            queue_text_attribute_delta(stdout, prev_attrs, curr_attrs);
+            queue_color_update(stdout, (prev_fg, prev_bg), (curr_fg, curr_bg));
+            queue_text_attr_update(stdout, prev_attrs, curr_attrs);
 
             prev_fg = curr_fg;
             prev_bg = curr_bg;
@@ -314,28 +286,8 @@ fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]
                 queue!(stdout, MoveTo(batch_start_x, y), Print(&char_seq)).unwrap();
             }
 
-            let fg_changed = curr_fg != prev_fg;
-            let bg_changed = curr_bg != prev_bg;
-
-            match (fg_changed, bg_changed) {
-                (true, true) => {
-                    queue!(
-                        stdout,
-                        SetForegroundColor(hex_to_color(curr_fg)),
-                        SetBackgroundColor(hex_to_color(curr_bg))
-                    )
-                    .unwrap();
-                }
-                (true, false) => {
-                    queue!(stdout, SetForegroundColor(hex_to_color(curr_fg))).unwrap();
-                }
-                (false, true) => {
-                    queue!(stdout, SetBackgroundColor(hex_to_color(curr_bg))).unwrap();
-                }
-                (false, false) => {}
-            }
-
-            queue_text_attribute_delta(stdout, prev_attrs, curr_attrs);
+            queue_color_update(stdout, (prev_fg, prev_bg), (curr_fg, curr_bg));
+            queue_text_attr_update(stdout, prev_attrs, curr_attrs);
 
             prev_fg = curr_fg;
             prev_bg = curr_bg;
@@ -360,7 +312,34 @@ fn hex_to_color(hex: u64) -> Color {
     }
 }
 
-fn queue_text_attribute_delta(stdout: &mut Stdout, previous: u8, current: u8) {
+fn queue_color_update(
+    stdout: &mut Stdout,
+    (previous_fg, previous_bg): (u64, u64),
+    (current_fg, current_bg): (u64, u64),
+) {
+    let fg_changed = current_fg != previous_fg;
+    let bg_changed = current_bg != previous_bg;
+
+    match (fg_changed, bg_changed) {
+        (true, true) => {
+            queue!(
+                stdout,
+                SetForegroundColor(hex_to_color(current_fg)),
+                SetBackgroundColor(hex_to_color(current_bg))
+            )
+            .unwrap();
+        }
+        (true, false) => {
+            queue!(stdout, SetForegroundColor(hex_to_color(current_fg))).unwrap();
+        }
+        (false, true) => {
+            queue!(stdout, SetBackgroundColor(hex_to_color(current_bg))).unwrap();
+        }
+        (false, false) => {}
+    }
+}
+
+fn queue_text_attr_update(stdout: &mut Stdout, previous: u8, current: u8) {
     // Terminal attrs are sticky state. Diff the previous/current bitfields and emit
     // only the ANSI toggles needed to reach the next style.
     let previous = previous & TEXT_ATTR_ALL;

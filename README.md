@@ -146,6 +146,7 @@ Benchmark snapshot (`2026-02-20`, `terminal-rerender`, `full` profile, PTY mode)
 - [x] Text styling: markdown and syntax highlighting API
 - [ ] Multi-line text input, text overflow and wrapping
 - [ ] Vertical and horizontal scrolling
+- [ ] Minimal theming support
 - [ ] Safer quit/cleanup when used as a library
 - [ ] Responsive examples for smaller terminal sizes
 - [ ] Persistent Taffy tree

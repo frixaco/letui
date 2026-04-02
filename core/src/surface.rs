@@ -1,4 +1,6 @@
-use crate::shared::{DEFAULT_FG, FIELDS_PER_CELL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE};
+use crate::shared::{
+    DEFAULT_FG, FIELDS_PER_CELL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
+};
 use crate::tree::{BorderStyle, ResolvedBorder, TextSpanData};
 
 pub fn text_span_attr_flags(span: &TextSpanData) -> u8 {
