@@ -2,5 +2,6 @@
 
 mod render;
 mod shared;
+mod surface;
 mod terminal;
 mod tree;
