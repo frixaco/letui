@@ -27,8 +27,8 @@ if (!existsSync(metricsPath)) {
 
 const metrics = readFileSync(metricsPath, "utf8");
 
-// Verify the metrics dump still reports each render phase we care about.
-for (const marker of ["serialize:", "textSync:", "rust:", "flush:"]) {
+// Verify the metrics dump still reports each top-level frame phase we care about.
+for (const marker of ["js:", "render:", "sync:", "flush:", "worst:"]) {
   if (!metrics.includes(marker)) {
     throw new Error(`Metrics output missing marker: ${marker}`);
   }

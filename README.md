@@ -115,7 +115,7 @@ bun run app.ts
 - Packaged native binaries for `darwin-arm64`, `linux-x64`, `win32-x64`
 - Only deps: `crossterm` and `taffy` Rust crates, everything written from scratch.
 
-Debug metrics split the frame into `serialize`, `textSync`, `rust`, `sync`, and `flush`. Enable with `run(root, { debug: true })`; output writes to `dump/metrics.txt`.
+Debug metrics split the frame into `js`, `render`, `sync`, and `flush`, plus a worst-frame breakdown. Enable with `run(root, { debug: true })`; output writes to `dump/metrics.txt`.
 
 ## Performance
 
@@ -146,10 +146,10 @@ Benchmark snapshot (`2026-02-20`, `terminal-rerender`, `full` profile, PTY mode)
 - [x] Text styling: markdown and syntax highlighting API
 - [ ] Multi-line text input, text overflow and wrapping
 - [ ] Vertical and horizontal scrolling
+- [ ] Persistent Taffy tree
 - [ ] Minimal theming support
 - [ ] Safer quit/cleanup when used as a library
 - [ ] Responsive examples for smaller terminal sizes
-- [ ] Persistent Taffy tree
 - [ ] Experiment: Neovim as text input via [Bun PTY](https://bun.com/docs/runtime/child-process#terminal-pty-support)
 - [ ] Refactor `flush` with `BatchWriter` pattern
 - [ ] Performance stats overlay

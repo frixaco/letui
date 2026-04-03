@@ -2,43 +2,73 @@
 
 import { writeFileSync } from "fs";
 
-// --- Request/Result types ---
-interface MetricsData {
-  frameTimes: number[];
-  opsTimes: number[];
-  textSyncTimes: number[];
-  textOpsCounts: number[];
-  textOpsBytes: number[];
-  renderTimes: number[];
-  syncTimes: number[];
-  flushTimes: number[];
-  frameCount: number;
-}
+// --- Primary abstraction ---
+export type FrameReason = "input" | "fetch" | "focus" | "resize" | "other";
 
+type FrameSample = {
+  id: number;
+  reason: FrameReason;
+  totalMs: number;
+  jsMs: number;
+  renderMs: number;
+  syncMs: number;
+  flushMs: number;
+  textOps: number;
+  textBytes: number;
+  ffiBytes: number;
+};
+
+export type FrameCounters = {
+  textOps: number;
+  textBytes: number;
+  ffiBytes: number;
+};
+
+// --- Domain vocabulary ---
 interface Stats {
   avg: number;
-  min: number;
+  p95: number;
   max: number;
-  p99: number;
+}
+
+interface MetricsSummary {
+  fps: number;
+  heapMB: number;
+  frameCount: number;
+  total: Stats;
+  js: Stats;
+  render: Stats;
+  sync: Stats;
+  flush: Stats;
+  textOps: Stats;
+  textBytes: Stats;
+  ffiBytes: Stats;
+  worstFrame: FrameSample | null;
 }
 
 // --- Internal state ---
-const metrics: MetricsData = {
-  frameTimes: [],
-  opsTimes: [],
-  textSyncTimes: [],
-  textOpsCounts: [],
-  textOpsBytes: [],
-  renderTimes: [],
-  syncTimes: [],
-  flushTimes: [],
-  frameCount: 0,
-};
+const MAX_SAMPLES = 200;
 
-const MAX_SAMPLES = 120;
+let frameSamples: FrameSample[] = [];
+let frameCount = 0;
+let nextFrameId = 1;
+let currentFrame: FrameSample | null = null;
+let worstFrame: FrameSample | null = null;
 
 // --- Public API ---
-export function startFrame(): number {
+export function startFrame(reason: FrameReason = "other"): number {
+  currentFrame = {
+    id: nextFrameId++,
+    reason,
+    totalMs: 0,
+    jsMs: 0,
+    renderMs: 0,
+    syncMs: 0,
+    flushMs: 0,
+    textOps: 0,
+    textBytes: 0,
+    ffiBytes: 0,
+  };
   return Bun.nanoseconds();
 }
 
@@ -46,48 +76,107 @@ export function startPhase(): number {
   return Bun.nanoseconds();
 }
 
-function recordValue(arr: number[], value: number): void {
-  arr.push(value);
-  if (arr.length > MAX_SAMPLES) arr.shift();
-}
-
-function recordTime(arr: number[], startTime: number): void {
-  const elapsed = (Bun.nanoseconds() - startTime) / 1_000_000;
-  recordValue(arr, elapsed);
-}
-
-export function endOps(startTime: number): void {
-  recordTime(metrics.opsTimes, startTime);
-}
-
-export function endTextSync(
-  startTime: number,
-  opsCount: number,
-  opsBytes: number,
-): void {
-  recordTime(metrics.textSyncTimes, startTime);
-  recordValue(metrics.textOpsCounts, opsCount);
-  recordValue(metrics.textOpsBytes, opsBytes);
+export function endJs(startTime: number, counters: FrameCounters): void {
+  if (!currentFrame) return;
+  currentFrame.jsMs = elapsedMs(startTime);
+  currentFrame.textOps = counters.textOps;
+  currentFrame.textBytes = counters.textBytes;
+  currentFrame.ffiBytes = counters.ffiBytes;
 }
 
 export function endRender(startTime: number): void {
-  recordTime(metrics.renderTimes, startTime);
+  if (!currentFrame) return;
+  currentFrame.renderMs = elapsedMs(startTime);
 }
 
 export function endSync(startTime: number): void {
-  recordTime(metrics.syncTimes, startTime);
+  if (!currentFrame) return;
+  currentFrame.syncMs = elapsedMs(startTime);
 }
 
 export function endFlush(startTime: number): void {
-  recordTime(metrics.flushTimes, startTime);
+  if (!currentFrame) return;
+  currentFrame.flushMs = elapsedMs(startTime);
 }
 
 export function endFrame(startTime: number): void {
-  recordTime(metrics.frameTimes, startTime);
-  metrics.frameCount++;
+  if (!currentFrame) return;
+
+  currentFrame.totalMs = elapsedMs(startTime);
+  frameCount++;
+
+  const sample = { ...currentFrame };
+  frameSamples.push(sample);
+  if (frameSamples.length > MAX_SAMPLES) {
+    frameSamples.shift();
+  }
+
+  if (!worstFrame || sample.totalMs >= worstFrame.totalMs) {
+    worstFrame = sample;
+  }
+
+  currentFrame = null;
+}
+
+export function getMetrics(): MetricsSummary {
+  const fps =
+    frameSamples.length > 0
+      ? Math.round(1000 / calculateStats(frameSamples.map((sample) => sample.totalMs)).avg)
+      : 0;
+
+  return {
+    fps,
+    heapMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+    frameCount,
+    total: calculateStats(frameSamples.map((sample) => sample.totalMs)),
+    js: calculateStats(frameSamples.map((sample) => sample.jsMs)),
+    render: calculateStats(frameSamples.map((sample) => sample.renderMs)),
+    sync: calculateStats(frameSamples.map((sample) => sample.syncMs)),
+    flush: calculateStats(frameSamples.map((sample) => sample.flushMs)),
+    textOps: calculateStats(frameSamples.map((sample) => sample.textOps)),
+    textBytes: calculateStats(frameSamples.map((sample) => sample.textBytes)),
+    ffiBytes: calculateStats(frameSamples.map((sample) => sample.ffiBytes)),
+    worstFrame,
+  };
+}
+
+export function formatMetrics(): string {
+  const m = getMetrics();
+  const worst = m.worstFrame;
+
+  return [
+    `${m.fps}fps | total ${fmt(m.total.avg)}ms avg (p95:${fmt(m.total.p95)} max:${fmt(m.total.max)}) | ${m.heapMB}MB | ${m.frameCount} frames`,
+    `js:     ${fmt(m.js.avg)}ms avg (p95:${fmt(m.js.p95)} max:${fmt(m.js.max)}) | text ops:${fmt(m.textOps.avg)} avg ${fmt(m.textOps.max)} max | text bytes:${fmt(m.textBytes.avg)} avg ${fmt(m.textBytes.max)} max | ffi bytes:${fmt(m.ffiBytes.avg)} avg ${fmt(m.ffiBytes.max)} max`,
+    `render: ${fmt(m.render.avg)}ms avg (p95:${fmt(m.render.p95)} max:${fmt(m.render.max)})`,
+    `sync:   ${fmt(m.sync.avg)}ms avg (p95:${fmt(m.sync.p95)} max:${fmt(m.sync.max)})`,
+    `flush:  ${fmt(m.flush.avg)}ms avg (p95:${fmt(m.flush.p95)} max:${fmt(m.flush.max)})`,
+    formatWorstFrame(worst),
+  ].join("\n");
+}
+
+export function resetMetrics(): void {
+  frameSamples = [];
+  frameCount = 0;
+  nextFrameId = 1;
+  currentFrame = null;
+  worstFrame = null;
+}
+
+export const DEFAULT_METRICS_PATH = "dump/metrics.txt";
+
+export function resolveMetricsPath(): string {
+  return process.env.LETUI_METRICS_PATH || DEFAULT_METRICS_PATH;
+}
+
+export function saveMetrics(filename: string = DEFAULT_METRICS_PATH): void {
+  writeFileSync(filename, formatMetrics() + "\n", "utf8");
 }
 
 // --- Internal algorithm ---
+function elapsedMs(startTime: number): number {
+  return (Bun.nanoseconds() - startTime) / 1_000_000;
+}
+
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
   if (sorted.length === 1) return sorted[0]!;
@@ -105,81 +194,25 @@ function percentile(sorted: number[], p: number): number {
   return lowValue + (highValue - lowValue) * weight;
 }
 
-function calculateStats(times: number[]): Stats {
-  if (times.length === 0) return { avg: 0, min: 0, max: 0, p99: 0 };
-  const sorted = [...times].sort((a, b) => a - b);
-  const avg = times.reduce((a, b) => a + b, 0) / times.length;
-  const min = sorted[0]!;
-  const max = sorted[sorted.length - 1]!;
-  const p99 = percentile(sorted, 0.99);
-  return { avg, min, max, p99 };
+function calculateStats(values: number[]): Stats {
+  if (values.length === 0) return { avg: 0, p95: 0, max: 0 };
+
+  const sorted = [...values].sort((a, b) => a - b);
+  return {
+    avg: values.reduce((sum, value) => sum + value, 0) / values.length,
+    p95: percentile(sorted, 0.95),
+    max: sorted[sorted.length - 1]!,
+  };
 }
 
 function fmt(n: number): string {
   return (Math.round(n * 10) / 10).toString();
 }
 
-export function getMetrics() {
-  const frame = calculateStats(metrics.frameTimes);
-  const opsStats = calculateStats(metrics.opsTimes);
-  const textSync = calculateStats(metrics.textSyncTimes);
-  const textOpsCount = calculateStats(metrics.textOpsCounts);
-  const textOpsBytes = calculateStats(metrics.textOpsBytes);
-  const render = calculateStats(metrics.renderTimes);
-  const sync = calculateStats(metrics.syncTimes);
-  const flush = calculateStats(metrics.flushTimes);
+function formatWorstFrame(sample: FrameSample | null): string {
+  if (!sample) {
+    return "worst: no frames";
+  }
 
-  const fps = frame.avg > 0 ? Math.round(1000 / frame.avg) : 0;
-  const heapMB = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
-
-  return {
-    fps,
-    heapMB,
-    frameCount: metrics.frameCount,
-    frame,
-    ops: opsStats,
-    serialize: opsStats,
-    textSync,
-    textOpsCount,
-    textOpsBytes,
-    render,
-    rust: render,
-    sync,
-    flush,
-  };
-}
-
-export function formatMetrics(): string {
-  const m = getMetrics();
-  const f = m.frame;
-  return [
-    `${m.fps}fps | ${fmt(f.avg)}ms avg (${fmt(f.min)}-${fmt(f.max)}, p99:${fmt(f.p99)}) | ${m.heapMB}MB | ${m.frameCount} frames`,
-    `serialize: ${fmt(m.serialize.avg)}ms (${fmt(m.serialize.min)}-${fmt(m.serialize.max)}) [tree→rust]`,
-    `textSync:  ${fmt(m.textSync.avg)}ms (${fmt(m.textSync.min)}-${fmt(m.textSync.max)}, p99:${fmt(m.textSync.p99)}) | ops:${fmt(m.textOpsCount.avg)} avg ${fmt(m.textOpsCount.max)} max | bytes:${fmt(m.textOpsBytes.avg)} avg ${fmt(m.textOpsBytes.max)} max`,
-    `rust:      ${fmt(m.rust.avg)}ms (${fmt(m.rust.min)}-${fmt(m.rust.max)}) [layout+paint]`,
-    `sync:      ${fmt(m.sync.avg)}ms (${fmt(m.sync.min)}-${fmt(m.sync.max)}) [frames→JS]`,
-    `flush:     ${fmt(m.flush.avg)}ms (${fmt(m.flush.min)}-${fmt(m.flush.max)}) [terminal I/O]`,
-  ].join("\n");
-}
-
-export function resetMetrics(): void {
-  metrics.frameTimes = [];
-  metrics.opsTimes = [];
-  metrics.textSyncTimes = [];
-  metrics.textOpsCounts = [];
-  metrics.textOpsBytes = [];
-  metrics.renderTimes = [];
-  metrics.syncTimes = [];
-  metrics.flushTimes = [];
-  metrics.frameCount = 0;
-}
-
-export const DEFAULT_METRICS_PATH = "dump/metrics.txt";
-
-export function resolveMetricsPath(): string {
-  return process.env.LETUI_METRICS_PATH || DEFAULT_METRICS_PATH;
-}
-
-export function saveMetrics(filename: string = DEFAULT_METRICS_PATH): void {
-  writeFileSync(filename, formatMetrics() + "\n", "utf8");
+  return `worst: frame ${sample.id} ${fmt(sample.totalMs)}ms = js ${fmt(sample.jsMs)} + render ${fmt(sample.renderMs)} + sync ${fmt(sample.syncMs)} + flush ${fmt(sample.flushMs)} | reason:${sample.reason}`;
 }

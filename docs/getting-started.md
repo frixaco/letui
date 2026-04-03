@@ -90,4 +90,4 @@ bun run examples/hello-world.ts
 - The starter snippet above matches [examples/hello-world.ts](/Users/frixa/Documents/letui/examples/hello-world.ts)
 - Current public props come from `StyleProps`, `BoxProps`, `TextProps`, `InputProps`, and `ButtonProps` in `src/types.ts`
 - Keep node references stable across updates when you can; same-shape trees let runtime send deltas instead of rebuilding Rust tree state
-- `run(root, { debug: true })` writes phase timings to `dump/metrics.txt`: `serialize`, `textSync`, `rust`, `sync`, `flush`
+- `run(root, { debug: true })` writes phase timings to `dump/metrics.txt`: `js`, `render`, `sync`, `flush`, plus worst-frame breakdown

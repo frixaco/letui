@@ -27,8 +27,7 @@ import {
   startFrame,
   endFrame,
   startPhase,
-  endOps,
-  endTextSync,
+  endJs,
   endRender,
   endSync,
   endFlush,
@@ -126,13 +125,12 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     getFocusVersion();
 
     const frameStart = options?.debug ? startFrame() : 0;
+    const jsStart = options?.debug ? startPhase() : 0;
 
     spatialLookup.fill(undefined);
     nodeRegistry.clear();
     const sentTree = buildSentNodeState(root);
 
-    const opsStart = options?.debug ? startPhase() : 0;
-    const textSyncStart = options?.debug ? startPhase() : 0;
     const textStats: TextOpStats = { opCount: 0, byteCount: 0 };
     if (!previousSentTree || !hasSameNodeShape(previousSentTree, sentTree)) {
       api.clear_tree_state();
@@ -145,9 +143,12 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     if (opBuffer.length > 0) {
       api.apply_ops(opBuffer, opBuffer.length);
     }
-    if (options?.debug) endOps(opsStart);
     if (options?.debug) {
-      endTextSync(textSyncStart, textStats.opCount, textStats.byteCount);
+      endJs(jsStart, {
+        textOps: textStats.opCount,
+        textBytes: textStats.byteCount,
+        ffiBytes: opBuffer.length,
+      });
     }
     previousSentTree = sentTree;
 

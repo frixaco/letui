@@ -48,11 +48,11 @@ run(root: Node, options?: { debug?: boolean }): { quit: () => void }
 
 Debug phase names in `dump/metrics.txt` match that pipeline:
 
-- `serialize`: JS tree snapshot + op generation
-- `textSync`: text op generation and byte counts
-- `rust`: Rust layout + paint
+- `js`: JS-side snapshot, diff, op drain, and FFI op submit
+- `render`: Rust layout + paint
 - `sync`: frame rectangles copied back into JS nodes
 - `flush`: terminal I/O
+- `worst`: single slowest recorded frame with exact bucket breakdown
 
 ## Global keyboard handlers
 

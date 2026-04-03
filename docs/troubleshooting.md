@@ -71,7 +71,6 @@ Checks:
 
 Interpretation:
 
-- high `serialize`: too much JS-side tree churn or effect work
-- high `textSync`: large text rewrites; prefer targeted `setText` on stable nodes
-- high `rust`: layout/paint cost in native side
+- high `js`: too much JS-side tree churn, text rewriting, or op submission work
+- high `render`: layout/paint cost in native side
 - high `flush`: terminal I/O bound; reduce changed surface area
