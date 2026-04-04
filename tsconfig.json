@@ -32,6 +32,6 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "include": ["index.ts", "src/**/*.ts", "src/**/*.d.ts"],
+  "include": ["index.ts", "src/**/*.ts", "src/**/*.d.ts", "examples/**/*.ts"],
   "exclude": ["legacy"]
 }

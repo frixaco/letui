@@ -1,8 +1,11 @@
 // Smoke demo: minimal input flow used by automated terminal verification.
+//
+// Data flow:
+// Input → onChange/onSubmit handlers → status signal → ff() effect → UI text updates
 
 import { $, COLORS, Column, Input, Text, ff, onKey, run } from "@";
 
-// --- Internal state ---
+// --- Supporting types ---
 
 const border = {
   color: COLORS.default.bg_highlight,
@@ -14,15 +17,12 @@ const focusBorder = {
   style: "square" as const,
 };
 
-function trace(event: string, value: string): void {
-  if (process.env.LETUI_SMOKE_TRACE === "1") {
-    process.stderr.write(`[smoke:${event}] ${value}\n`);
-  }
-}
+// --- Internal state ---
+
+const status = $("booting");
 
 // --- View state ---
 
-const status = $("booting");
 const title = Text({
   text: "letui smoke",
   foreground: COLORS.default.green,
@@ -56,6 +56,14 @@ const input = Input({
   onFocus: (self) => self.setStyle({ border: focusBorder }),
   onBlur: (self) => self.setStyle({ border }),
 });
+
+// --- Core algorithm ---
+
+function trace(event: string, value: string): void {
+  if (process.env.LETUI_SMOKE_TRACE === "1") {
+    process.stderr.write(`[smoke:${event}] ${value}\n`);
+  }
+}
 
 // --- Reactive sync ---
 

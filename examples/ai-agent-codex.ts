@@ -1,4 +1,8 @@
 // AI agent Codex demo: threaded chat UI with streamed responses and layout sync.
+//
+// Data flow:
+// User input → submitPrompt() → handleAgentStream() → SDK stream → handleThreadEvent() → UI update
+// Keyboard events → cycleFocus() / moveThreadSelection() → thread state → refreshView() → sync functions
 
 import { Codex, type Thread as CodexThread, type ThreadEvent, type Usage } from "@openai/codex-sdk";
 import { createHighlighter, type Highlighter } from "shiki";
@@ -6,11 +10,12 @@ import { createHighlighter, type Highlighter } from "shiki";
 import { Button, Column, Input, Row, Text, ff, onKey, run } from "@";
 import type { StyledText, TextSpan } from "@";
 
-// --- Request/Result types ---
+// --- Domain vocabulary ---
 
 type SidebarMode = "prompts" | "threads";
 type ThreadStatus = "idle" | "streaming" | "error";
 type ChatRole = "user" | "assistant" | "error";
+type PromptSectionTone = "accent" | "blue" | "lime";
 
 type ChatMessage = {
   id: string;
@@ -28,7 +33,6 @@ type AgentThreadState = {
   usage: Usage | null;
 };
 
-type PromptSectionTone = "accent" | "blue" | "lime";
 type StyledSegment = Omit<TextSpan, "start" | "end"> & { text: string };
 
 type InlineStyle = {
@@ -44,14 +48,19 @@ type MarkdownBlock =
   | { type: "paragraph"; text: string }
   | { type: "code"; lang: string | null; code: string };
 
-// --- Internal state ---
+// --- Primary abstraction ---
 
 const MODEL = "gpt-5.4";
 const REASONING: "medium" = "medium";
 const SHIKI_THEME = "github-dark";
+
+// --- Binary layout ---
+
 const STACKED_BREAKPOINT = 86;
 const COMPACT_BREAKPOINT = 108;
 const TIGHT_BREAKPOINT = 72;
+
+// --- Supporting types ---
 
 const THEME = {
   bg: 0x0b1220,
@@ -82,6 +91,8 @@ try {
   highlighter = null;
 }
 
+// --- Internal state ---
+
 let nextMessageId = 1;
 let sidebarMode: SidebarMode = "threads";
 let activeThreadIndex = 0;
@@ -92,7 +103,7 @@ let transcriptRows: ReturnType<typeof Text>[] = [];
 
 const codeBlockCache = new Map<string, StyledSegment[][]>();
 
-// --- Internal algorithm ---
+// --- Core algorithm ---
 
 function createThreadState(): AgentThreadState {
   return {

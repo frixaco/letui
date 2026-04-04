@@ -1,4 +1,8 @@
 // ANITRACK torrent search demo: keyboard-first results browsing with stream staging.
+//
+// Data flow:
+// Search input → fetchResults() → API call → toScrapeResults() → results signal update → ff() effect → result row rendering
+// Keyboard → selectNext/selectPrev → selectedIndex signal → ff() effect → UI highlight update
 
 import { existsSync } from "fs";
 import { COLORS, Button, Column, Input, Row, Text, $, ff, onKey, run } from "@";
@@ -8,7 +12,19 @@ import { join } from "path";
 import { saveMetrics } from "@/metrics";
 import type { StyledText, TextSpan } from "@";
 
-// --- Theme ---
+// --- Domain vocabulary ---
+
+type ScrapeResultItem = {
+  title: string;
+  size: string;
+  date: string;
+  magnet: string;
+};
+
+type StyledSegment = Omit<TextSpan, "start" | "end"> & { text: string };
+
+// --- Supporting types ---
+
 const T = {
   bg: COLORS.default.bg,
   bgAlt: COLORS.default.bg_alt,
@@ -26,8 +42,43 @@ const T = {
   badgeFg: COLORS.default.bg,
 } as const;
 
-// --- Styled text helpers ---
-type StyledSegment = Omit<TextSpan, "start" | "end"> & { text: string };
+const MPV_SOCKET_WAIT_MS = 5000;
+
+// --- Internal state ---
+
+const results = $<ScrapeResultItem[]>([]);
+const loading = $(false);
+const selectedIndex = $(0);
+const focusTarget = $<"input" | "results">("input");
+
+// --- Core algorithm ---
+
+function createMpvIpcPath(): string {
+  const suffix = `${process.pid}-${Date.now()}`;
+
+  if (process.platform === "win32") {
+    return `\\\\.\\pipe\\mpv-socket-${suffix}`;
+  }
+
+  return join(tmpdir(), `mpv-socket-${suffix}`);
+}
+
+async function waitForMpvIpc(path: string, timeoutMs: number): Promise<void> {
+  if (process.platform === "win32") {
+    await Bun.sleep(Math.min(timeoutMs, 150));
+    return;
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  while (!existsSync(path) && Date.now() < deadline) {
+    await Bun.sleep(50);
+  }
+}
+
+const loadingBar = LoadingBar({
+  dotColor: T.accent,
+  trackColor: T.border,
+});
 
 function textLength(text: string): number {
   return Array.from(text).length;
@@ -62,53 +113,11 @@ function styled(segments: readonly StyledSegment[]): StyledText {
   return { text, spans };
 }
 
-// --- Types ---
-type ScrapeResultItem = {
-  title: string;
-  size: string;
-  date: string;
-  magnet: string;
-};
-
-// --- State ---
-const results = $<ScrapeResultItem[]>([]);
-const loading = $(false);
-const selectedIndex = $(0);
-const focusTarget = $<"input" | "results">("input");
-const MPV_SOCKET_WAIT_MS = 5000;
-
-function createMpvIpcPath(): string {
-  const suffix = `${process.pid}-${Date.now()}`;
-
-  if (process.platform === "win32") {
-    return `\\\\.\\pipe\\mpv-socket-${suffix}`;
-  }
-
-  return join(tmpdir(), `mpv-socket-${suffix}`);
-}
-
-async function waitForMpvIpc(path: string, timeoutMs: number): Promise<void> {
-  if (process.platform === "win32") {
-    await Bun.sleep(Math.min(timeoutMs, 150));
-    return;
-  }
-
-  const deadline = Date.now() + timeoutMs;
-  while (!existsSync(path) && Date.now() < deadline) {
-    await Bun.sleep(50);
-  }
-}
-
-// --- Loading Bar ---
-const loadingBar = LoadingBar({
-  dotColor: T.accent,
-  trackColor: T.border,
-});
-
-// --- Parsers ---
 function toScrapeResults(payload: unknown): ScrapeResultItem[] {
   const rawResults =
-    payload && typeof payload === "object" ? (payload as any).results : undefined;
+    payload && typeof payload === "object"
+      ? (payload as any).results
+      : undefined;
   if (!Array.isArray(rawResults)) return [];
 
   const normalized: ScrapeResultItem[] = [];
@@ -124,13 +133,20 @@ function toScrapeResults(payload: unknown): ScrapeResultItem[] {
   return normalized;
 }
 
-function toStreamTarget(payload: unknown): { infoHash: string; fileIndex: number } | null {
+function toStreamTarget(
+  payload: unknown,
+): { infoHash: string; fileIndex: number } | null {
   if (!payload || typeof payload !== "object") return null;
   const details = (payload as any).details;
   if (!details || typeof details !== "object") return null;
   const infoHash = details.info_hash;
   const files = details.files;
-  if (typeof infoHash !== "string" || !Array.isArray(files) || files.length === 0) return null;
+  if (
+    typeof infoHash !== "string" ||
+    !Array.isArray(files) ||
+    files.length === 0
+  )
+    return null;
   return { infoHash, fileIndex: files.length - 1 };
 }
 
@@ -151,7 +167,6 @@ function focusResults(): void {
   blurSearchInputIfFocused();
 }
 
-// --- API ---
 async function fetchResults(query: string) {
   loading(true);
   loadingBar.start();
@@ -159,7 +174,8 @@ async function fetchResults(query: string) {
     const response = await fetch(
       `https://scrape.anitrack.frixaco.com/scrape?q=${encodeURIComponent(query)}`,
     );
-    if (!response.ok) throw new Error(`Search failed with status ${response.status}`);
+    if (!response.ok)
+      throw new Error(`Search failed with status ${response.status}`);
     const payload = await response.json();
     const parsedResults = toScrapeResults(payload);
     results(parsedResults);
@@ -180,11 +196,15 @@ async function fetchResults(query: string) {
 async function streamResult(magnet: string) {
   loadingBar.start();
   try {
-    const response = await fetch("https://rqbit.anitrack.frixaco.com/torrents", {
-      method: "post",
-      body: magnet,
-    });
-    if (!response.ok) throw new Error(`Stream failed with status ${response.status}`);
+    const response = await fetch(
+      "https://rqbit.anitrack.frixaco.com/torrents",
+      {
+        method: "post",
+        body: magnet,
+      },
+    );
+    if (!response.ok)
+      throw new Error(`Stream failed with status ${response.status}`);
     const payload = await response.json();
     const target = toStreamTarget(payload);
     if (!target) return;
@@ -204,11 +224,9 @@ async function streamResult(magnet: string) {
   }
 }
 
-// --- Borders ---
 const idleBorder = { color: T.border, style: "rounded" as const };
 const focusBorder = { color: T.active, style: "rounded" as const };
 
-// --- Header ---
 const headerTitle = Text({
   text: styled([
     { text: "ANITRACK", foreground: T.accent, bold: true },
@@ -258,7 +276,6 @@ const header = Column(
   ],
 );
 
-// --- Search Panel ---
 const searchInput = Input({
   placeholder: "search torrents...",
   border: idleBorder,
@@ -361,7 +378,11 @@ type ResultRow = {
   button: ReturnType<typeof Button>;
   title: ReturnType<typeof Text>;
   meta: ReturnType<typeof Text>;
-  setItem: (item: ScrapeResultItem, globalIdx: number, isActive: boolean) => void;
+  setItem: (
+    item: ScrapeResultItem,
+    globalIdx: number,
+    isActive: boolean,
+  ) => void;
 };
 
 const resultRows: ResultRow[] = [];
@@ -429,14 +450,25 @@ function createResultRow(): ResultRow {
         title.setText(
           styled([
             { text: marker, foreground: isActive ? T.active : T.muted },
-            { text: item.title, foreground: isActive ? T.active : T.fg, bold: isActive },
+            {
+              text: item.title,
+              foreground: isActive ? T.active : T.fg,
+              bold: isActive,
+            },
           ]),
         );
         meta.setText(
           styled([
-            { text: `  ${item.size}`, foreground: isActive ? T.accent : T.muted },
+            {
+              text: `  ${item.size}`,
+              foreground: isActive ? T.accent : T.muted,
+            },
             { text: "  ·  ", foreground: T.border },
-            { text: item.date, foreground: isActive ? T.accent : T.muted, italic: true },
+            {
+              text: item.date,
+              foreground: isActive ? T.accent : T.muted,
+              italic: true,
+            },
           ]),
         );
       }
@@ -509,7 +541,12 @@ ff(() => {
       : `${all.length} results · navigating with ${activePane === "results" ? "keyboard" : "mouse"}`,
   );
   resultsSummary.setStyle({
-    foreground: all.length === 0 ? T.muted : activePane === "results" ? T.active : T.accent,
+    foreground:
+      all.length === 0
+        ? T.muted
+        : activePane === "results"
+          ? T.active
+          : T.accent,
   });
 
   if (all !== lastResultsSnapshot) {

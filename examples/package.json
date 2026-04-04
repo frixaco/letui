@@ -1,7 +1,0 @@
-{
-  "dependencies": {
-    "@openai/codex-sdk": "^0.116.0",
-    "shiki": "^4.0.2"
-
-  }
-}

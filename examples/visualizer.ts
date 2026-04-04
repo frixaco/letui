@@ -1,4 +1,7 @@
 // Visualizer demo: animated color-field bars that resize with the viewport.
+//
+// Data flow:
+// Timer tick → tick signal increment → ff() effect → pattern function → bar flexGrow updates → viewport redraw
 
 import { Column, Row, Text } from "@/components";
 import { onKey, run } from "@/runtime";
@@ -6,7 +9,7 @@ import { $, ff } from "@/signals";
 import { saveMetrics } from "@/metrics";
 import type { Node } from "@/types";
 
-// --- Request/Result types ---
+// --- Domain vocabulary ---
 
 type Bar = {
   col: Node;
@@ -19,7 +22,13 @@ type Pattern = {
   fn: (barIndex: number, tick: number, totalBars: number) => number;
 };
 
-// --- Internal state ---
+// --- Binary layout ---
+
+const TICK_MS = 60;
+const MIN_FILL = 0.05;
+const MAX_FILL = 0.95;
+
+// --- Supporting types ---
 
 const THEME = {
   bg: 0x060b13,
@@ -33,11 +42,16 @@ const THEME = {
   rose: 0xff7d91,
 } as const;
 
-const TICK_MS = 60;
-const MIN_FILL = 0.05;
-const MAX_FILL = 0.95;
+// --- Internal state ---
 
-// --- Internal algorithm ---
+const tick = $(0);
+const paused = $(false);
+const patternIndex = $(0);
+const barCount = $(40);
+
+let bars = createBars(barCount());
+
+// --- Core algorithm ---
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -147,11 +161,6 @@ function createBars(count: number): Bar[] {
 
 // --- View state ---
 
-const tick = $(0);
-const paused = $(false);
-const patternIndex = $(0);
-const barCount = $(40);
-
 const title = Text({
   text: "VISUALIZER // TERMINAL COLOR FIELD",
   foreground: THEME.accent,
@@ -242,7 +251,6 @@ const root = Column(
 
 // --- Reactive sync ---
 
-let bars = createBars(barCount());
 viewport.setChildren?.(bars.map((bar) => bar.col));
 
 function syncBarsToViewportWidth(): void {

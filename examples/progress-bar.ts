@@ -1,17 +1,21 @@
 // Loading bar helper: animated single-dot progress track for demo screens.
+//
+// Data flow:
+// start() → timer interval → position/direction signals → ff() effect → Text node updates
+// stop() → clear timer → reset signals → UI clear
 
 import { Row, Text } from "@/components";
 import { $, ff } from "@/signals";
 import type { Node } from "@/types";
 import { log } from "@/debug";
 
-// --- Public API ---
+// --- Domain vocabulary ---
 
 export type LoadingBarProps = {
   dotColor: number;
   trackColor: number;
   flexGrow?: number;
-  interval?: number; // ms between frames
+  interval?: number;
 };
 
 export type LoadingBarController = {
@@ -20,17 +24,19 @@ export type LoadingBarController = {
   stop: () => void;
 };
 
+// --- Primary abstraction ---
+
 export function LoadingBar(props: LoadingBarProps): LoadingBarController {
   const { dotColor, trackColor, flexGrow = 1, interval = 80 } = props;
 
   // --- Internal state ---
 
   const position = $(0);
-  const direction = $(1); // 1 = right, -1 = left
+  const direction = $(1);
   const active = $(false);
   let timer: Timer | null = null;
 
-  // --- Internal algorithm ---
+  // --- Core algorithm ---
 
   const leftTrack = Text({
     text: "",
@@ -46,7 +52,6 @@ export function LoadingBar(props: LoadingBarProps): LoadingBarController {
 
   const node = Row({ flexGrow }, [leftTrack, dot, rightTrack]);
 
-  // React to position changes so the controller only updates visible segments.
   ff(() => {
     const isActive = active();
     const pos = position();
@@ -105,7 +110,6 @@ export function LoadingBar(props: LoadingBarProps): LoadingBarController {
     clearTimer();
     active(false);
     position(0);
-    // Clear all three segments
     leftTrack.setText?.("");
     dot.setText?.("");
     rightTrack.setText?.("");

@@ -1,8 +1,19 @@
 // Hello world playground: compact layout + style demo for the default letui surface.
+//
+// Data flow:
+// Keyboard input → count/modeIndex signal update → ff() effect → UI sync → styledText rendering
 
 import { COLORS, Column, Row, Text, $, ff, onKey, run } from "@";
 
-// --- Internal state ---
+// --- Domain vocabulary ---
+
+type Mode = {
+  label: string;
+  accent: number;
+  pulse: string;
+};
+
+// --- Supporting types ---
 
 const THEME = {
   bg: 0x0d1420,
@@ -19,16 +30,18 @@ const THEME = {
 
 const idleBorder = { color: THEME.border, style: "rounded" as const };
 
-const count = $(12);
-const modeIndex = $(0);
-
-const MODES = [
+const MODES: readonly Mode[] = [
   { label: "OBSERVE", accent: THEME.aqua, pulse: "stable delta sync" },
   { label: "SURGE", accent: THEME.amber, pulse: "heavier redraw budget" },
   { label: "RECOVER", accent: THEME.lime, pulse: "cooldown and reset path" },
 ] as const;
 
-// --- Internal algorithm ---
+// --- Internal state ---
+
+const count = $(12);
+const modeIndex = $(0);
+
+// --- Core algorithm ---
 
 function chip(label: string, background: number, foreground = THEME.bg) {
   return Text({
@@ -179,7 +192,7 @@ const root = Column(
 
 ff(() => {
   const currentCount = count();
-  const currentMode = MODES[modeIndex()] ?? MODES[0];
+  const currentMode = MODES[modeIndex()]!;
   const meterWidth = Math.max(12, Math.floor(heroPanel.frameWidth()) - 8);
 
   heroPanel.setStyle({

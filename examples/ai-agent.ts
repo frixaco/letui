@@ -1,4 +1,7 @@
 // AI agent prompt browser demo: static threads, styled text, keyboard navigation.
+//
+// Data flow:
+// Keyboard input → moveSelection() → selectedIndex update → refreshView() → renderPromptSlots() + renderTranscript()
 
 import {
   Column,
@@ -12,13 +15,7 @@ import {
 } from "@";
 import type { StyledText, TextSpan } from "@";
 
-// --- Request/Result types ---
-
-type PromptThread = {
-  title: string;
-  userPrompt: string;
-  sections: PromptSection[];
-};
+// --- Domain vocabulary ---
 
 type PromptSectionTone = "accent" | "blue" | "lime" | "amber";
 type InlineTone = PromptSectionTone | "text" | "muted";
@@ -38,6 +35,31 @@ type PromptSection = {
   tone: PromptSectionTone;
   paragraphs: PromptParagraph[];
 };
+
+type PromptThread = {
+  title: string;
+  userPrompt: string;
+  sections: PromptSection[];
+};
+
+type SpanStyle = Omit<TextSpan, "start" | "end">;
+type StyledSegment = SpanStyle & { text: string };
+
+// --- Supporting types ---
+
+const THEME = {
+  border: 0x3a3a5c,
+  text: 0xf0f0f0,
+  muted: 0x6e6e8a,
+  accent: 0xff5ef5,
+  blue: 0x00d4ff,
+  lime: 0x00ff9f,
+  amber: 0xffab40,
+  badgeFg: 0x050510,
+} as const;
+
+const idleBorder = { color: THEME.border, style: "rounded" as const };
+const focusBorder = { color: THEME.accent, style: "rounded" as const };
 
 // --- Internal state ---
 
@@ -279,22 +301,7 @@ const THREADS: PromptThread[] = [
   },
 ];
 
-const THEME = {
-  border: 0x3a3a5c,
-  text: 0xf0f0f0,
-  muted: 0x6e6e8a,
-  accent: 0xff5ef5,
-  blue: 0x00d4ff,
-  lime: 0x00ff9f,
-  amber: 0xffab40,
-  badgeFg: 0x050510,
-} as const;
-
-const idleBorder = { color: THEME.border, style: "rounded" as const };
-const focusBorder = { color: THEME.accent, style: "rounded" as const };
-
-type SpanStyle = Omit<TextSpan, "start" | "end">;
-type StyledSegment = SpanStyle & { text: string };
+// --- Core algorithm ---
 
 function textLength(text: string): number {
   return Array.from(text).length;

@@ -1,34 +1,18 @@
 // Typing speed demo: keyboard trainer with live accuracy and pacing feedback.
+//
+// Data flow:
+// Key press → handleTypedChar() → typed signal update → ff() effect → UI sync (stats, highlight, key states)
 
 import { Column, Row, Text, $, ff, onKey, run } from "@";
 
-// --- Request/Result types ---
+// --- Domain vocabulary ---
 
 type KeyNode = {
   value: string;
   node: ReturnType<typeof Text>;
 };
 
-// --- Internal state ---
-
-const PROMPTS = [
-  "we drift toward a calmer typing rhythm",
-  "small focused reps build real speed over time",
-  "split boards reward soft hands and clean timing",
-  "read ahead stay loose and keep the strokes light",
-];
-
-const LEFT_ROWS = [
-  ["q", "w", "f", "p", "b"],
-  ["a", "r", "s", "t", "g"],
-  ["z", "x", "c", "d", "v"],
-] as const;
-
-const RIGHT_ROWS = [
-  ["j", "l", "u", "y", ""],
-  ["m", "n", "e", "i", "o"],
-  ["k", "h", "", "", ""],
-] as const;
+// --- Binary layout ---
 
 const KEY_WIDTH = 3;
 const KEY_GAP = 1;
@@ -43,6 +27,8 @@ const HAND_BOX_HEIGHT = HAND_ROWS * 2 + HAND_PADDING_Y * 2 + 3;
 const KEYBOARD_WIDTH = HAND_BOX_WIDTH * 2 + HAND_GAP;
 const CLOCK_TICK_MS = 100;
 
+// --- Supporting types ---
+
 const THEME = {
   border: 0x2d4a60,
   text: 0xe7f1fb,
@@ -54,7 +40,34 @@ const THEME = {
   ink: 0x071017,
 } as const;
 
-// --- Internal algorithm ---
+const LEFT_ROWS = [
+  ["q", "w", "f", "p", "b"],
+  ["a", "r", "s", "t", "g"],
+  ["z", "x", "c", "d", "v"],
+] as const;
+
+const RIGHT_ROWS = [
+  ["j", "l", "u", "y", ""],
+  ["m", "n", "e", "i", "o"],
+  ["k", "h", "", "", ""],
+] as const;
+
+const PROMPTS = [
+  "we drift toward a calmer typing rhythm",
+  "small focused reps build real speed over time",
+  "split boards reward soft hands and clean timing",
+  "read ahead stay loose and keep the strokes light",
+];
+
+// --- Internal state ---
+
+const promptIndex = $(0);
+const typed = $("");
+const startedAt = $<number | null>(null);
+const finishedAt = $<number | null>(null);
+const now = $(Date.now());
+
+// --- Core algorithm ---
 
 function cyclePrompt(index: number): number {
   return (index + 1) % PROMPTS.length;
@@ -100,12 +113,6 @@ function createKeyRow(keys: readonly string[], store: KeyNode[]): ReturnType<typ
 }
 
 // --- View state ---
-
-const promptIndex = $(0);
-const typed = $("");
-const startedAt = $<number | null>(null);
-const finishedAt = $<number | null>(null);
-const now = $(Date.now());
 
 const title = Text({
   text: "typing speed // colemak mod dh",

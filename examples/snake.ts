@@ -1,8 +1,11 @@
 // Snake demo: grid game state machine rendered through reusable text cells.
+//
+// Data flow:
+// Timer tick → advance() → GameState update → ff() effect → cell paint → diffed render
 
 import { Column, Row, Text, $, ff, onKey, run } from "@";
 
-// --- Request/Result types ---
+// --- Domain vocabulary ---
 
 type Direction = "up" | "down" | "left" | "right";
 type Status = "running" | "paused" | "lost" | "won";
@@ -17,18 +20,21 @@ type GameState = {
   tick: number;
 };
 
-// --- Internal state ---
+// --- Binary layout ---
 
 const BOARD_WIDTH = 16;
 const BOARD_HEIGHT = 12;
 const TICK_MS = 130;
-const CELL_WIDTH = CELL_TEXT_WIDTH();
+const CELL_WIDTH = 2;
 const BOARD_RENDER_WIDTH = BOARD_WIDTH * CELL_WIDTH;
 const BOARD_FRAME_WIDTH = BOARD_RENDER_WIDTH + 2;
 
-function CELL_TEXT_WIDTH(): number {
-  return 2;
-}
+const EMPTY = 0;
+const BODY = 1;
+const HEAD = 2;
+const FOOD = 3;
+
+// --- Supporting types ---
 
 const THEME = {
   border: 0x23445d,
@@ -41,11 +47,6 @@ const THEME = {
   fail: 0xff5c7a,
   win: 0x7ed7ff,
 } as const;
-
-const EMPTY = 0;
-const BODY = 1;
-const HEAD = 2;
-const FOOD = 3;
 
 const CELL_TEXT = "  ";
 const EMPTY_STYLE = {
@@ -69,7 +70,14 @@ const FOOD_STYLE = {
   foreground: THEME.food,
 };
 
-// --- Internal algorithm ---
+// --- Internal state ---
+
+const state = $(createInitialState());
+let pendingDirection: Direction | null = null;
+let renderedKinds = new Uint8Array(BOARD_WIDTH * BOARD_HEIGHT);
+renderedKinds.fill(255);
+
+// --- Core algorithm ---
 
 function isSamePoint(a: Point, b: Point): boolean {
   return a.x === b.x && a.y === b.y;
@@ -196,9 +204,6 @@ function statusLabel(status: Status): string {
 
 // --- View state ---
 
-const state = $(createInitialState());
-let pendingDirection: Direction | null = null;
-
 const title = Text({
   text: "snake",
   foreground: THEME.accent,
@@ -291,9 +296,6 @@ function paintCell(x: number, y: number, kind: number): void {
     foreground: EMPTY_STYLE.foreground,
   });
 }
-
-let renderedKinds = new Uint8Array(BOARD_WIDTH * BOARD_HEIGHT);
-renderedKinds.fill(255);
 
 ff(() => {
   const current = state();
