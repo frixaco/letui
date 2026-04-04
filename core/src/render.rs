@@ -1,11 +1,11 @@
 //! Layout, frame extraction, and terminal painting for the Rust renderer.
 
 use crate::shared::{CURRENT_BUFFER, DEFAULT_BG, DEFAULT_FG, FRAMES, TERMINAL_SIZE};
-use crate::surface::{CellStyle, Surface, SurfaceRect, inherited_style};
-use crate::tree::{Direction, NodeData, NodeType, ResolvedBorder, StyleDimension};
-use crate::tree::{TREE_STATE, TextSpanData, TreeState};
+use crate::surface::{inherited_style, CellStyle, Surface, SurfaceRect};
+use crate::tree::{BoxSizing, Direction, NodeData, NodeType, ResolvedBorder, StyleDimension};
+use crate::tree::{TextSpanData, TreeState, TREE_STATE};
 use std::{cell::RefCell, os::raw::c_int};
-use taffy::{Overflow, Point, prelude::*};
+use taffy::{prelude::*, Overflow, Point};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn render() -> c_int {
@@ -180,6 +180,10 @@ fn node_data_to_style(data: &NodeData) -> Style {
         align_items: s.align_items,
         justify_content: s.justify_content,
         align_self: s.align_self,
+        box_sizing: match s.box_sizing {
+            BoxSizing::BorderBox => taffy::style::BoxSizing::BorderBox,
+            BoxSizing::ContentBox => taffy::style::BoxSizing::ContentBox,
+        },
         ..Default::default()
     };
 
@@ -390,6 +394,7 @@ fn paint_taffy_node(
             style
         }
         Content::Text { content, spans } => {
+            surface.draw_border(rect, chrome.border, style.bg);
             surface.draw_text(content_rect, &content, style, &spans);
             style
         }

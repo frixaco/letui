@@ -353,7 +353,7 @@ enum StyleProp {
     FlexWrap,
     Wrap,
     TextOverflow,
-    Multiline,
+    BoxSizing,
     CursorVisible,
 }
 
@@ -394,7 +394,7 @@ impl StyleProp {
             "flexWrap" => Some(Self::FlexWrap),
             "wrap" => Some(Self::Wrap),
             "textOverflow" => Some(Self::TextOverflow),
-            "multiline" => Some(Self::Multiline),
+            "boxSizing" => Some(Self::BoxSizing),
             "cursorVisible" => Some(Self::CursorVisible),
             _ => None,
         }
@@ -434,6 +434,12 @@ pub enum TextWrap {
 pub enum TextOverflow {
     Clip,
     Ellipsis,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BoxSizing {
+    BorderBox,
+    ContentBox,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -545,6 +551,14 @@ fn parse_text_overflow(value: &str) -> Option<TextOverflow> {
     match value {
         "clip" => Some(TextOverflow::Clip),
         "ellipsis" => Some(TextOverflow::Ellipsis),
+        _ => None,
+    }
+}
+
+fn parse_box_sizing(value: &str) -> Option<BoxSizing> {
+    match value {
+        "borderBox" => Some(BoxSizing::BorderBox),
+        "contentBox" => Some(BoxSizing::ContentBox),
         _ => None,
     }
 }
@@ -685,7 +699,7 @@ fn apply_style(node: &mut NodeData, prop: StyleProp, value: StyleValue<'_>) -> O
         StyleProp::FlexWrap => apply_flex_wrap_value(&mut node.style.flex_wrap, value),
         StyleProp::Wrap => apply_text_wrap_value(node, value),
         StyleProp::TextOverflow => apply_text_overflow_value(&mut node.style.text_overflow, value),
-        StyleProp::Multiline => apply_bool(&mut node.style.multiline, value),
+        StyleProp::BoxSizing => apply_box_sizing(&mut node.style.box_sizing, value),
         StyleProp::CursorVisible => apply_bool(&mut node.style.cursor_visible, value),
     }
 }
@@ -808,6 +822,15 @@ fn apply_text_overflow_value(slot: &mut TextOverflow, value: StyleValue<'_>) -> 
     match value {
         StyleValue::Reset => *slot = TextOverflow::Clip,
         StyleValue::String(value) => *slot = parse_text_overflow(value)?,
+        StyleValue::Number(_) => return None,
+    }
+    Some(())
+}
+
+fn apply_box_sizing(slot: &mut BoxSizing, value: StyleValue<'_>) -> Option<()> {
+    match value {
+        StyleValue::Reset => *slot = BoxSizing::BorderBox,
+        StyleValue::String(value) => *slot = parse_box_sizing(value)?,
         StyleValue::Number(_) => return None,
     }
     Some(())
@@ -950,7 +973,7 @@ pub struct NodeStyle {
     pub flex_wrap: FlexWrap,
     pub text_wrap: TextWrap,
     pub text_overflow: TextOverflow,
-    pub multiline: bool,
+    pub box_sizing: BoxSizing,
     pub cursor_visible: bool,
 }
 
@@ -981,7 +1004,7 @@ impl NodeStyle {
             flex_wrap: FlexWrap::NoWrap,
             text_wrap: kind.default_text_wrap(),
             text_overflow: TextOverflow::Clip,
-            multiline: false,
+            box_sizing: BoxSizing::BorderBox,
             cursor_visible: false,
         }
     }

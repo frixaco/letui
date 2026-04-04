@@ -413,6 +413,11 @@ function readSentStyleState(node: Node): SentStyleState {
     style.flexWrap = flexWrap;
   }
 
+  const boxSizing = props.boxSizing?.();
+  if (boxSizing !== undefined) {
+    style.boxSizing = boxSizing;
+  }
+
   const wrap = props.wrap?.();
   if (wrap !== undefined) {
     style.wrap = wrap;
@@ -421,11 +426,6 @@ function readSentStyleState(node: Node): SentStyleState {
   const textOverflow = props.textOverflow?.();
   if (textOverflow !== undefined) {
     style.textOverflow = textOverflow;
-  }
-
-  const multiline = props.multiline?.();
-  if (multiline === true) {
-    style.multiline = 1;
   }
 
   if (node.type === NODE_TYPE.Input && node.isFocused()) {

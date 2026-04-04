@@ -177,9 +177,9 @@ export type StylePropName =
   | "flexShrink"
   | "flexBasis"
   | "flexWrap"
+  | "boxSizing"
   | "wrap"
   | "textOverflow"
-  | "multiline"
   | "cursorVisible";
 
 export type StylePropValue = number | string | undefined;
@@ -217,9 +217,9 @@ export const EMITTED_STYLE_PROPS = [
   "flexShrink",
   "flexBasis",
   "flexWrap",
+  "boxSizing",
   "wrap",
   "textOverflow",
-  "multiline",
   "cursorVisible",
 ] as const satisfies readonly StylePropName[];
 

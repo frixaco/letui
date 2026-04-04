@@ -207,6 +207,7 @@ function createStyleSignals(input: StyleProps): _StyleProps {
     flexShrink: $(input.flexShrink),
     flexBasis: $(input.flexBasis),
     flexWrap: $(input.flexWrap),
+    boxSizing: $(input.boxSizing),
   };
 }
 

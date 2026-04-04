@@ -102,6 +102,7 @@ export type _StyleProps = {
   flexShrink: Signal<number | undefined>;
   flexBasis: Signal<number | undefined>;
   flexWrap: Signal<FlexWrap | undefined>;
+  boxSizing: Signal<"borderBox" | "contentBox" | undefined>;
 };
 
 export type _BoxProps = _StyleProps & {
@@ -156,6 +157,7 @@ export type StyleProps = {
   flexShrink?: number;
   flexBasis?: number;
   flexWrap?: FlexWrap;
+  boxSizing?: "borderBox" | "contentBox";
 };
 
 export type BoxProps = StyleProps & {
