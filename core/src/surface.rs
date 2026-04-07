@@ -1,8 +1,10 @@
 use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr;
 
 use crate::shared::{
-    DEFAULT_FG, FIELDS_PER_CELL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
+    CONTINUATION_CELL, DEFAULT_FG, FIELDS_PER_CELL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC,
+    TEXT_ATTR_UNDERLINE,
 };
 use crate::tree::{BorderStyle, ResolvedBorder, TextOverflow, TextSpanData, TextWrap};
 
@@ -14,8 +16,6 @@ pub fn wrap_text(
     wrap: TextWrap,
     overflow: TextOverflow,
 ) -> WrappedText {
-    let _ = spans;
-
     if max_height == 0 {
         return WrappedText { lines: vec![] };
     }
@@ -33,26 +33,22 @@ pub fn wrap_text(
         };
     }
 
-    let mut lines: Vec<String> = vec![];
-    let mut remaining = text;
+    let mut lines: Vec<WrappedLineDraft> = vec![];
+    let mut explicit_line_start_byte = 0usize;
 
-    loop {
-        let (explicit_line, rest) = match remaining.split_once('\n') {
-            Some((line, rest)) => (line, Some(rest)),
-            None => (remaining, None),
-        };
+    for explicit_line in text.split('\n') {
+        lines.extend(wrap_single_line(
+            explicit_line,
+            explicit_line_start_byte,
+            max_width,
+            wrap,
+            overflow,
+        ));
 
-        lines.extend(wrap_single_line(explicit_line, max_width, wrap, overflow));
-
-        match rest {
-            Some(rest) => {
-                remaining = rest;
-                if remaining.is_empty() {
-                    lines.push(String::new());
-                    break;
-                }
-            }
-            None => break,
+        explicit_line_start_byte += explicit_line.len();
+        // skip over the actual new line byte
+        if explicit_line_start_byte < text.len() {
+            explicit_line_start_byte += 1;
         }
     }
 
@@ -63,105 +59,331 @@ pub fn wrap_text(
 
     if overflow == TextOverflow::Ellipsis && clipped {
         if let Some(last_line) = lines.last_mut() {
-            apply_ellipsis(last_line, max_width);
+            apply_ellipsis(last_line, max_width as usize);
         }
     }
 
     WrappedText {
-        lines: lines
-            .into_iter()
-            .map(|text| WrappedLine {
-                text,
-                spans: vec![],
-            })
-            .collect(),
+        lines: finalize_wrapped_lines(lines, spans),
     }
 }
 
 fn wrap_single_line(
     text: &str,
+    line_start_byte: usize,
     max_width: u32,
     wrap: TextWrap,
     overflow: TextOverflow,
-) -> Vec<String> {
+) -> Vec<WrappedLineDraft> {
     if text.is_empty() {
-        return vec![String::new()];
+        return vec![WrappedLineDraft {
+            text: String::new(),
+            source_start_byte: line_start_byte,
+            source_end_byte: line_start_byte,
+        }];
     }
 
-    let clipped_horizontally = wrap == TextWrap::None && text.width() > max_width as usize;
+    let max_width = max_width as usize;
 
-    let mut guws = if wrap == TextWrap::Char {
-        UnicodeSegmentation::graphemes(text, true)
-            .map(|g| (g, g.width()))
-            .collect::<Vec<(&str, usize)>>()
-    } else {
-        text.split_word_bounds()
-            .map(|g| (g, g.width()))
-            .collect::<Vec<(&str, usize)>>()
+    match wrap {
+        TextWrap::None => clip_single_line(text, line_start_byte, max_width, overflow),
+        TextWrap::Char => wrap_by_graphemes(text, line_start_byte, max_width),
+        TextWrap::Word => wrap_by_words(text, line_start_byte, max_width),
+    }
+}
+
+fn clip_single_line(
+    text: &str,
+    line_start_byte: usize,
+    max_width: usize,
+    overflow: TextOverflow,
+) -> Vec<WrappedLineDraft> {
+    let graphemes = collect_graphemes(text);
+    let mut visible_end_byte = 0usize;
+    let mut visible_width = 0usize;
+
+    for grapheme in &graphemes {
+        if visible_width + grapheme.width > max_width {
+            break;
+        }
+        visible_width += grapheme.width;
+        visible_end_byte = grapheme.end_byte;
+    }
+
+    let mut line = WrappedLineDraft {
+        text: text[..visible_end_byte].to_owned(),
+        source_start_byte: line_start_byte,
+        source_end_byte: line_start_byte + visible_end_byte,
     };
 
-    let mut idx = 0;
-    let mut total_w = 0usize;
-    let mut line = String::new();
-    let mut lines: Vec<String> = vec![];
-
-    if guws[idx].1 > max_width as usize && wrap != TextWrap::Char {
-        guws = UnicodeSegmentation::graphemes(text, true)
-            .map(|g| (g, g.width()))
-            .collect::<Vec<(&str, usize)>>()
+    if visible_end_byte < text.len() && overflow == TextOverflow::Ellipsis {
+        apply_ellipsis(&mut line, max_width);
     }
 
-    while idx < guws.len() {
-        let (g, uw) = guws[idx];
-        total_w += uw;
-        line.push_str(g);
+    vec![line]
+}
 
-        let (_, nuw) = match guws.get(idx + 1) {
-            Some(&(ng, nuw)) => (ng, nuw),
-            None => ("", 0),
-        };
+fn wrap_by_graphemes(
+    text: &str,
+    line_start_byte: usize,
+    max_width: usize,
+) -> Vec<WrappedLineDraft> {
+    wrap_by_segments(text, line_start_byte, &collect_graphemes(text), max_width)
+}
 
-        let next_total_w = total_w + nuw;
+fn wrap_by_words(text: &str, line_start_byte: usize, max_width: usize) -> Vec<WrappedLineDraft> {
+    let words = collect_word_segments(text);
+    let mut lines = Vec::new();
+    let mut line_start = 0usize;
+    let mut line_end = 0usize;
+    let mut line_width = 0usize;
 
-        if next_total_w > max_width as usize {
-            lines.push(line);
-            line = String::new();
-            total_w = 0;
-
-            if wrap == TextWrap::None {
-                break;
+    for word in words {
+        if word.width > max_width {
+            if line_start < line_end {
+                push_wrapped_line(&mut lines, text, line_start_byte, line_start, line_end);
+                line_width = 0;
             }
+
+            let segment_text = &text[word.start_byte..word.end_byte];
+            lines.extend(wrap_by_graphemes(
+                segment_text,
+                line_start_byte + word.start_byte,
+                max_width,
+            ));
+            line_start = word.end_byte;
+            line_end = word.end_byte;
+            continue;
         }
 
-        idx += 1;
-    }
-
-    if !line.is_empty() {
-        lines.push(line);
-    }
-
-    if clipped_horizontally && overflow == TextOverflow::Ellipsis {
-        if let Some(last_line) = lines.last_mut() {
-            apply_ellipsis(last_line, max_width);
+        if line_start == line_end {
+            line_start = word.start_byte;
+            line_end = word.end_byte;
+            line_width = word.width;
+            continue;
         }
+
+        if line_width + word.width > max_width {
+            push_wrapped_line(&mut lines, text, line_start_byte, line_start, line_end);
+            line_start = word.start_byte;
+            line_end = word.end_byte;
+            line_width = word.width;
+            continue;
+        }
+
+        line_end = word.end_byte;
+        line_width += word.width;
+    }
+
+    if line_start < text.len() {
+        push_wrapped_line(&mut lines, text, line_start_byte, line_start, text.len());
+    }
+
+    if lines.is_empty() {
+        lines.push(WrappedLineDraft {
+            text: String::new(),
+            source_start_byte: line_start_byte,
+            source_end_byte: line_start_byte,
+        });
     }
 
     lines
 }
 
-fn apply_ellipsis(last_line: &mut String, max_width: u32) {
+fn wrap_by_segments(
+    text: &str,
+    line_start_byte: usize,
+    segments: &[TextSegment],
+    max_width: usize,
+) -> Vec<WrappedLineDraft> {
+    let mut lines = Vec::new();
+    let mut line_start = 0usize;
+    let mut line_width = 0usize;
+
+    for segment in segments {
+        if segment.width > max_width {
+            if line_start < segment.start_byte {
+                push_wrapped_line(
+                    &mut lines,
+                    text,
+                    line_start_byte,
+                    line_start,
+                    segment.start_byte,
+                );
+            }
+
+            push_wrapped_line(
+                &mut lines,
+                text,
+                line_start_byte,
+                segment.start_byte,
+                segment.end_byte,
+            );
+            line_start = segment.end_byte;
+            line_width = 0;
+            continue;
+        }
+
+        if line_width + segment.width > max_width && line_start < segment.start_byte {
+            push_wrapped_line(
+                &mut lines,
+                text,
+                line_start_byte,
+                line_start,
+                segment.start_byte,
+            );
+            line_start = segment.start_byte;
+            line_width = 0;
+        }
+
+        line_width += segment.width;
+    }
+
+    if line_start < text.len() {
+        push_wrapped_line(&mut lines, text, line_start_byte, line_start, text.len());
+    }
+
+    if lines.is_empty() {
+        lines.push(WrappedLineDraft {
+            text: String::new(),
+            source_start_byte: line_start_byte,
+            source_end_byte: line_start_byte,
+        });
+    }
+
+    lines
+}
+
+fn push_wrapped_line(
+    lines: &mut Vec<WrappedLineDraft>,
+    text: &str,
+    line_start_byte: usize,
+    start_byte: usize,
+    end_byte: usize,
+) {
+    lines.push(WrappedLineDraft {
+        text: text[start_byte..end_byte].to_owned(),
+        source_start_byte: line_start_byte + start_byte,
+        source_end_byte: line_start_byte + end_byte,
+    });
+}
+
+fn collect_graphemes(text: &str) -> Vec<TextSegment> {
+    UnicodeSegmentation::grapheme_indices(text, true)
+        .map(|(start_byte, grapheme)| TextSegment {
+            start_byte,
+            end_byte: start_byte + grapheme.len(),
+            width: grapheme.width(),
+        })
+        .collect()
+}
+
+fn collect_word_segments(text: &str) -> Vec<TextSegment> {
+    let mut byte_offset = 0usize;
+
+    let mut segments = Vec::new();
+    for boundary in text.split_word_bounds() {
+        let start_byte = byte_offset;
+        byte_offset += boundary.len();
+        segments.push(TextSegment {
+            start_byte,
+            end_byte: byte_offset,
+            width: boundary.width(),
+        });
+    }
+
+    segments
+}
+
+fn apply_ellipsis(last_line: &mut WrappedLineDraft, max_width: usize) {
     if max_width == 0 {
-        last_line.clear();
+        last_line.text.clear();
+        last_line.source_end_byte = last_line.source_start_byte;
         return;
     }
 
-    if last_line.width() >= max_width as usize {
-        last_line.pop();
-        last_line.push('…');
-        return;
+    let ellipsis_width = '…'.width().unwrap_or(1);
+    while !last_line.text.is_empty() && last_line.text.width() + ellipsis_width > max_width {
+        if let Some((last_grapheme_start, _)) =
+            UnicodeSegmentation::grapheme_indices(last_line.text.as_str(), true).last()
+        {
+            last_line.text.truncate(last_grapheme_start);
+            last_line.source_end_byte = last_line.source_start_byte + last_line.text.len();
+        } else {
+            last_line.text.clear();
+            last_line.source_end_byte = last_line.source_start_byte;
+            break;
+        }
     }
 
-    last_line.push('…');
+    if ellipsis_width <= max_width {
+        last_line.text.push('…');
+    }
+}
+
+fn finalize_wrapped_lines(
+    lines: Vec<WrappedLineDraft>,
+    spans: &[TextSpanData],
+) -> Vec<WrappedLine> {
+    let mut wrapped_lines = Vec::with_capacity(lines.len());
+    let mut span_index = 0usize;
+
+    for line in lines {
+        // skip spans that end before this line
+        while span_index < spans.len() && spans[span_index].end_byte <= line.source_start_byte {
+            span_index += 1;
+        }
+
+        let mut line_spans = Vec::new();
+        let mut current_index = span_index;
+
+        while current_index < spans.len() && spans[current_index].start_byte < line.source_end_byte
+        {
+            let span = &spans[current_index];
+            let overlap_start = span.start_byte.max(line.source_start_byte);
+            let overlap_end = span.end_byte.min(line.source_end_byte);
+
+            if overlap_start < overlap_end {
+                line_spans.push(TextSpanData {
+                    start_byte: overlap_start - line.source_start_byte,
+                    end_byte: overlap_end - line.source_start_byte,
+                    foreground: span.foreground,
+                    background: span.background,
+                    bold: span.bold,
+                    italic: span.italic,
+                    underline: span.underline,
+                });
+            }
+
+            if span.end_byte <= line.source_end_byte {
+                current_index += 1;
+                continue;
+            }
+
+            // we don't "consume" the span if it's part of next line
+            break;
+        }
+
+        wrapped_lines.push(WrappedLine {
+            text: line.text,
+            spans: line_spans,
+        });
+    }
+
+    wrapped_lines
+}
+
+struct WrappedLineDraft {
+    text: String,
+    source_start_byte: usize,
+    source_end_byte: usize,
+}
+
+#[derive(Clone, Copy)]
+struct TextSegment {
+    start_byte: usize,
+    width: usize,
+    end_byte: usize,
 }
 
 #[cfg(test)]
@@ -187,6 +409,34 @@ mod tests {
             .map(|line| (*line).to_owned())
             .collect::<Vec<_>>();
         assert_eq!(actual, expected);
+    }
+
+    fn test_span(start_byte: usize, end_byte: usize) -> TextSpanData {
+        TextSpanData {
+            start_byte,
+            end_byte,
+            foreground: Some(0xff00ff),
+            background: Some(0x112233),
+            bold: true,
+            italic: true,
+            underline: true,
+        }
+    }
+
+    fn assert_span(
+        span: &TextSpanData,
+        start_byte: usize,
+        end_byte: usize,
+        foreground: Option<u32>,
+        background: Option<u32>,
+    ) {
+        assert_eq!(span.start_byte, start_byte);
+        assert_eq!(span.end_byte, end_byte);
+        assert_eq!(span.foreground, foreground);
+        assert_eq!(span.background, background);
+        assert!(span.bold);
+        assert!(span.italic);
+        assert!(span.underline);
     }
 
     #[test]
@@ -368,6 +618,18 @@ mod tests {
     }
 
     #[test]
+    fn word_wrap_falls_back_to_char_wrapping_for_later_long_words() {
+        assert_lines(
+            "a alphabet",
+            3,
+            10,
+            TextWrap::Word,
+            TextOverflow::Clip,
+            &["a ", "alp", "hab", "et"],
+        );
+    }
+
+    #[test]
     fn word_wrap_applies_ellipsis_after_height_limit() {
         assert_lines(
             "one two three",
@@ -412,6 +674,105 @@ mod tests {
             TextWrap::None,
             TextOverflow::Ellipsis,
             &["…"],
+        );
+    }
+
+    #[test]
+    fn ellipsis_trims_grapheme_clusters_as_whole_units() {
+        assert_lines(
+            "e\u{301}\nx",
+            1,
+            1,
+            TextWrap::Char,
+            TextOverflow::Ellipsis,
+            &["…"],
+        );
+    }
+
+    #[test]
+    fn spans_follow_explicit_newline_splits() {
+        let wrapped = wrap_text(
+            "hello\nworld",
+            &[test_span(3, 8)],
+            10,
+            10,
+            TextWrap::Word,
+            TextOverflow::Clip,
+        );
+
+        assert_eq!(wrapped.lines.len(), 2);
+        assert_eq!(wrapped.lines[0].text, "hello");
+        assert_eq!(wrapped.lines[1].text, "world");
+        assert_eq!(wrapped.lines[0].spans.len(), 1);
+        assert_eq!(wrapped.lines[1].spans.len(), 1);
+        assert_span(
+            &wrapped.lines[0].spans[0],
+            3,
+            5,
+            Some(0xff00ff),
+            Some(0x112233),
+        );
+        assert_span(
+            &wrapped.lines[1].spans[0],
+            0,
+            2,
+            Some(0xff00ff),
+            Some(0x112233),
+        );
+    }
+
+    #[test]
+    fn spans_follow_soft_wrap_boundaries() {
+        let wrapped = wrap_text(
+            "abcdef",
+            &[test_span(2, 4)],
+            3,
+            10,
+            TextWrap::Char,
+            TextOverflow::Clip,
+        );
+
+        assert_eq!(wrapped.lines.len(), 2);
+        assert_eq!(wrapped.lines[0].text, "abc");
+        assert_eq!(wrapped.lines[1].text, "def");
+        assert_eq!(wrapped.lines[0].spans.len(), 1);
+        assert_eq!(wrapped.lines[1].spans.len(), 1);
+        assert_span(
+            &wrapped.lines[0].spans[0],
+            2,
+            3,
+            Some(0xff00ff),
+            Some(0x112233),
+        );
+        assert_span(
+            &wrapped.lines[1].spans[0],
+            0,
+            1,
+            Some(0xff00ff),
+            Some(0x112233),
+        );
+    }
+
+    #[test]
+    fn ellipsis_trims_spans_to_visible_prefix() {
+        let wrapped = wrap_text(
+            "abcdef",
+            &[test_span(1, 5)],
+            4,
+            2,
+            TextWrap::None,
+            TextOverflow::Ellipsis,
+        );
+
+        assert_eq!(wrapped.lines.len(), 1);
+        assert_eq!(wrapped.lines[0].text, "abc…");
+        assert_eq!(wrapped.lines[0].spans.len(), 1);
+        assert_span(
+            &wrapped.lines[0].spans[0],
+            1,
+            3,
+            Some(0xff00ff),
+            Some(0x112233),
         );
     }
 }
@@ -592,48 +953,57 @@ impl Surface<'_> {
         style: CellStyle,
         spans: &[TextSpanData],
     ) {
-        let CellStyle { fg, bg, attrs: _a } = style;
-        let x_start = rect.x as u16;
-        let y_row = rect.y as u16;
-
-        if spans.is_empty() {
-            for (i, ch) in text.chars().enumerate() {
-                self.set_cell(x_start + i as u16, y_row, printable_cell_char(ch), style);
-            }
+        let max_width = rect.w.max(0.0) as usize;
+        if max_width == 0 {
             return;
         }
 
+        let x_start = rect.x as u16;
+        let y_row = rect.y as u16;
+
         let mut span_index = 0usize;
-        for (char_index, (byte_start, ch)) in text.char_indices().enumerate() {
-            let col = x_start + char_index as u16;
+        let mut col_offset = 0usize;
+
+        for (byte_start, grapheme) in UnicodeSegmentation::grapheme_indices(text, true) {
+            let grapheme_width = grapheme.width();
+            if grapheme_width == 0 {
+                continue;
+            }
+
+            if col_offset + grapheme_width > max_width {
+                break;
+            }
+
+            let byte_end = byte_start + grapheme.len();
+            let col = x_start + col_offset as u16;
 
             while span_index < spans.len() && spans[span_index].end_byte <= byte_start {
                 span_index += 1;
             }
 
-            let mut resolved_fg = fg;
-            let mut resolved_bg = bg;
-            let mut attrs = 0u8;
+            let mut cell_style = style;
 
             if let Some(span) = spans.get(span_index)
-                && byte_start >= span.start_byte
-                && byte_start < span.end_byte
+                && span.start_byte < byte_end
+                && span.end_byte > byte_start
             {
-                resolved_fg = span.foreground.unwrap_or(fg);
-                resolved_bg = span.background.unwrap_or(bg);
-                attrs = text_span_attr_flags(span);
+                cell_style.fg = span.foreground.unwrap_or(style.fg);
+                cell_style.bg = span.background.unwrap_or(style.bg);
+                cell_style.attrs |= text_span_attr_flags(span);
             }
 
-            self.set_cell(
-                col,
-                y_row,
-                printable_cell_char(ch),
-                CellStyle {
-                    fg: resolved_fg,
-                    bg: resolved_bg,
-                    attrs,
-                },
-            );
+            self.set_cell(col, y_row, printable_grapheme_char(grapheme), cell_style);
+
+            for continuation_offset in 1..grapheme_width {
+                self.set_cell(
+                    col + continuation_offset as u16,
+                    y_row,
+                    CONTINUATION_CELL,
+                    cell_style,
+                );
+            }
+
+            col_offset += grapheme_width;
         }
     }
 
@@ -645,6 +1015,13 @@ impl Surface<'_> {
 
 fn printable_cell_char(ch: char) -> char {
     if ch.is_control() { ' ' } else { ch }
+}
+
+fn printable_grapheme_char(grapheme: &str) -> char {
+    grapheme
+        .chars()
+        .find(|ch| !ch.is_control())
+        .map_or(' ', printable_cell_char)
 }
 
 #[derive(Clone, Copy)]

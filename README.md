@@ -147,6 +147,7 @@ Benchmark snapshot (`2026-02-20`, `terminal-rerender`, `full` profile, PTY mode)
 - [x] Globals ops queue (see `./docs/FULL_RUST_AUTHORITY_SPEC.md`)
 - [x] Text styling: markdown and syntax highlighting API
 - [x] Text wrap, overflow, clipping, and explicit newline layout in the renderer
+- [ ] Full grapheme rendering support: store/render whole grapheme strings per lead cell instead of a single codepoint
 - [ ] Vertical and horizontal scrolling
 - [ ] Persistent Taffy tree
 - [ ] Better Input experience: multiline editing, shortcuts, cursor movement, scrolling, placeholder rendering, etc.
