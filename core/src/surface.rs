@@ -1,7 +1,345 @@
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
+
 use crate::shared::{
     DEFAULT_FG, FIELDS_PER_CELL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
 };
-use crate::tree::{BorderStyle, ResolvedBorder, TextSpanData};
+use crate::tree::{BorderStyle, ResolvedBorder, TextOverflow, TextSpanData, TextWrap};
+
+pub fn wrap_text(
+    text: &str,
+    spans: &[TextSpanData],
+    max_width: u32,
+    max_height: u32,
+    wrap: TextWrap,
+    overflow: TextOverflow,
+) -> WrappedText {
+    let _ = spans;
+
+    if text.is_empty() {
+        return WrappedText {
+            lines: vec![WrappedLine {
+                text: String::new(),
+                spans: vec![],
+            }],
+        };
+    }
+
+    if max_width == 0 {
+        return WrappedText { lines: vec![] };
+    }
+
+    let mut guws = if wrap == TextWrap::Char {
+        UnicodeSegmentation::graphemes(text, true)
+            .map(|g| (g, g.width()))
+            .collect::<Vec<(&str, usize)>>()
+    } else {
+        text.split_word_bounds()
+            .map(|g| (g, g.width()))
+            .collect::<Vec<(&str, usize)>>()
+    };
+
+    let mut idx = 0;
+    let mut total_w = 0usize;
+    let mut line = String::new();
+    let mut lines: Vec<String> = vec![];
+
+    if guws[idx].1 > max_width as usize && wrap != TextWrap::Char {
+        guws = UnicodeSegmentation::graphemes(text, true)
+            .map(|g| (g, g.width()))
+            .collect::<Vec<(&str, usize)>>()
+    }
+
+    while idx < guws.len() {
+        let (g, uw) = guws[idx];
+        total_w += uw;
+        line.push_str(g);
+
+        let (_, nuw) = match guws.get(idx + 1) {
+            Some(&(ng, nuw)) => (ng, nuw),
+            None => ("", 0),
+        };
+
+        let next_total_w = total_w + nuw;
+
+        if next_total_w > max_width as usize {
+            lines.push(line);
+            line = String::new();
+            total_w = 0;
+
+            if wrap == TextWrap::None {
+                break;
+            }
+        }
+
+        idx += 1;
+    }
+
+    if !line.is_empty() {
+        lines.push(line);
+    }
+
+    if wrap != TextWrap::None {
+        if lines.len() <= max_height as usize {
+            return WrappedText {
+                lines: lines
+                    .into_iter()
+                    .map(|text| WrappedLine {
+                        text,
+                        spans: vec![],
+                    })
+                    .collect(),
+            };
+        }
+
+        lines = lines[..max_height as usize].to_vec();
+    }
+
+    if overflow == TextOverflow::Ellipsis {
+        if let Some(last_line) = lines.last_mut() {
+            last_line.pop();
+            last_line.push('…');
+        }
+    }
+
+    WrappedText {
+        lines: lines
+            .into_iter()
+            .map(|text| WrappedLine {
+                text,
+                spans: vec![],
+            })
+            .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_lines(
+        text: &str,
+        max_width: u32,
+        max_height: u32,
+        wrap: TextWrap,
+        overflow: TextOverflow,
+        expected: &[&str],
+    ) {
+        let wrapped = wrap_text(text, &[], max_width, max_height, wrap, overflow);
+        let actual = wrapped
+            .lines
+            .into_iter()
+            .map(|line| line.text)
+            .collect::<Vec<_>>();
+        let expected = expected
+            .iter()
+            .map(|line| (*line).to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn empty_input_returns_one_empty_line() {
+        assert_lines("", 10, 10, TextWrap::Word, TextOverflow::Clip, &[""]);
+    }
+
+    #[test]
+    fn zero_height_returns_no_lines() {
+        assert_lines(
+            "hello world",
+            5,
+            0,
+            TextWrap::Char,
+            TextOverflow::Ellipsis,
+            &[],
+        );
+    }
+
+    #[test]
+    fn zero_width_returns_no_lines() {
+        assert_lines("hello world", 0, 5, TextWrap::Word, TextOverflow::Clip, &[]);
+    }
+
+    #[test]
+    fn wrap_none_leaves_fitting_text_untouched() {
+        assert_lines(
+            "hello",
+            10,
+            2,
+            TextWrap::None,
+            TextOverflow::Clip,
+            &["hello"],
+        );
+    }
+
+    #[test]
+    fn wrap_none_clips_without_reflow() {
+        assert_lines(
+            "abcdef",
+            4,
+            2,
+            TextWrap::None,
+            TextOverflow::Clip,
+            &["abcd"],
+        );
+    }
+
+    #[test]
+    fn wrap_none_uses_ellipsis_for_horizontal_overflow() {
+        assert_lines(
+            "abcdef",
+            4,
+            2,
+            TextWrap::None,
+            TextOverflow::Ellipsis,
+            &["abc…"],
+        );
+    }
+
+    #[test]
+    fn char_wrap_breaks_by_visible_width() {
+        assert_lines(
+            "abcdef",
+            2,
+            10,
+            TextWrap::Char,
+            TextOverflow::Clip,
+            &["ab", "cd", "ef"],
+        );
+    }
+
+    #[test]
+    fn char_wrap_preserves_spaces_as_regular_graphemes() {
+        assert_lines(
+            "ab cd",
+            3,
+            10,
+            TextWrap::Char,
+            TextOverflow::Clip,
+            &["ab ", "cd"],
+        );
+    }
+
+    #[test]
+    fn char_wrap_respects_grapheme_clusters() {
+        assert_lines(
+            "e\u{301}x",
+            1,
+            10,
+            TextWrap::Char,
+            TextOverflow::Clip,
+            &["e\u{301}", "x"],
+        );
+    }
+
+    #[test]
+    fn char_wrap_respects_full_width_characters() {
+        assert_lines(
+            "界ab",
+            2,
+            10,
+            TextWrap::Char,
+            TextOverflow::Clip,
+            &["界", "ab"],
+        );
+    }
+
+    #[test]
+    fn char_wrap_clips_when_height_is_exhausted() {
+        assert_lines(
+            "abcdefg",
+            3,
+            2,
+            TextWrap::Char,
+            TextOverflow::Clip,
+            &["abc", "def"],
+        );
+    }
+
+    #[test]
+    fn char_wrap_marks_vertical_overflow_with_ellipsis() {
+        assert_lines(
+            "abcdefg",
+            3,
+            2,
+            TextWrap::Char,
+            TextOverflow::Ellipsis,
+            &["abc", "de…"],
+        );
+    }
+
+    #[test]
+    fn word_wrap_breaks_on_word_boundaries() {
+        assert_lines(
+            "hello world",
+            8,
+            10,
+            TextWrap::Word,
+            TextOverflow::Clip,
+            &["hello ", "world"],
+        );
+    }
+
+    #[test]
+    fn word_wrap_packs_multiple_words_when_they_fit() {
+        assert_lines(
+            "ab cd ef",
+            5,
+            10,
+            TextWrap::Word,
+            TextOverflow::Clip,
+            &["ab cd", " ef"],
+        );
+    }
+
+    #[test]
+    fn word_wrap_drops_boundary_spaces_instead_of_leading_next_line() {
+        assert_lines(
+            "ab cd",
+            3,
+            10,
+            TextWrap::Word,
+            TextOverflow::Clip,
+            &["ab ", "cd"],
+        );
+    }
+
+    #[test]
+    fn word_wrap_falls_back_to_char_wrapping_for_long_words() {
+        assert_lines(
+            "alphabet",
+            3,
+            10,
+            TextWrap::Word,
+            TextOverflow::Clip,
+            &["alp", "hab", "et"],
+        );
+    }
+
+    #[test]
+    fn word_wrap_applies_ellipsis_after_height_limit() {
+        assert_lines(
+            "one two three",
+            4,
+            2,
+            TextWrap::Word,
+            TextOverflow::Ellipsis,
+            &["one ", "two…"],
+        );
+    }
+
+    #[test]
+    fn ellipsis_works_when_only_one_column_is_available() {
+        assert_lines(
+            "abcdef",
+            1,
+            1,
+            TextWrap::None,
+            TextOverflow::Ellipsis,
+            &["…"],
+        );
+    }
+}
 
 pub fn text_span_attr_flags(span: &TextSpanData) -> u8 {
     let mut flags = 0;
@@ -236,6 +574,7 @@ impl Surface<'_> {
         }
     }
 
+    // TODO: weird stuff happening here
     pub fn draw_cursor(&mut self, rect: SurfaceRect, text_len: f32, style: CellStyle) {
         self.set_cell((rect.x + text_len) as u16, rect.y as u16, '█', style);
     }
@@ -303,4 +642,15 @@ pub fn inherited_style(local_fg: u32, local_bg: u32, parent_fg: u32, parent_bg: 
         bg: if local_bg != 0 { local_bg } else { parent_bg },
         attrs: 0,
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct WrappedText {
+    pub lines: Vec<WrappedLine>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WrappedLine {
+    pub text: String,
+    pub spans: Vec<TextSpanData>,
 }

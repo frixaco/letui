@@ -1,11 +1,15 @@
 //! Layout, frame extraction, and terminal painting for the Rust renderer.
 
 use crate::shared::{CURRENT_BUFFER, DEFAULT_BG, DEFAULT_FG, FRAMES, TERMINAL_SIZE};
-use crate::surface::{inherited_style, CellStyle, Surface, SurfaceRect};
-use crate::tree::{BoxSizing, Direction, NodeData, NodeType, ResolvedBorder, StyleDimension};
-use crate::tree::{TextSpanData, TreeState, TREE_STATE};
+use crate::surface::{CellStyle, Surface, SurfaceRect, inherited_style, wrap_text};
+use crate::tree::{
+    BoxSizing, Direction, NodeData, NodeType, ResolvedBorder, StyleDimension, TextOverflow,
+    TextWrap,
+};
+use crate::tree::{TREE_STATE, TextSpanData, TreeState};
 use std::{cell::RefCell, os::raw::c_int};
-use taffy::{prelude::*, Overflow, Point};
+use taffy::{Overflow, Point, prelude::*};
+use unicode_width::UnicodeWidthStr;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn render() -> c_int {
@@ -109,6 +113,8 @@ enum Content {
     Text {
         content: String,
         spans: Vec<TextSpanData>,
+        wrap: TextWrap,
+        overflow: TextOverflow,
     },
     Button {
         label: String,
@@ -226,6 +232,8 @@ fn node_data_to_context(data: &NodeData) -> NodeContext {
         NodeType::Text => Content::Text {
             content: data.text.clone(),
             spans: data.text_spans.clone(),
+            wrap: data.style.text_wrap,
+            overflow: data.style.text_overflow,
         },
         NodeType::Button => Content::Button {
             label: data.text.clone(),
@@ -300,49 +308,61 @@ fn measure_function(
         return Size { width, height };
     }
 
-    let Some(text) = node_context.and_then(|ctx| ctx.text()) else {
+    let Some(node_context) = node_context else {
         return Size::ZERO;
     };
 
-    let text_width = text.chars().count() as f32;
-
     let max_width = match available_space.width {
-        AvailableSpace::Definite(w) => w,
-        _ => text_width,
+        AvailableSpace::Definite(width) => width.max(0.0) as u32,
+        _ => u32::MAX,
+    };
+    let max_height = match available_space.height {
+        AvailableSpace::Definite(height) => height.max(0.0) as u32,
+        _ => u32::MAX,
     };
 
-    if text_width <= max_width {
+    if let Content::Text {
+        content,
+        spans,
+        wrap,
+        overflow,
+    } = &node_context.content
+    {
+        let wrapped = wrap_text(content, spans, max_width, max_height, *wrap, *overflow);
+        let width = wrapped
+            .lines
+            .iter()
+            .map(|line| line.text.width())
+            .max()
+            .unwrap_or(0) as f32;
+
         return Size {
-            width: text_width,
-            height: 1.0,
+            width,
+            height: wrapped.lines.len() as f32,
         };
     }
 
-    let words: Vec<&str> = text.split_whitespace().collect();
-    let mut lines = 1;
-    let mut current_width: f32 = 0.0;
-    let mut max_line_width: f32 = 0.0;
-
-    for word in words {
-        let word_width = word.chars().count() as f32;
-        let needed_width = if current_width == 0.0 {
-            word_width
-        } else {
-            current_width + 1.0 + word_width
-        };
-
-        if needed_width > max_width {
-            lines += 1;
-            max_line_width = max_line_width.max(current_width);
-            current_width = word_width;
-        } else {
-            current_width = needed_width;
-        }
-    }
+    let Some(text) = node_context.text() else {
+        return Size::ZERO;
+    };
+    let wrapped = wrap_text(
+        text,
+        &[],
+        max_width,
+        max_height,
+        TextWrap::None,
+        TextOverflow::Clip,
+    );
+    let width = wrapped
+        .lines
+        .iter()
+        .map(|line| line.text.width())
+        .max()
+        .unwrap_or(0) as f32;
 
     Size {
-        width: max_line_width.max(max_width),
-        height: lines as f32,
+        width,
+        height: wrapped.lines.len() as f32,
     }
 }
 
@@ -393,9 +413,35 @@ fn paint_taffy_node(
             surface.draw_cursor(content_rect, content.chars().count() as f32, style);
             style
         }
-        Content::Text { content, spans } => {
+        Content::Text {
+            content,
+            spans,
+            wrap,
+            overflow,
+        } => {
             surface.draw_border(rect, chrome.border, style.bg);
-            surface.draw_text(content_rect, &content, style, &spans);
+            let wrapped = wrap_text(
+                content,
+                spans,
+                content_rect.w.max(0.0) as u32,
+                content_rect.h.max(0.0) as u32,
+                *wrap,
+                *overflow,
+            );
+
+            for (line_index, line) in wrapped.lines.iter().enumerate() {
+                surface.draw_text(
+                    SurfaceRect {
+                        x: content_rect.x,
+                        y: content_rect.y + line_index as f32,
+                        w: content_rect.w,
+                        h: 1.0,
+                    },
+                    &line.text,
+                    style,
+                    &line.spans,
+                );
+            }
             style
         }
         Content::Button { label } => {
