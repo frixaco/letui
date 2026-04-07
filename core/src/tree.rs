@@ -3,19 +3,16 @@
 use crate::shared::{
     DEFAULT_BG, DEFAULT_FG, TEXT_ATTR_ALL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
 };
-use std::{
-    collections::HashMap,
-    os::raw::c_int,
-    slice,
-    sync::{LazyLock, Mutex},
-};
-use taffy::prelude::*;
+use std::{cell::RefCell, collections::HashMap, os::raw::c_int, slice};
+use taffy::{Overflow, Point, prelude::*};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn clear_tree_state() -> c_int {
-    let mut state = TREE_STATE.lock().unwrap();
-    state.root_id = None;
-    state.nodes.clear();
+    TREE_STATE.with_borrow_mut(|state| {
+        state.tree.clear();
+        state.ids.clear();
+        state.root = None;
+    });
     1
 }
 
@@ -42,7 +39,10 @@ fn apply_ops_inner(ops_ptr: *const u8, ops_len: u32) -> Option<()> {
         return Some(());
     }
 
-    let mut state = TREE_STATE.lock().unwrap();
+    TREE_STATE.with_borrow_mut(|state| apply_ops_to_state(state, ops_bytes))
+}
+
+fn apply_ops_to_state(state: &mut TreeState, ops_bytes: &[u8]) -> Option<()> {
     let mut offset = 0usize;
     while offset < ops_bytes.len() {
         let header = ops_bytes.get(offset..offset + RECORD_HEADER_SIZE)?;
@@ -66,34 +66,33 @@ fn apply_ops_inner(ops_ptr: *const u8, ops_len: u32) -> Option<()> {
                 if payload.len() != KIND_SIZE {
                     return None;
                 }
-                if state.nodes.contains_key(&node_id) {
+                if state.ids.contains_key(&node_id) {
                     return None;
                 }
 
                 let kind = NodeType::from_u8(payload[0])?;
-
-                state.nodes.insert(
-                    node_id,
-                    NodeData {
-                        kind,
-                        parent: None,
-                        children: Vec::new(),
-                        text: String::new(),
-                        text_spans: Vec::new(),
-                        style: NodeStyle::default_for_kind(kind),
-                    },
-                );
+                let ctx = NodeContext {
+                    id: node_id,
+                    kind,
+                    text: String::new(),
+                    text_spans: Vec::new(),
+                    style: NodeStyle::default_for_kind(kind),
+                };
+                let taffy_style = node_context_to_taffy_style(&ctx);
+                let taffy_id = state.tree.new_leaf_with_context(taffy_style, ctx).unwrap();
+                state.ids.insert(node_id, taffy_id);
             }
             OpType::SetText => {
                 let appended_text = std::str::from_utf8(payload).ok()?;
+                let taffy_id = *state.ids.get(&node_id)?;
+                let ctx = state.tree.get_node_context_mut(taffy_id)?;
 
-                let node = state.nodes.get_mut(&node_id)?;
-
-                if !node.kind.supports_text() {
+                if !ctx.kind.supports_text() {
                     return None;
                 }
 
-                node.text.push_str(appended_text);
+                ctx.text.push_str(appended_text);
+                state.tree.mark_dirty(taffy_id).ok()?;
             }
             OpType::DeleteTextRange => {
                 if payload.len() != ID_SIZE * 2 {
@@ -101,61 +100,61 @@ fn apply_ops_inner(ops_ptr: *const u8, ops_len: u32) -> Option<()> {
                 }
 
                 let start_byte = u32::from_le_bytes(payload[0..ID_SIZE].try_into().ok()?) as usize;
-
                 let end_byte =
                     u32::from_le_bytes(payload[ID_SIZE..ID_SIZE * 2].try_into().ok()?) as usize;
 
-                let node = state.nodes.get_mut(&node_id)?;
+                let taffy_id = *state.ids.get(&node_id)?;
+                let ctx = state.tree.get_node_context_mut(taffy_id)?;
 
-                if !node.kind.supports_text() {
+                if !ctx.kind.supports_text() {
                     return None;
                 }
 
-                if start_byte > end_byte || end_byte > node.text.len() {
+                if start_byte > end_byte || end_byte > ctx.text.len() {
                     return None;
                 }
 
-                if !node.text.is_char_boundary(start_byte) || !node.text.is_char_boundary(end_byte)
-                {
+                if !ctx.text.is_char_boundary(start_byte) || !ctx.text.is_char_boundary(end_byte) {
                     return None;
                 }
 
-                node.text.replace_range(start_byte..end_byte, "");
+                ctx.text.replace_range(start_byte..end_byte, "");
+                state.tree.mark_dirty(taffy_id).ok()?;
             }
             OpType::SetTextSpans => {
-                let node = state.nodes.get_mut(&node_id)?;
+                let taffy_id = *state.ids.get(&node_id)?;
+                let ctx = state.tree.get_node_context_mut(taffy_id)?;
 
-                if node.kind != NodeType::Text {
+                if ctx.kind != NodeType::Text {
                     return None;
                 }
 
-                let spans = parse_text_spans(payload, &node.text)?;
-
-                node.text_spans = spans;
+                let spans = parse_text_spans(payload, &ctx.text)?;
+                ctx.text_spans = spans;
+                state.tree.mark_dirty(taffy_id).ok()?;
             }
             OpType::SetRoot => {
-                if !payload.is_empty() || !state.nodes.contains_key(&node_id) {
+                if !payload.is_empty() {
                     return None;
                 }
-                state.root_id = Some(node_id);
+                let taffy_id = *state.ids.get(&node_id)?;
+                state.root = Some(taffy_id);
             }
             OpType::DeleteNode => {
-                if !payload.is_empty() || !state.nodes.contains_key(&node_id) {
+                if !payload.is_empty() {
                     return None;
                 }
+                let taffy_id = *state.ids.get(&node_id)?;
 
-                let deleted_node_parent_id = state.nodes.get(&node_id).and_then(|node| node.parent);
-                if let Some(parent_id) = deleted_node_parent_id
-                    && let Some(parent) = state.nodes.get_mut(&parent_id)
-                {
-                    parent.children.retain(|child_id| *child_id != node_id);
+                if let Some(parent_taffy) = state.tree.parent(taffy_id) {
+                    state.tree.remove_child(parent_taffy, taffy_id).ok()?;
                 }
 
-                if state.root_id == Some(node_id) {
-                    state.root_id = None;
+                if state.root == Some(taffy_id) {
+                    state.root = None;
                 }
 
-                remove_subtree(&mut state, node_id);
+                remove_subtree(state, taffy_id);
             }
             OpType::AppendChild => {
                 if payload.len() != ID_SIZE {
@@ -169,36 +168,24 @@ fn apply_ops_inner(ops_ptr: *const u8, ops_len: u32) -> Option<()> {
                     return None;
                 }
 
-                if !state.nodes.contains_key(&parent_id) || !state.nodes.contains_key(&child_id) {
+                let parent_taffy = *state.ids.get(&parent_id)?;
+                let child_taffy = *state.ids.get(&child_id)?;
+
+                // Child must not already have a parent
+                if state.tree.parent(child_taffy).is_some() {
                     return None;
                 }
 
-                if state.nodes.get(&child_id)?.parent.is_some() {
-                    return None;
-                }
-
-                let mut current_parent_id = Some(parent_id);
-                while let Some(parent_id_in_chain) = current_parent_id {
-                    if parent_id_in_chain == child_id {
+                // Cycle detection: walk ancestors of parent
+                let mut current = Some(parent_taffy);
+                while let Some(ancestor) = current {
+                    if ancestor == child_taffy {
                         return None;
                     }
-                    current_parent_id = state
-                        .nodes
-                        .get(&parent_id_in_chain)
-                        .and_then(|node| node.parent);
+                    current = state.tree.parent(ancestor);
                 }
 
-                if let Some(parent) = state.nodes.get_mut(&parent_id) {
-                    parent.children.push(child_id);
-                } else {
-                    return None;
-                }
-
-                if let Some(child) = state.nodes.get_mut(&child_id) {
-                    child.parent = Some(parent_id);
-                } else {
-                    return None;
-                }
+                state.tree.add_child(parent_taffy, child_taffy).ok()?;
             }
             OpType::UpdateStyle => {
                 if payload.len() < 2 {
@@ -216,8 +203,12 @@ fn apply_ops_inner(ops_ptr: *const u8, ops_len: u32) -> Option<()> {
                 let value =
                     StyleValue::parse(payload[prop_name_end], &payload[prop_name_end + 1..])?;
 
-                let node = state.nodes.get_mut(&node_id)?;
-                apply_style(node, prop, value)?;
+                let taffy_id = *state.ids.get(&node_id)?;
+                let ctx = state.tree.get_node_context_mut(taffy_id)?;
+                apply_style(ctx, prop, value)?;
+
+                let taffy_style = node_context_to_taffy_style(ctx);
+                state.tree.set_style(taffy_id, taffy_style).ok()?;
             }
         }
 
@@ -448,17 +439,15 @@ pub enum StyleDimension {
     Points(f32),
 }
 
-fn remove_subtree(state: &mut TreeState, node_id: u32) {
-    let children = match state.nodes.get(&node_id) {
-        Some(node) => node.children.clone(),
-        None => return,
-    };
-
-    for child_id in children {
-        remove_subtree(state, child_id);
+fn remove_subtree(state: &mut TreeState, taffy_id: NodeId) {
+    let children = state.tree.children(taffy_id).unwrap_or_default();
+    for child in children {
+        remove_subtree(state, child);
     }
-
-    state.nodes.remove(&node_id);
+    if let Some(ctx) = state.tree.get_node_context(taffy_id) {
+        state.ids.remove(&ctx.id);
+    }
+    let _ = state.tree.remove(taffy_id);
 }
 
 fn parse_style_number(payload: &[u8]) -> Option<f64> {
@@ -653,7 +642,7 @@ fn parse_text_spans(payload: &[u8], text: &str) -> Option<Vec<TextSpanData>> {
     Some(spans)
 }
 
-fn apply_style(node: &mut NodeData, prop: StyleProp, value: StyleValue<'_>) -> Option<()> {
+fn apply_style(node: &mut NodeContext, prop: StyleProp, value: StyleValue<'_>) -> Option<()> {
     match prop {
         StyleProp::Gap => apply_f32(&mut node.style.gap, 0.0, value),
         StyleProp::Padding => {
@@ -787,7 +776,7 @@ fn apply_border_style_value(slot: &mut BorderStyle, value: StyleValue<'_>) -> Op
     Some(())
 }
 
-fn apply_direction_value(node: &mut NodeData, value: StyleValue<'_>) -> Option<()> {
+fn apply_direction_value(node: &mut NodeContext, value: StyleValue<'_>) -> Option<()> {
     if !node.kind.is_box() {
         return None;
     }
@@ -809,7 +798,7 @@ fn apply_flex_wrap_value(slot: &mut FlexWrap, value: StyleValue<'_>) -> Option<(
     Some(())
 }
 
-fn apply_text_wrap_value(node: &mut NodeData, value: StyleValue<'_>) -> Option<()> {
+fn apply_text_wrap_value(node: &mut NodeContext, value: StyleValue<'_>) -> Option<()> {
     match value {
         StyleValue::Reset => node.style.text_wrap = node.kind.default_text_wrap(),
         StyleValue::String(value) => node.style.text_wrap = parse_text_wrap(value)?,
@@ -852,11 +841,12 @@ const TEXT_SPAN_COLOR_FLAGS_SIZE: usize = 1;
 const TEXT_SPAN_RECORD_SIZE: usize =
     ID_SIZE * 2 + TEXT_SPAN_ATTR_FLAGS_SIZE + TEXT_SPAN_COLOR_FLAGS_SIZE + ID_SIZE * 2;
 
-#[derive(Debug, Default)]
 pub struct TreeState {
-    pub root_id: Option<u32>,
-    pub nodes: HashMap<u32, NodeData>,
+    pub tree: TaffyTree<NodeContext>,
+    pub ids: HashMap<u32, NodeId>,
+    pub root: Option<NodeId>,
 }
+
 
 #[derive(Debug, Clone)]
 pub struct TextSpanData {
@@ -870,10 +860,9 @@ pub struct TextSpanData {
 }
 
 #[derive(Debug, Clone)]
-pub struct NodeData {
+pub struct NodeContext {
+    pub id: u32,
     pub kind: NodeType,
-    pub parent: Option<u32>,
-    pub children: Vec<u32>,
     pub text: String,
     pub text_spans: Vec<TextSpanData>,
     pub style: NodeStyle,
@@ -1010,5 +999,96 @@ impl NodeStyle {
     }
 }
 
-pub static TREE_STATE: LazyLock<Mutex<TreeState>> =
-    LazyLock::new(|| Mutex::new(TreeState::default()));
+fn style_dimension_to_taffy(dim: StyleDimension) -> Dimension {
+    match dim {
+        StyleDimension::Auto => Dimension::auto(),
+        StyleDimension::Points(v) => Dimension::length(v),
+    }
+}
+
+pub fn node_context_to_taffy_style(ctx: &NodeContext) -> Style {
+    let s = &ctx.style;
+    let mut style = Style {
+        gap: Size {
+            width: length(s.gap),
+            height: zero(),
+        },
+        padding: Rect {
+            left: length(s.padding_x),
+            right: length(s.padding_x),
+            top: length(s.padding_y),
+            bottom: length(s.padding_y),
+        },
+        border: Rect {
+            left: length(s.border.left.width),
+            right: length(s.border.right.width),
+            top: length(s.border.top.width),
+            bottom: length(s.border.bottom.width),
+        },
+        margin: Rect {
+            left: length(s.margin_x),
+            right: length(s.margin_x),
+            top: length(s.margin_y),
+            bottom: length(s.margin_y),
+        },
+        flex_grow: s.flex_grow,
+        flex_shrink: s.flex_shrink,
+        size: Size {
+            width: style_dimension_to_taffy(s.width),
+            height: style_dimension_to_taffy(s.height),
+        },
+        min_size: Size {
+            width: style_dimension_to_taffy(s.min_width),
+            height: style_dimension_to_taffy(s.min_height),
+        },
+        max_size: Size {
+            width: style_dimension_to_taffy(s.max_width),
+            height: style_dimension_to_taffy(s.max_height),
+        },
+        flex_basis: style_dimension_to_taffy(s.flex_basis),
+        flex_wrap: s.flex_wrap,
+        align_items: s.align_items,
+        justify_content: s.justify_content,
+        align_self: s.align_self,
+        box_sizing: match s.box_sizing {
+            BoxSizing::BorderBox => taffy::style::BoxSizing::BorderBox,
+            BoxSizing::ContentBox => taffy::style::BoxSizing::ContentBox,
+        },
+        ..Default::default()
+    };
+
+    match s.direction {
+        Direction::Row => style.flex_direction = FlexDirection::Row,
+        Direction::Column => style.flex_direction = FlexDirection::Column,
+        Direction::RowReverse => style.flex_direction = FlexDirection::RowReverse,
+        Direction::ColumnReverse => style.flex_direction = FlexDirection::ColumnReverse,
+    }
+
+    match ctx.kind {
+        NodeType::Column => {
+            if s.align_items.is_none() {
+                style.align_items = Some(AlignItems::Stretch);
+            }
+            style.overflow = Point {
+                x: Overflow::Hidden,
+                y: Overflow::Hidden,
+            };
+        }
+        NodeType::Input => {
+            if s.flex_grow == 0.0 {
+                style.flex_grow = 1.0;
+            }
+        }
+        _ => {}
+    }
+
+    style
+}
+
+thread_local! {
+    pub static TREE_STATE: RefCell<TreeState> = RefCell::new(TreeState {
+        tree: TaffyTree::new(),
+        ids: HashMap::new(),
+        root: None,
+    });
+}

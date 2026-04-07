@@ -2,37 +2,34 @@
 
 use crate::shared::{CURRENT_BUFFER, DEFAULT_BG, DEFAULT_FG, FRAMES, TERMINAL_SIZE};
 use crate::surface::{CellStyle, Surface, SurfaceRect, inherited_style, wrap_text};
-use crate::tree::{
-    BoxSizing, Direction, NodeData, NodeType, ResolvedBorder, StyleDimension, TextOverflow,
-    TextWrap,
-};
-use crate::tree::{TREE_STATE, TextSpanData, TreeState};
-use std::{cell::RefCell, os::raw::c_int};
-use taffy::{Overflow, Point, prelude::*};
+use crate::tree::{NodeContext, NodeType, TextOverflow, TextWrap, TREE_STATE};
+use std::os::raw::c_int;
+use taffy::prelude::*;
 use unicode_width::UnicodeWidthStr;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn render() -> c_int {
-    let state = TREE_STATE.lock().unwrap();
-    let Some(root_id) = state.root_id else {
-        return 0;
-    };
+    TREE_STATE.with_borrow_mut(|state| {
+        let Some(taffy_root) = state.root else {
+            return 0;
+        };
 
-    TREE.with_borrow_mut(|taffy| {
         let term_size = TERMINAL_SIZE.lock().unwrap();
         let (tw, th) = *term_size;
         drop(term_size);
 
-        let Some(taffy_root) = build_taffy_from_state(taffy, &state, root_id, None) else {
-            return 0;
-        };
+        let taffy = &mut state.tree;
 
-        let mut root_style = taffy.style(taffy_root).unwrap().clone();
-        root_style.size = Size {
+        let root_style = taffy.style(taffy_root).unwrap();
+        let new_size = Size {
             width: length(tw),
             height: length(th),
         };
-        taffy.set_style(taffy_root, root_style).unwrap();
+        if root_style.size != new_size {
+            let mut root_style = root_style.clone();
+            root_style.size = new_size;
+            taffy.set_style(taffy_root, root_style).unwrap();
+        }
 
         let _ = taffy.compute_layout_with_measure(
             taffy_root,
@@ -49,9 +46,9 @@ pub extern "C" fn render() -> c_int {
         build_frames_array(taffy, taffy_root, frames_vec, 0.0, 0.0);
         drop(frame_lock);
 
-        let root_data = state.nodes.get(&root_id);
-        let parent_fg = root_data.map_or(DEFAULT_FG, |d| d.style.fg);
-        let parent_bg = root_data.map_or(DEFAULT_BG, |d| d.style.bg);
+        let root_ctx = taffy.get_node_context(taffy_root);
+        let parent_fg = root_ctx.map_or(DEFAULT_FG, |c| c.style.fg);
+        let parent_bg = root_ctx.map_or(DEFAULT_BG, |c| c.style.bg);
 
         let mut cb = CURRENT_BUFFER.lock().unwrap();
         if let Some(ref mut buf) = *cb {
@@ -76,7 +73,6 @@ pub extern "C" fn render() -> c_int {
             );
         }
 
-        taffy.clear();
         1
     })
 }
@@ -99,181 +95,8 @@ pub extern "C" fn get_frames_len() -> u64 {
     }
 }
 
-struct NodeContext {
-    chrome: Chrome,
-    content: Content,
-}
-
-struct Chrome {
-    fg: u32,
-    bg: u32,
-    border: ResolvedBorder,
-}
-
-enum Content {
-    Box,
-    Text {
-        content: String,
-        spans: Vec<TextSpanData>,
-        wrap: TextWrap,
-        overflow: TextOverflow,
-    },
-    Button {
-        label: String,
-    },
-    Input {
-        content: String,
-        wrap: TextWrap,
-    },
-}
-
-impl NodeContext {
-    fn text(&self) -> Option<&str> {
-        match &self.content {
-            Content::Box => None,
-            Content::Input { content, .. } => Some(content),
-            Content::Text { content, .. } => Some(content),
-            Content::Button { label, .. } => Some(label),
-        }
-    }
-}
-
-fn style_dimension_to_taffy(dim: StyleDimension) -> Dimension {
-    match dim {
-        StyleDimension::Auto => Dimension::auto(),
-        StyleDimension::Points(v) => Dimension::length(v),
-    }
-}
-
-fn node_data_to_style(data: &NodeData) -> Style {
-    let s = &data.style;
-    let mut style = Style {
-        gap: Size {
-            width: length(s.gap),
-            height: zero(),
-        },
-        padding: Rect {
-            left: length(s.padding_x),
-            right: length(s.padding_x),
-            top: length(s.padding_y),
-            bottom: length(s.padding_y),
-        },
-        border: Rect {
-            left: length(s.border.left.width),
-            right: length(s.border.right.width),
-            top: length(s.border.top.width),
-            bottom: length(s.border.bottom.width),
-        },
-        margin: Rect {
-            left: length(s.margin_x),
-            right: length(s.margin_x),
-            top: length(s.margin_y),
-            bottom: length(s.margin_y),
-        },
-        flex_grow: s.flex_grow,
-        flex_shrink: s.flex_shrink,
-        size: Size {
-            width: style_dimension_to_taffy(s.width),
-            height: style_dimension_to_taffy(s.height),
-        },
-        min_size: Size {
-            width: style_dimension_to_taffy(s.min_width),
-            height: style_dimension_to_taffy(s.min_height),
-        },
-        max_size: Size {
-            width: style_dimension_to_taffy(s.max_width),
-            height: style_dimension_to_taffy(s.max_height),
-        },
-        flex_basis: style_dimension_to_taffy(s.flex_basis),
-        flex_wrap: s.flex_wrap,
-        align_items: s.align_items,
-        justify_content: s.justify_content,
-        align_self: s.align_self,
-        box_sizing: match s.box_sizing {
-            BoxSizing::BorderBox => taffy::style::BoxSizing::BorderBox,
-            BoxSizing::ContentBox => taffy::style::BoxSizing::ContentBox,
-        },
-        ..Default::default()
-    };
-
-    match s.direction {
-        Direction::Row => style.flex_direction = FlexDirection::Row,
-        Direction::Column => style.flex_direction = FlexDirection::Column,
-        Direction::RowReverse => style.flex_direction = FlexDirection::RowReverse,
-        Direction::ColumnReverse => style.flex_direction = FlexDirection::ColumnReverse,
-    }
-
-    match data.kind {
-        NodeType::Column => {
-            if s.align_items.is_none() {
-                style.align_items = Some(AlignItems::Stretch);
-            }
-            style.overflow = Point {
-                x: Overflow::Hidden,
-                y: Overflow::Hidden,
-            };
-        }
-        NodeType::Input => {
-            if s.flex_grow == 0.0 {
-                style.flex_grow = 1.0;
-            }
-        }
-        _ => {}
-    }
-
-    style
-}
-
-fn node_data_to_context(data: &NodeData) -> NodeContext {
-    let chrome = Chrome {
-        fg: data.style.fg,
-        bg: data.style.bg,
-        border: data.style.border,
-    };
-    let content = match data.kind {
-        NodeType::Row | NodeType::Column => Content::Box,
-        NodeType::Text => Content::Text {
-            content: data.text.clone(),
-            spans: data.text_spans.clone(),
-            wrap: data.style.text_wrap,
-            overflow: data.style.text_overflow,
-        },
-        NodeType::Button => Content::Button {
-            label: data.text.clone(),
-        },
-        NodeType::Input => Content::Input {
-            content: data.text.clone(),
-            wrap: data.style.text_wrap,
-        },
-    };
-
-    NodeContext { chrome, content }
-}
-
-fn build_taffy_from_state(
-    taffy: &mut TaffyTree<NodeContext>,
-    state: &TreeState,
-    node_id: u32,
-    taffy_parent: Option<NodeId>,
-) -> Option<NodeId> {
-    let data = state.nodes.get(&node_id)?;
-    let style = node_data_to_style(data);
-    let context = node_data_to_context(data);
-    let taffy_node = taffy.new_leaf_with_context(style, context).unwrap();
-
-    if let Some(parent) = taffy_parent {
-        taffy.add_child(parent, taffy_node).unwrap();
-    }
-
-    for &child_id in &data.children {
-        build_taffy_from_state(taffy, state, child_id, Some(taffy_node));
-    }
-
-    Some(taffy_node)
-}
-
 fn build_frames_array(
-    taffy: &mut TaffyTree<NodeContext>,
+    taffy: &TaffyTree<NodeContext>,
     node: NodeId,
     out: &mut Vec<f32>,
     offset_x: f32,
@@ -325,60 +148,29 @@ fn measure_function(
         _ => u32::MAX,
     };
 
-    if let Content::Text {
-        content,
-        spans,
-        wrap,
-        overflow,
-    } = &node_context.content
-    {
-        let wrapped = wrap_text(content, spans, max_width, max_height, *wrap, *overflow);
-        let width = wrapped
-            .lines
-            .iter()
-            .map(|line| line.text.width())
-            .max()
-            .unwrap_or(0) as f32;
-
-        return Size {
-            width,
-            height: wrapped.lines.len() as f32,
-        };
-    }
-
-    if let Content::Input { content, wrap } = &node_context.content {
-        let wrapped = wrap_text(
-            content,
-            &[],
-            max_width,
-            max_height,
-            *wrap,
+    let (text, spans, wrap, overflow) = match node_context.kind {
+        NodeType::Text => (
+            node_context.text.as_str(),
+            node_context.text_spans.as_slice(),
+            node_context.style.text_wrap,
+            node_context.style.text_overflow,
+        ),
+        NodeType::Input => (
+            node_context.text.as_str(),
+            [].as_slice(),
+            node_context.style.text_wrap,
             TextOverflow::Clip,
-        );
-        let width = wrapped
-            .lines
-            .iter()
-            .map(|line| line.text.width())
-            .max()
-            .unwrap_or(0) as f32;
-
-        return Size {
-            width,
-            height: wrapped.lines.len() as f32,
-        };
-    }
-
-    let Some(text) = node_context.text() else {
-        return Size::ZERO;
+        ),
+        NodeType::Button => (
+            node_context.text.as_str(),
+            [].as_slice(),
+            TextWrap::None,
+            TextOverflow::Clip,
+        ),
+        _ => return Size::ZERO,
     };
-    let wrapped = wrap_text(
-        text,
-        &[],
-        max_width,
-        max_height,
-        TextWrap::None,
-        TextOverflow::Clip,
-    );
+
+    let wrapped = wrap_text(text, spans, max_width, max_height, wrap, overflow);
     let width = wrapped
         .lines
         .iter()
@@ -390,10 +182,6 @@ fn measure_function(
         width,
         height: wrapped.lines.len() as f32,
     }
-}
-
-thread_local! {
-    static TREE: RefCell<TaffyTree<NodeContext>> = RefCell::new(TaffyTree::new());
 }
 
 fn paint_taffy_node(
@@ -424,23 +212,19 @@ fn paint_taffy_node(
         return;
     };
 
-    let chrome = &ctx.chrome;
-    let style = inherited_style(chrome.fg, chrome.bg, parent_fg, parent_bg);
+    let style = inherited_style(ctx.style.fg, ctx.style.bg, parent_fg, parent_bg);
     surface.draw_bg(rect, style.bg);
+    surface.draw_border(rect, ctx.style.border, style.bg);
 
-    let CellStyle { fg, bg, attrs: _a } = match &ctx.content {
-        Content::Box => {
-            surface.draw_border(rect, chrome.border, style.bg);
-            style
-        }
-        Content::Input { content, wrap } => {
-            surface.draw_border(rect, chrome.border, style.bg);
+    match ctx.kind {
+        NodeType::Row | NodeType::Column => {}
+        NodeType::Input => {
             let wrapped = wrap_text(
-                content,
+                &ctx.text,
                 &[],
                 content_rect.w.max(0.0) as u32,
                 content_rect.h.max(0.0) as u32,
-                *wrap,
+                ctx.style.text_wrap,
                 TextOverflow::Clip,
             );
 
@@ -474,22 +258,15 @@ fn paint_taffy_node(
                 cursor_col,
                 style,
             );
-            style
         }
-        Content::Text {
-            content,
-            spans,
-            wrap,
-            overflow,
-        } => {
-            surface.draw_border(rect, chrome.border, style.bg);
+        NodeType::Text => {
             let wrapped = wrap_text(
-                content,
-                spans,
+                &ctx.text,
+                &ctx.text_spans,
                 content_rect.w.max(0.0) as u32,
                 content_rect.h.max(0.0) as u32,
-                *wrap,
-                *overflow,
+                ctx.style.text_wrap,
+                ctx.style.text_overflow,
             );
 
             for (line_index, line) in wrapped.lines.iter().enumerate() {
@@ -505,15 +282,13 @@ fn paint_taffy_node(
                     &line.spans,
                 );
             }
-            style
         }
-        Content::Button { label } => {
-            surface.draw_border(rect, chrome.border, style.bg);
-            surface.draw_text(content_rect, &label, style, &[]);
-            style
+        NodeType::Button => {
+            surface.draw_text(content_rect, &ctx.text, style, &[]);
         }
-    };
+    }
 
+    let CellStyle { fg, bg, .. } = style;
     for child in taffy.children(node_id).unwrap() {
         paint_taffy_node(taffy, child, fg, bg, surface, rect);
     }
