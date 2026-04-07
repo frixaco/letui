@@ -1,11 +1,6 @@
 /** Text normalization and span preparation shared by text components and ops. */
 
-import type {
-  NormalizedStyledText,
-  NormalizedTextSpan,
-  StyledText,
-  TextSpan,
-} from "./types";
+import type { NormalizedStyledText, NormalizedTextSpan, StyledText, TextSpan } from "./types";
 
 export function prepareTextInput(text: string): PreparedTextInput {
   const chars = Array.from(text);
@@ -54,14 +49,10 @@ export function normalizeStyledText(input: StyledText): NormalizedStyledText {
   }
 
   const preparedText = prepareTextInput(input.text);
-  const { length, byteLength, byteOffsets } = getCodePointMetadata(
-    preparedText.text,
+  const { length, byteLength, byteOffsets } = getCodePointMetadata(preparedText.text);
+  const spans = prepareSpans(input.spans, byteOffsets, preparedText.boundaryMap).map(
+    ({ sourceIndex: _sourceIndex, ...span }) => span,
   );
-  const spans = prepareSpans(
-    input.spans,
-    byteOffsets,
-    preparedText.boundaryMap,
-  ).map(({ sourceIndex: _sourceIndex, ...span }) => span);
 
   return {
     text: preparedText.text,
@@ -72,10 +63,7 @@ export function normalizeStyledText(input: StyledText): NormalizedStyledText {
 }
 
 type BooleanStyleKey = (typeof BOOLEAN_STYLE_KEYS)[number];
-type TextSpanStyle = Pick<
-  TextSpan,
-  "foreground" | "background" | BooleanStyleKey
->;
+type TextSpanStyle = Pick<TextSpan, "foreground" | "background" | BooleanStyleKey>;
 type IndexedTextSpan = TextSpan & {
   sourceIndex: number;
 };
@@ -163,23 +151,11 @@ function toIndexedSpan(
   boundaryMap: readonly (number | null)[],
 ): IndexedTextSpan | null {
   const candidate = span as TextSpan;
-  const start = mapSourceBoundary(
-    boundaryMap,
-    candidate.start,
-    sourceIndex,
-    "start",
-  );
-  const end = mapSourceBoundary(
-    boundaryMap,
-    candidate.end,
-    sourceIndex,
-    "end",
-  );
+  const start = mapSourceBoundary(boundaryMap, candidate.start, sourceIndex, "start");
+  const end = mapSourceBoundary(boundaryMap, candidate.end, sourceIndex, "end");
 
   if (start > end) {
-    throw new Error(
-      `Invalid TextSpan at index ${sourceIndex}: start must be <= end`,
-    );
+    throw new Error(`Invalid TextSpan at index ${sourceIndex}: start must be <= end`);
   }
 
   if (start === end) {

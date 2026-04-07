@@ -5,7 +5,13 @@ edition = "2024"
 
 [dependencies]
 crossterm = "0.29.0"
-taffy = { version = "0.9.1", default-features = false, features = ["std", "taffy_tree", "flexbox", "grid", "block_layout"] }
+taffy = { version = "0.9.1", default-features = false, features = [
+  "std",
+  "taffy_tree",
+  "flexbox",
+  "grid",
+  "block_layout",
+] }
 unicode-segmentation = "1.13.2"
 unicode-width = "0.2.2"
 

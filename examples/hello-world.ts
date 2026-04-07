@@ -202,7 +202,9 @@ ff(() => {
     foreground: currentMode.accent,
   });
 
-  heroBody.setText(`counter: ${currentCount.toString().padStart(2, "0")}   mode: ${currentMode.label}`);
+  heroBody.setText(
+    `counter: ${currentCount.toString().padStart(2, "0")}   mode: ${currentMode.label}`,
+  );
   gaugeLine.setText(`load  ${gauge(currentCount, meterWidth)}`);
   gaugeLine.setStyle({ foreground: currentMode.accent });
   heroMeta.setText(`pulse: ${currentMode.pulse}   width: ${Math.floor(heroPanel.frameWidth())}`);
@@ -211,19 +213,10 @@ ff(() => {
   quickMode.setStyle({ foreground: currentMode.accent });
 
   const tempo =
-    currentCount >= 24
-      ? "tempo: elevated"
-      : currentCount <= -4
-        ? "tempo: low"
-        : "tempo: balanced";
+    currentCount >= 24 ? "tempo: elevated" : currentCount <= -4 ? "tempo: low" : "tempo: balanced";
   quickTempo.setText(tempo);
   quickTempo.setStyle({
-    foreground:
-      currentCount >= 24
-        ? THEME.rose
-        : currentCount <= -4
-          ? THEME.amber
-          : THEME.lime,
+    foreground: currentCount >= 24 ? THEME.rose : currentCount <= -4 ? THEME.amber : THEME.lime,
   });
 
   footer.setText(

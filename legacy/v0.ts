@@ -53,10 +53,7 @@ const handleMouseEvent = async (d: string) => {
   if (c[0] == "0") {
     await appendFile(debugLogPath, `mouse left button at (${x}, ${y})\n`);
     await appendFile(debugLogPath, `hitMap key: ${y * terminalWidth + x}\n`);
-    await appendFile(
-      debugLogPath,
-      `hitMap has key: ${hitMap.has(y * terminalWidth + x)}\n`,
-    );
+    await appendFile(debugLogPath, `hitMap has key: ${hitMap.has(y * terminalWidth + x)}\n`);
 
     const hitComponent: Button | Input = getHitComponent(x, y);
     if (hitComponent instanceof Button) {
@@ -192,8 +189,7 @@ class Row {
 
       buffer.set(prebuilt, topLeft * 3);
 
-      let bottomLeft =
-        yo * terminalWidth + xo + terminalWidth * (this.size().h - 1) + 1;
+      let bottomLeft = yo * terminalWidth + xo + terminalWidth * (this.size().h - 1) + 1;
       buffer.set(prebuilt, bottomLeft * 3);
 
       topLeft -= 1;
@@ -201,9 +197,7 @@ class Row {
 
       buffer.set(
         new BigUint64Array([
-          this.border === "square"
-            ? BigInt("┌".codePointAt(0)!)
-            : BigInt("╭".codePointAt(0)!),
+          this.border === "square" ? BigInt("┌".codePointAt(0)!) : BigInt("╭".codePointAt(0)!),
           BigInt(fg),
           BigInt(bg),
         ]),
@@ -211,9 +205,7 @@ class Row {
       );
       buffer.set(
         new BigUint64Array([
-          this.border === "square"
-            ? BigInt("└".codePointAt(0)!)
-            : BigInt("╰".codePointAt(0)!),
+          this.border === "square" ? BigInt("└".codePointAt(0)!) : BigInt("╰".codePointAt(0)!),
           BigInt(fg),
           BigInt(bg),
         ]),
@@ -230,29 +222,19 @@ class Row {
         middleRight += terminalWidth;
 
         buffer.set(
-          new BigUint64Array([
-            BigInt("│".codePointAt(0)!),
-            BigInt(fg),
-            BigInt(bg),
-          ]),
+          new BigUint64Array([BigInt("│".codePointAt(0)!), BigInt(fg), BigInt(bg)]),
           middleLeft * 3,
         );
 
         buffer.set(
-          new BigUint64Array([
-            BigInt("│".codePointAt(0)!),
-            BigInt(fg),
-            BigInt(bg),
-          ]),
+          new BigUint64Array([BigInt("│".codePointAt(0)!), BigInt(fg), BigInt(bg)]),
           middleRight * 3,
         );
       }
 
       buffer.set(
         new BigUint64Array([
-          this.border === "square"
-            ? BigInt("┐".codePointAt(0)!)
-            : BigInt("╮".codePointAt(0)!),
+          this.border === "square" ? BigInt("┐".codePointAt(0)!) : BigInt("╮".codePointAt(0)!),
           BigInt(fg),
           BigInt(bg),
         ]),
@@ -260,9 +242,7 @@ class Row {
       );
       buffer.set(
         new BigUint64Array([
-          this.border === "square"
-            ? BigInt("┘".codePointAt(0)!)
-            : BigInt("╯".codePointAt(0)!),
+          this.border === "square" ? BigInt("┘".codePointAt(0)!) : BigInt("╯".codePointAt(0)!),
           BigInt(fg),
           BigInt(bg),
         ]),
@@ -350,9 +330,7 @@ class Column {
       bottomLeft -= 1;
       buffer.set(
         new BigUint64Array([
-          this.border === "square"
-            ? BigInt("┌".codePointAt(0)!)
-            : BigInt("╭".codePointAt(0)!),
+          this.border === "square" ? BigInt("┌".codePointAt(0)!) : BigInt("╭".codePointAt(0)!),
           BigInt(fg),
           BigInt(bg),
         ]),
@@ -360,9 +338,7 @@ class Column {
       );
       buffer.set(
         new BigUint64Array([
-          this.border === "square"
-            ? BigInt("└".codePointAt(0)!)
-            : BigInt("╰".codePointAt(0)!),
+          this.border === "square" ? BigInt("└".codePointAt(0)!) : BigInt("╰".codePointAt(0)!),
           BigInt(fg),
           BigInt(bg),
         ]),
@@ -371,11 +347,7 @@ class Column {
 
       for (let i = 1; i < h - 1; i++) {
         buffer.set(
-          new BigUint64Array([
-            BigInt("│".codePointAt(0)!),
-            BigInt(fg),
-            BigInt(bg),
-          ]),
+          new BigUint64Array([BigInt("│".codePointAt(0)!), BigInt(fg), BigInt(bg)]),
           (topLeft + i * terminalWidth) * 3,
         );
       }
@@ -384,20 +356,14 @@ class Column {
       let bottomRight = topRight + (h - 1) * terminalWidth;
       for (let i = 1; i < h - 1; i++) {
         buffer.set(
-          new BigUint64Array([
-            BigInt("│".codePointAt(0)!),
-            BigInt(fg),
-            BigInt(bg),
-          ]),
+          new BigUint64Array([BigInt("│".codePointAt(0)!), BigInt(fg), BigInt(bg)]),
           (topRight + i * terminalWidth) * 3,
         );
       }
 
       buffer.set(
         new BigUint64Array([
-          this.border === "square"
-            ? BigInt("┐".codePointAt(0)!)
-            : BigInt("╮".codePointAt(0)!),
+          this.border === "square" ? BigInt("┐".codePointAt(0)!) : BigInt("╮".codePointAt(0)!),
           BigInt(fg),
           BigInt(bg),
         ]),
@@ -405,9 +371,7 @@ class Column {
       );
       buffer.set(
         new BigUint64Array([
-          this.border === "square"
-            ? BigInt("┘".codePointAt(0)!)
-            : BigInt("╯".codePointAt(0)!),
+          this.border === "square" ? BigInt("┘".codePointAt(0)!) : BigInt("╯".codePointAt(0)!),
           BigInt(fg),
           BigInt(bg),
         ]),
@@ -559,11 +523,7 @@ class Button {
     for (let cy = yo; cy < this.py + yo; cy++) {
       for (let cx = xo; cx < xo + this.size().w; cx++) {
         buffer.set(
-          new BigUint64Array([
-            BigInt(" ".codePointAt(0)!),
-            BigInt(this.fg),
-            BigInt(this.bg),
-          ]),
+          new BigUint64Array([BigInt(" ".codePointAt(0)!), BigInt(this.fg), BigInt(this.bg)]),
           (terminalWidth * cy + cx) * 3,
         );
       }
@@ -573,11 +533,7 @@ class Button {
     for (let cy = yo + this.size().h - this.py; cy < yo + this.size().h; cy++) {
       for (let cx = xo; cx < xo + this.size().w; cx++) {
         buffer.set(
-          new BigUint64Array([
-            BigInt(" ".codePointAt(0)!),
-            BigInt(this.fg),
-            BigInt(this.bg),
-          ]),
+          new BigUint64Array([BigInt(" ".codePointAt(0)!), BigInt(this.fg), BigInt(this.bg)]),
           (terminalWidth * cy + cx) * 3,
         );
       }
@@ -592,11 +548,7 @@ class Button {
       for (let cx = xo; cx < xo + this.size().w; cx++) {
         if (cx < xo + this.px || cx > xo + this.px + this.width - 1) {
           buffer.set(
-            new BigUint64Array([
-              BigInt(" ".codePointAt(0)!),
-              BigInt(this.fg),
-              BigInt(this.bg),
-            ]),
+            new BigUint64Array([BigInt(" ".codePointAt(0)!), BigInt(this.fg), BigInt(this.bg)]),
             (terminalWidth * cy + cx) * 3,
           );
         }
@@ -604,10 +556,7 @@ class Button {
     }
 
     // Draw the text row itself.
-    buffer.set(
-      this.prebuilt.subarray(0),
-      (terminalWidth * (yo + this.py) + xo + this.px) * 3,
-    );
+    buffer.set(this.prebuilt.subarray(0), (terminalWidth * (yo + this.py) + xo + this.px) * 3);
 
     this.updateHitMap(xo, yo);
   }
@@ -629,11 +578,7 @@ class Button {
     for (let cy = yo; cy < this.py + yo; cy++) {
       for (let cx = xo; cx < xo + this.size().w; cx++) {
         buffer.set(
-          new BigUint64Array([
-            BigInt(" ".codePointAt(0)!),
-            BigInt(this.fg),
-            BigInt(this.bg),
-          ]),
+          new BigUint64Array([BigInt(" ".codePointAt(0)!), BigInt(this.fg), BigInt(this.bg)]),
           (terminalWidth * cy + cx) * 3,
         );
       }
@@ -642,11 +587,7 @@ class Button {
     for (let cy = yo + this.size().h - this.py; cy < yo + this.size().h; cy++) {
       for (let cx = xo; cx < xo + this.size().w; cx++) {
         buffer.set(
-          new BigUint64Array([
-            BigInt(" ".codePointAt(0)!),
-            BigInt(this.fg),
-            BigInt(this.bg),
-          ]),
+          new BigUint64Array([BigInt(" ".codePointAt(0)!), BigInt(this.fg), BigInt(this.bg)]),
           (terminalWidth * cy + cx) * 3,
         );
       }
@@ -660,21 +601,14 @@ class Button {
       for (let cx = xo; cx < xo + this.size().w; cx++) {
         if (cx < xo + this.px || cx > xo + this.px + this.width - 1) {
           buffer.set(
-            new BigUint64Array([
-              BigInt(" ".codePointAt(0)!),
-              BigInt(this.fg),
-              BigInt(this.bg),
-            ]),
+            new BigUint64Array([BigInt(" ".codePointAt(0)!), BigInt(this.fg), BigInt(this.bg)]),
             (terminalWidth * cy + cx) * 3,
           );
         }
       }
     }
 
-    buffer.set(
-      this.prebuilt.subarray(0),
-      (terminalWidth * (yo + this.py) + xo + this.px) * 3,
-    );
+    buffer.set(this.prebuilt.subarray(0), (terminalWidth * (yo + this.py) + xo + this.px) * 3);
     flush();
   }
 
@@ -731,10 +665,7 @@ class Button {
       }
     }
 
-    buffer.set(
-      this.prebuilt.subarray(0),
-      (terminalWidth * (yo + this.py) + xo + this.px) * 3,
-    );
+    buffer.set(this.prebuilt.subarray(0), (terminalWidth * (yo + this.py) + xo + this.px) * 3);
     flush();
   }
 }
@@ -747,12 +678,7 @@ class Input {
   multiline: boolean;
   border: Border;
 
-  constructor(
-    fg: number,
-    bg: number,
-    border: Border,
-    multiline: boolean = false,
-  ) {
+  constructor(fg: number, bg: number, border: Border, multiline: boolean = false) {
     this.multiline = multiline;
     this.border = border;
 
@@ -772,9 +698,7 @@ class Input {
   size() {
     return {
       w: [...this.text].length + (this.border !== "none" ? 2 : 0),
-      h: this.multiline
-        ? this.getMultilineTextHeight()
-        : 1 + (this.border !== "none" ? 2 : 0),
+      h: this.multiline ? this.getMultilineTextHeight() : 1 + (this.border !== "none" ? 2 : 0),
     };
   }
 
@@ -808,17 +732,14 @@ class Input {
 
       buffer.set(prebuilt, topLeft * 3);
 
-      let bottomLeft =
-        yo * terminalWidth + xo + terminalWidth * (this.size().h - 1) + 1;
+      let bottomLeft = yo * terminalWidth + xo + terminalWidth * (this.size().h - 1) + 1;
       buffer.set(prebuilt, bottomLeft * 3);
 
       topLeft -= 1;
       bottomLeft -= 1;
       buffer.set(
         new BigUint64Array([
-          this.border === "square"
-            ? BigInt("┌".codePointAt(0)!)
-            : BigInt("╭".codePointAt(0)!),
+          this.border === "square" ? BigInt("┌".codePointAt(0)!) : BigInt("╭".codePointAt(0)!),
           BigInt(fg),
           BigInt(bg),
         ]),
@@ -826,9 +747,7 @@ class Input {
       );
       buffer.set(
         new BigUint64Array([
-          this.border === "square"
-            ? BigInt("└".codePointAt(0)!)
-            : BigInt("╰".codePointAt(0)!),
+          this.border === "square" ? BigInt("└".codePointAt(0)!) : BigInt("╰".codePointAt(0)!),
           BigInt(fg),
           BigInt(bg),
         ]),
@@ -841,37 +760,25 @@ class Input {
       let bottomRight = middleRight + terminalWidth;
 
       buffer.set(
-        new BigUint64Array([
-          BigInt("│".codePointAt(0)!),
-          BigInt(fg),
-          BigInt(bg),
-        ]),
+        new BigUint64Array([BigInt("│".codePointAt(0)!), BigInt(fg), BigInt(bg)]),
         middleLeft * 3,
       );
 
       buffer.set(
         new BigUint64Array([
-          this.border === "square"
-            ? BigInt("┐".codePointAt(0)!)
-            : BigInt("╮".codePointAt(0)!),
+          this.border === "square" ? BigInt("┐".codePointAt(0)!) : BigInt("╮".codePointAt(0)!),
           BigInt(fg),
           BigInt(bg),
         ]),
         topRight * 3,
       );
       buffer.set(
-        new BigUint64Array([
-          BigInt("│".codePointAt(0)!),
-          BigInt(fg),
-          BigInt(bg),
-        ]),
+        new BigUint64Array([BigInt("│".codePointAt(0)!), BigInt(fg), BigInt(bg)]),
         middleRight * 3,
       );
       buffer.set(
         new BigUint64Array([
-          this.border === "square"
-            ? BigInt("┘".codePointAt(0)!)
-            : BigInt("╯".codePointAt(0)!),
+          this.border === "square" ? BigInt("┘".codePointAt(0)!) : BigInt("╯".codePointAt(0)!),
           BigInt(fg),
           BigInt(bg),
         ]),

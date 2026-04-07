@@ -109,12 +109,8 @@ The remaining spikes came from allocations in the hot path. In `drawBackground()
 for (let j = node.frame.y; j < node.frame.y + node.frame.height; j++) {
   for (let i = node.frame.x; i < node.frame.x + node.frame.width; i++) {
     buffer.set(
-      new BigUint64Array([
-        BigInt(" ".codePointAt(0)!),
-        BigInt(COLORS.default.bg),
-        BigInt(bg),
-      ]),
-      (j * terminalWidth() + i) * 3
+      new BigUint64Array([BigInt(" ".codePointAt(0)!), BigInt(COLORS.default.bg), BigInt(bg)]),
+      (j * terminalWidth() + i) * 3,
     );
   }
 }
@@ -128,7 +124,7 @@ function setCell(
   offset: number,
   char: string,
   fg: number,
-  bg: number
+  bg: number,
 ) {
   buffer[offset] = BigInt(char.codePointAt(0)!);
   buffer[offset + 1] = BigInt(fg);

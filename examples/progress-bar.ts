@@ -56,9 +56,7 @@ export function LoadingBar(props: LoadingBarProps): LoadingBarController {
     const isActive = active();
     const pos = position();
     const width = node.frameWidth();
-    log(
-      `LoadingBar: x=${node.frame.x}, width=${width}, pos=${pos}, active=${isActive}`,
-    );
+    log(`LoadingBar: x=${node.frame.x}, width=${width}, pos=${pos}, active=${isActive}`);
     if (width === 0 || !isActive) return;
 
     const maxPos = width - 1;

@@ -62,17 +62,11 @@ export function Box(input: BoxProps, children: Node[]): BoxNode {
   return node;
 }
 
-export function Column(
-  props: Omit<BoxProps, "direction">,
-  children: Node[],
-): BoxNode {
+export function Column(props: Omit<BoxProps, "direction">, children: Node[]): BoxNode {
   return Box({ ...props, direction: "column" }, children);
 }
 
-export function Row(
-  props: Omit<BoxProps, "direction">,
-  children: Node[],
-): BoxNode {
+export function Row(props: Omit<BoxProps, "direction">, children: Node[]): BoxNode {
   return Box({ ...props, direction: "row" }, children);
 }
 
@@ -277,9 +271,7 @@ function createInputSignals(
   };
 }
 
-function createButtonSignals(
-  input: { text: string } & StyleProps,
-): _ButtonProps {
+function createButtonSignals(input: { text: string } & StyleProps): _ButtonProps {
   return {
     ...createStyleSignals(input),
     text: $(prepareTextInput(input.text).text),

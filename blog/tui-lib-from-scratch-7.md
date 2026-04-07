@@ -41,6 +41,7 @@ This made comparison across runs more trustworthy.
 #### Text registry migration
 
 Old flow:
+
 - TS serialized full `textData`
 - `paint()` received full text payload every frame
 
@@ -78,6 +79,7 @@ Main result: text transfer scales with changed nodes, not total text nodes.
 During transition, some snapshots got worse before they got better (`~0.9ms` avg vs older `~0.5ms` samples).
 
 Expected reasons:
+
 - extra JS work to build ops payload
 - several architectural changes landed in same window
 
@@ -95,9 +97,11 @@ It was useful for quick black-box checks, but I later removed it in cleanup whil
 Next bottleneck: style payload duplication.
 
 Before:
+
 - each node carried full style payload inline in serialized node data
 
 After:
+
 - node payload shrank to 4 fields (`nodeType`, `childCount`, `nodeId`, `styleId`)
 - style moved to Rust-side `STYLE_REGISTRY`
 - TS computes style snapshots and sends style diffs via `sync_style_ops`
@@ -115,6 +119,7 @@ This introduced explicit schema files (`style_schema.rs`, `src/style-schema.ts`)
 I also fixed text wrapping and clipping behavior in Rust.
 
 Problems were:
+
 - naive text measurement for wrapping/newlines
 - draw path not clipping correctly in nested overflow scenarios
 
@@ -142,6 +147,7 @@ It was a good validation pass because these examples touched many edge cases at 
 #### End of part 7
 
 By end of this phase:
+
 - Rust owns terminal-critical rendering paths
 - TS sends text/style diffs instead of full payloads
 - text and style have separate sync paths

@@ -4,14 +4,7 @@ import { ptr, toArrayBuffer, type Pointer } from "bun:ffi";
 import { COLORS } from "./colors.ts";
 import api from "./ffi.ts";
 import { $, ff, type Signal } from "./signals";
-import {
-  startFrame,
-  endFrame,
-  startPhase,
-  endLayout,
-  endPaint,
-  formatMetrics,
-} from "./metrics.ts";
+import { startFrame, endFrame, startPhase, endLayout, endPaint, formatMetrics } from "./metrics.ts";
 
 // --- Helpers ---
 
@@ -188,12 +181,7 @@ export function run(
     spatialLookup = new Array(terminalWidth() * terminalHeight());
   });
 
-  function serializeNodes(
-    node: Node,
-    result: Float32Array,
-    offset: number,
-    texts: string[],
-  ) {
+  function serializeNodes(node: Node, result: Float32Array, offset: number, texts: string[]) {
     // Encode node kinds into the numeric format expected by the old Rust bridge.
     let nodeType =
       node.type === "row"
@@ -224,19 +212,13 @@ export function run(
     result[offset++] = node.children.length;
     result[offset++] = node.props.bg || COLORS.default.bg;
     result[offset++] = node.props.fg || COLORS.default.bg;
-    result[offset++] =
-      node.props.border?.color || node.props.bg || COLORS.default.bg;
+    result[offset++] = node.props.border?.color || node.props.bg || COLORS.default.bg;
     let borderStyle =
-      node.props.border?.style === "rounded"
-        ? 1
-        : node.props.border?.style === "square"
-          ? 2
-          : 0;
+      node.props.border?.style === "rounded" ? 1 : node.props.border?.style === "square" ? 2 : 0;
     result[offset++] = borderStyle;
     result[offset++] = node.id;
 
-    let hasText =
-      node.type === "input" || node.type === "text" || node.type === "button";
+    let hasText = node.type === "input" || node.type === "text" || node.type === "button";
     const textValue = hasText
       ? (node.props as TextProps | InputBoxProps | ButtonProps).text() || ""
       : "";
@@ -267,8 +249,7 @@ export function run(
     serializeNodes(node, nodeData, offset, texts);
 
     const textBuffer = new TextEncoder().encode(texts.join(""));
-    const safeTextBuffer =
-      textBuffer.length > 0 ? textBuffer : new Uint8Array(1);
+    const safeTextBuffer = textBuffer.length > 0 ? textBuffer : new Uint8Array(1);
 
     api.calculate_layout(
       ptr(nodeData),
@@ -282,9 +263,7 @@ export function run(
     const framesPtr = api.get_frames_ptr()!;
     const framesLen = Number(api.get_frames_len()!);
 
-    let frameArray = new Float32Array(
-      toArrayBuffer(framesPtr as Pointer, 0, framesLen * 4),
-    );
+    let frameArray = new Float32Array(toArrayBuffer(framesPtr as Pointer, 0, framesLen * 4));
 
     let idx = 0;
     function updateFrames(n: Node) {
@@ -349,10 +328,7 @@ export function run(
       let paddingX = padding as number;
       let paddingY = padding as number;
       if (typeof padding === "string") {
-        [paddingX, paddingY] = padding.split(" ").map(Number) as [
-          number,
-          number,
-        ];
+        [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
       }
       let cells: bigint[] = [];
       for (const c of text()) {
@@ -360,8 +336,7 @@ export function run(
       }
       let textBuffer = new BigUint64Array(cells);
       let offset =
-        (node.frame.y + paddingY + (border !== "none" ? 1 : 0)) *
-          terminalWidth() +
+        (node.frame.y + paddingY + (border !== "none" ? 1 : 0)) * terminalWidth() +
         node.frame.x +
         paddingX +
         (border !== "none" ? 1 : 0);
@@ -401,10 +376,7 @@ export function run(
       let paddingX = padding as number;
       let paddingY = padding as number;
       if (typeof padding === "string") {
-        [paddingX, paddingY] = padding.split(" ").map(Number) as [
-          number,
-          number,
-        ];
+        [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
       }
 
       const drawLine = (text: string, x: number, y: number) => {
@@ -427,8 +399,7 @@ export function run(
         );
       };
 
-      const maxWidth =
-        node.frame.width - paddingX * 2 - (border !== "none" ? 2 : 0);
+      const maxWidth = node.frame.width - paddingX * 2 - (border !== "none" ? 2 : 0);
       const words = buttonText().split(/\s+/);
       const lines: string[] = [];
       let currentLine: string[] = [];
@@ -436,8 +407,7 @@ export function run(
 
       for (const word of words) {
         const wordWidth = word.length;
-        const neededWidth =
-          currentLine.length === 0 ? wordWidth : currentWidth + 1 + wordWidth;
+        const neededWidth = currentLine.length === 0 ? wordWidth : currentWidth + 1 + wordWidth;
 
         if (neededWidth > maxWidth && currentLine.length > 0) {
           lines.push(currentLine.join(" "));
@@ -492,10 +462,7 @@ export function run(
       let paddingX = padding as number;
       let paddingY = padding as number;
       if (typeof padding === "string") {
-        [paddingX, paddingY] = padding.split(" ").map(Number) as [
-          number,
-          number,
-        ];
+        [paddingX, paddingY] = padding.split(" ").map(Number) as [number, number];
       }
       let cells: bigint[] = [];
       for (const c of inputText()) {
@@ -504,8 +471,7 @@ export function run(
       let textBuffer = new BigUint64Array(cells);
       buffer.set(
         textBuffer,
-        ((node.frame.y + paddingY + (border !== "none" ? 1 : 0)) *
-          terminalWidth() +
+        ((node.frame.y + paddingY + (border !== "none" ? 1 : 0)) * terminalWidth() +
           node.frame.x +
           paddingX +
           (border !== "none" ? 1 : 0)) *
@@ -630,10 +596,7 @@ function drawBorder(
   let fg = overrideFg || border.color || COLORS.default.fg;
   let bg = overrideBg || node.props.bg || COLORS.default.bg;
 
-  let { topLeft, bottomLeft, topRight, bottomRight } = getContainerCorners(
-    node,
-    terminalWidth(),
-  );
+  let { topLeft, bottomLeft, topRight, bottomRight } = getContainerCorners(node, terminalWidth());
 
   setCell(buffer, topLeft * 3, style === "square" ? "┌" : "╭", fg, bg);
   setCell(buffer, bottomLeft * 3, style === "square" ? "└" : "╰", fg, bg);
@@ -664,10 +627,7 @@ export function Column(props: ColumnProps, children: Array<Node>): Node {
   return node;
 }
 
-export function Row(
-  props: RowProps & { id?: string },
-  children: Array<Node>,
-): Node {
+export function Row(props: RowProps & { id?: string }, children: Array<Node>): Node {
   const node: Node = {
     id: generateId(),
     type: "row",

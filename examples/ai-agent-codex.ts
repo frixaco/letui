@@ -632,50 +632,32 @@ function renderMessageLines(message: ChatMessage, width: number): StyledText[] {
   const lines: StyledText[] = [];
 
   if (message.role === "user") {
+    lines.push(clippedLine([{ text: "YOU", foreground: THEME.amber, bold: true }], width));
     lines.push(
-      clippedLine([
-        { text: "YOU", foreground: THEME.amber, bold: true },
-      ], width),
-    );
-    lines.push(
-      ...wrapSegments(
-        createInlineSegments(message.content, { foreground: THEME.text }),
-        width,
-        [{ text: "  ", foreground: THEME.muted }],
-      ),
+      ...wrapSegments(createInlineSegments(message.content, { foreground: THEME.text }), width, [
+        { text: "  ", foreground: THEME.muted },
+      ]),
     );
     lines.push(styledLine([]));
     return lines;
   }
 
   if (message.role === "error") {
+    lines.push(clippedLine([{ text: "ERROR", foreground: THEME.red, bold: true }], width));
     lines.push(
-      clippedLine([
-        { text: "ERROR", foreground: THEME.red, bold: true },
-      ], width),
-    );
-    lines.push(
-      ...wrapSegments(
-        createInlineSegments(message.content, { foreground: THEME.red }),
-        width,
-        [{ text: "  ", foreground: THEME.muted }],
-      ),
+      ...wrapSegments(createInlineSegments(message.content, { foreground: THEME.red }), width, [
+        { text: "  ", foreground: THEME.muted },
+      ]),
     );
     lines.push(styledLine([]));
     return lines;
   }
 
-  lines.push(
-    clippedLine([
-      { text: "AI", foreground: THEME.accent, bold: true },
-    ], width),
-  );
+  lines.push(clippedLine([{ text: "AI", foreground: THEME.accent, bold: true }], width));
 
   if (message.content.trim().length === 0) {
     lines.push(
-      clippedLine([
-        { text: "  thinking…", foreground: THEME.muted, italic: true },
-      ], width),
+      clippedLine([{ text: "  thinking…", foreground: THEME.muted, italic: true }], width),
     );
     lines.push(styledLine([]));
     return lines;
@@ -692,7 +674,10 @@ function buildTranscriptLines(thread: AgentThreadState, width: number): StyledTe
   if (thread.messages.length === 0) {
     return [
       clippedLine([{ text: "AI AGENT", foreground: THEME.accent, bold: true }], width),
-      ...wrapSegments([{ text: "  Submit a prompt to start the thread.", foreground: THEME.muted }], width),
+      ...wrapSegments(
+        [{ text: "  Submit a prompt to start the thread.", foreground: THEME.muted }],
+        width,
+      ),
       ...wrapSegments([{ text: "  Ctrl+N creates a new thread.", foreground: THEME.muted }], width),
     ];
   }
@@ -709,16 +694,17 @@ function visiblePromptLabels(thread: AgentThreadState, count: number): StyledTex
   const width = Math.max(1, Math.floor(sidebarListViewport.frameWidth()) - 2);
 
   if (thread.prompts.length === 0) {
-    return [
-      clippedLine([{ text: "No prompts yet.", foreground: THEME.muted }], width),
-    ];
+    return [clippedLine([{ text: "No prompts yet.", foreground: THEME.muted }], width)];
   }
 
   return thread.prompts.slice(0, count).map((prompt, index) =>
-    clippedLine([
-      { text: `${index + 1}. `, foreground: THEME.muted },
-      { text: shortPromptLabel(prompt, width), foreground: THEME.text },
-    ], width),
+    clippedLine(
+      [
+        { text: `${index + 1}. `, foreground: THEME.muted },
+        { text: shortPromptLabel(prompt, width), foreground: THEME.text },
+      ],
+      width,
+    ),
   );
 }
 
@@ -740,15 +726,22 @@ function visibleThreadLabels(count: number): StyledText[] {
         ? Math.max(1, width - textLength(marker) - textLength(countLabel))
         : Math.max(1, width - textLength(marker));
 
-    return clippedLine([
-      { text: marker, foreground: active ? THEME.accent : THEME.muted, bold: active || undefined },
-      {
-        text: truncate(thread.title, titleBudget),
-        foreground: THEME.text,
-        bold: active || undefined,
-      },
-      ...(width >= 14 ? [{ text: countLabel, foreground: statusColor }] : []),
-    ], width);
+    return clippedLine(
+      [
+        {
+          text: marker,
+          foreground: active ? THEME.accent : THEME.muted,
+          bold: active || undefined,
+        },
+        {
+          text: truncate(thread.title, titleBudget),
+          foreground: THEME.text,
+          bold: active || undefined,
+        },
+        ...(width >= 14 ? [{ text: countLabel, foreground: statusColor }] : []),
+      ],
+      width,
+    );
   });
 }
 
@@ -805,7 +798,7 @@ function syncTranscriptRows(): void {
   for (let i = 0; i < transcriptRows.length; i++) {
     const line = transcriptRows[i]!;
     const visibleIndex = i - topPad;
-    line.setText(visibleIndex >= 0 ? visibleLines[visibleIndex] ?? "" : "");
+    line.setText(visibleIndex >= 0 ? (visibleLines[visibleIndex] ?? "") : "");
   }
 }
 
@@ -899,30 +892,42 @@ function syncResponsiveLayout(): void {
 
   sidebarHint.setText(
     sidebarWidth > 0 && sidebarWidth < 24
-      ? clippedLine([
-          { text: "^N", foreground: THEME.lime, bold: true },
-          { text: " new", foreground: THEME.muted },
-        ], sidebarTextWidth)
-      : clippedLine([
-          { text: "Ctrl+N", foreground: THEME.lime, bold: true },
-          { text: " new   ", foreground: THEME.muted },
-          { text: "↑↓", foreground: THEME.blue, bold: true },
-          { text: " switch", foreground: THEME.muted },
-        ], sidebarTextWidth),
+      ? clippedLine(
+          [
+            { text: "^N", foreground: THEME.lime, bold: true },
+            { text: " new", foreground: THEME.muted },
+          ],
+          sidebarTextWidth,
+        )
+      : clippedLine(
+          [
+            { text: "Ctrl+N", foreground: THEME.lime, bold: true },
+            { text: " new   ", foreground: THEME.muted },
+            { text: "↑↓", foreground: THEME.blue, bold: true },
+            { text: " switch", foreground: THEME.muted },
+          ],
+          sidebarTextWidth,
+        ),
   );
 
   composerHint.setText(
     composerWidth > 0 && composerWidth < 30
-      ? clippedLine([
-          { text: "⏎", foreground: THEME.accent, bold: true },
-          { text: " send", foreground: THEME.muted },
-        ], composerTextWidth)
-      : clippedLine([
-          { text: "Enter", foreground: THEME.accent, bold: true },
-          { text: " send   ", foreground: THEME.muted },
-          { text: "Tab", foreground: THEME.blue, bold: true },
-          { text: " focus", foreground: THEME.muted },
-        ], composerTextWidth),
+      ? clippedLine(
+          [
+            { text: "⏎", foreground: THEME.accent, bold: true },
+            { text: " send", foreground: THEME.muted },
+          ],
+          composerTextWidth,
+        )
+      : clippedLine(
+          [
+            { text: "Enter", foreground: THEME.accent, bold: true },
+            { text: " send   ", foreground: THEME.muted },
+            { text: "Tab", foreground: THEME.blue, bold: true },
+            { text: " focus", foreground: THEME.muted },
+          ],
+          composerTextWidth,
+        ),
   );
 }
 
@@ -1049,14 +1054,14 @@ function cycleFocus(delta: number): void {
   const currentIndex = focusables.findIndex((node) => node.isFocused());
   const nextIndex =
     currentIndex === -1
-      ? (delta > 0 ? 0 : focusables.length - 1)
+      ? delta > 0
+        ? 0
+        : focusables.length - 1
       : (currentIndex + delta + focusables.length) % focusables.length;
   focusables[nextIndex]!.focus();
 }
 
-const headerMetrics = Array.from({ length: 4 }, () =>
-  Text({ text: "", foreground: THEME.text }),
-);
+const headerMetrics = Array.from({ length: 4 }, () => Text({ text: "", foreground: THEME.text }));
 
 const promptsTab = Button({
   text: "Prompts",
@@ -1102,11 +1107,7 @@ const sidebar = Column(
     padding: "1 1",
     borderRight: { color: THEME.border },
   },
-  [
-    Row({ gap: 1, minHeight: 1 }, [promptsTab, threadsTab]),
-    sidebarHint,
-    sidebarListViewport,
-  ],
+  [Row({ gap: 1, minHeight: 1 }, [promptsTab, threadsTab]), sidebarHint, sidebarListViewport],
 );
 
 const transcriptViewport = Column(

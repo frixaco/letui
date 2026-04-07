@@ -28,12 +28,7 @@ const manifest = {
   description: `Prebuilt binary for letui on ${platform}-${arch}`,
   os: [platform],
   cpu: [arch],
-  files: [
-    "*.dylib",
-    "*.so",
-    "*.dll",
-    "*.node"
-  ]
+  files: ["*.dylib", "*.so", "*.dll", "*.node"],
 };
 
 const outDir = join("npm", pkgName);

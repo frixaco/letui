@@ -142,10 +142,7 @@ function advance(state: GameState, direction: Direction): GameState {
 
   const candidate = nextHead(head, direction);
   const hitWall =
-    candidate.x < 0 ||
-    candidate.y < 0 ||
-    candidate.x >= BOARD_WIDTH ||
-    candidate.y >= BOARD_HEIGHT;
+    candidate.x < 0 || candidate.y < 0 || candidate.x >= BOARD_WIDTH || candidate.y >= BOARD_HEIGHT;
   if (hitWall) {
     return {
       ...state,

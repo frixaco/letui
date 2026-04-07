@@ -17,9 +17,7 @@ function debugLog(...args: unknown[]): void {
 function getLibraryPath(): string {
   const { platform, arch } = process;
 
-  const localPath = fileURLToPath(
-    new URL(`../core/target/release/${filename}`, import.meta.url),
-  );
+  const localPath = fileURLToPath(new URL(`../core/target/release/${filename}`, import.meta.url));
 
   try {
     if (Bun.file(localPath).size > 0) {

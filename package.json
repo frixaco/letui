@@ -2,8 +2,13 @@
   "name": "@frixaco/letui",
   "version": "0.0.13",
   "license": "MIT",
-  "module": "index.ts",
+  "files": [
+    "index.ts",
+    "src/**/*.ts",
+    "scripts/build-npm.ts"
+  ],
   "type": "module",
+  "module": "index.ts",
   "scripts": {
     "build-ffi": "cd core && cargo build --release",
     "dev": "bun run build-ffi && bun run examples/hello-world.ts",
@@ -14,6 +19,7 @@
     "metrics:smoke": "bun run build-ffi && bun run scripts/capture-metrics.ts",
     "check": "bun run typecheck && bun run check:rust && bun run smoke"
   },
+  "dependencies": {},
   "devDependencies": {
     "@types/bun": "^1.3.9",
     "@types/node": "^25.5.0"
@@ -21,15 +27,9 @@
   "peerDependencies": {
     "typescript": "^5.9.3"
   },
-  "files": [
-    "index.ts",
-    "src/**/*.ts",
-    "scripts/build-npm.ts"
-  ],
   "optionalDependencies": {
     "@frixaco/letui-darwin-arm64": "0.0.13",
     "@frixaco/letui-linux-x64": "0.0.13",
     "@frixaco/letui-win32-x64": "0.0.13"
-  },
-  "dependencies": {}
+  }
 }

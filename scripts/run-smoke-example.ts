@@ -42,9 +42,7 @@ async function typeText(terminal: Bun.Terminal, text: string): Promise<void> {
   }
 }
 
-export async function runSmokeExample(
-  options: SmokeRunOptions,
-): Promise<SmokeRunResult> {
+export async function runSmokeExample(options: SmokeRunOptions): Promise<SmokeRunResult> {
   const decoder = new TextDecoder();
   const chunks: string[] = [];
 
@@ -61,20 +59,17 @@ export async function runSmokeExample(
     ensureParentDir(metricsPath);
   }
 
-  const subprocess = Bun.spawn(
-    [process.execPath, "run", "examples/smoke.ts"],
-    {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        LETUI_SMOKE_TRACE: "1",
-        ...options.env,
-      },
-      terminal,
-      timeout: 5000,
-      killSignal: "SIGKILL",
+  const subprocess = Bun.spawn([process.execPath, "run", "examples/smoke.ts"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      LETUI_SMOKE_TRACE: "1",
+      ...options.env,
     },
-  );
+    terminal,
+    timeout: 5000,
+    killSignal: "SIGKILL",
+  });
 
   await waitForOutput(() => chunks.join(""), "letui smoke");
   await Bun.sleep(50);

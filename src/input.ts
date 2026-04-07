@@ -33,10 +33,7 @@ export function parseInputChunk(data: string): InputChunkOp[] {
   return ops;
 }
 
-export function dispatchInputChunk(
-  target: InputDispatchTarget,
-  data: string,
-): boolean {
+export function dispatchInputChunk(target: InputDispatchTarget, data: string): boolean {
   if (data.includes("\x1b")) {
     return false;
   }
@@ -95,10 +92,7 @@ export function dispatchInputChunk(
   return handled;
 }
 
-type InputChunkOp =
-  | { type: "insert"; text: string }
-  | { type: "backspace" }
-  | { type: "newline" };
+type InputChunkOp = { type: "insert"; text: string } | { type: "backspace" } | { type: "newline" };
 
 const IGNORED_INPUT_CONTROL_PATTERN = /[\x00-\x09\x0B\x0C\x0E-\x1F]/;
 

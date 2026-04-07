@@ -256,9 +256,7 @@ ff(() => {
   const currentTyped = typed();
   const errors = countErrors(prompt, currentTyped);
   const elapsedMs =
-    startedAt() === null
-      ? 0
-      : Math.max(1, (finishedAt() ?? now()) - (startedAt() ?? now()));
+    startedAt() === null ? 0 : Math.max(1, (finishedAt() ?? now()) - (startedAt() ?? now()));
   const minutes = elapsedMs / 60000;
   const grossWpm = minutes > 0 ? currentTyped.length / 5 / minutes : 0;
   const accuracy =

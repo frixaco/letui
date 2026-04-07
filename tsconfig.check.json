@@ -1,11 +1,5 @@
 {
   "extends": "./tsconfig.json",
-  "include": [
-    "index.ts",
-    "src/**/*.ts",
-    "src/**/*.d.ts",
-    "examples/**/*.ts",
-    "scripts/**/*.ts"
-  ],
+  "include": ["index.ts", "src/**/*.ts", "src/**/*.d.ts", "examples/**/*.ts", "scripts/**/*.ts"],
   "exclude": ["legacy"]
 }

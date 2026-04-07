@@ -200,10 +200,7 @@ export const NODE_TYPE = {
 } as const;
 
 export type NodeKind = (typeof NODE_TYPE)[keyof typeof NODE_TYPE];
-export type BoxKind = (typeof NODE_TYPE)[keyof Pick<
-  typeof NODE_TYPE,
-  "Row" | "Column"
->];
+export type BoxKind = (typeof NODE_TYPE)[keyof Pick<typeof NODE_TYPE, "Row" | "Column">];
 
 export const NODE_KIND_ID: Record<NodeKind, number> = {
   [NODE_TYPE.Row]: 1,
@@ -273,7 +270,11 @@ export type InputNode = NodeBase<typeof NODE_TYPE.Input> &
   LeafNode & {
     props: _InputProps;
     handlers: InputHandlers;
-    setStyle: (p: Partial<StyleProps & { placeholder?: string; multiline?: boolean; wrap?: Exclude<TextWrap, "none"> }>) => void;
+    setStyle: (
+      p: Partial<
+        StyleProps & { placeholder?: string; multiline?: boolean; wrap?: Exclude<TextWrap, "none"> }
+      >,
+    ) => void;
     setText: (v: string) => void;
   };
 

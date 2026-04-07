@@ -106,6 +106,7 @@ const node = Text({ text: styled });
 ```
 
 Each `TextSpan` supports:
+
 - `start`, `end`: character positions in the text
 - `foreground?: number` — text color (hex)
 - `background?: number` — background color (hex)

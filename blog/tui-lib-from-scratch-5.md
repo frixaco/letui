@@ -68,6 +68,7 @@ struct InteractionState {
 ```
 
 When a click comes in:
+
 1. Rust receives the event (crossterm)
 2. Rust hit-tests using layout rects it already computed
 3. Rust updates `InteractionState`
@@ -121,7 +122,7 @@ TypeScript just calls `api.paint()` then reads frames back to update its node re
 
 ```typescript
 api.paint(ptr(nodeData), nodeData.length, ptr(textData), textData.length);
-updateNodeFrames(root);  // reads FRAMES array from Rust
+updateNodeFrames(root); // reads FRAMES array from Rust
 ```
 
 #### NodeContext as single source of truth

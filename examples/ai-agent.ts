@@ -3,16 +3,7 @@
 // Data flow:
 // Keyboard input → moveSelection() → selectedIndex update → refreshView() → renderPromptSlots() + renderTranscript()
 
-import {
-  Column,
-  Input,
-  NODE_TYPE,
-  Row,
-  Text,
-  ff,
-  onKey,
-  run,
-} from "@";
+import { Column, Input, NODE_TYPE, Row, Text, ff, onKey, run, COLORS } from "@";
 import type { StyledText, TextSpan } from "@";
 
 // --- Domain vocabulary ---
@@ -77,7 +68,10 @@ const THREADS: PromptThread[] = [
             { text: "flagged", tone: "accent", bold: true },
             { text: " autocomplete path that feels ", tone: "text" },
             { text: "fast", tone: "lime", bold: true, underline: true },
-            { text: " on every keystroke while the first cohort stays ", tone: "text" },
+            {
+              text: " on every keystroke while the first cohort stays ",
+              tone: "text",
+            },
             { text: "small", tone: "amber", italic: true },
             { text: " enough to debug in real time.", tone: "text" },
           ],
@@ -89,7 +83,12 @@ const THREADS: PromptThread[] = [
         paragraphs: [
           [
             { text: "Start with ", tone: "text" },
-            { text: "internal terminals", tone: "blue", bold: true, underline: true },
+            {
+              text: "internal terminals",
+              tone: "blue",
+              bold: true,
+              underline: true,
+            },
             { text: ", then widen only after one ", tone: "text" },
             { text: "stable day", tone: "lime", bold: true },
             { text: " so rollback remains ", tone: "text" },
@@ -105,9 +104,15 @@ const THREADS: PromptThread[] = [
           [
             { text: "Track ", tone: "text" },
             { text: "p50 / p95", tone: "lime", bold: true, underline: true },
-            { text: " completion latency beside acceptance and ", tone: "text" },
+            {
+              text: " completion latency beside acceptance and ",
+              tone: "text",
+            },
             { text: "undo rate", tone: "blue", italic: true },
-            { text: " so the rollout cannot look good on speed alone.", tone: "text" },
+            {
+              text: " so the rollout cannot look good on speed alone.",
+              tone: "text",
+            },
           ],
         ],
       },
@@ -116,8 +121,15 @@ const THREADS: PromptThread[] = [
         tone: "amber",
         paragraphs: [
           [
-            { text: "When the model times out or sends malformed output, swap to a ", tone: "text" },
-            { text: "deterministic suggestion shell", tone: "accent", bold: true },
+            {
+              text: "When the model times out or sends malformed output, swap to a ",
+              tone: "text",
+            },
+            {
+              text: "deterministic suggestion shell",
+              tone: "accent",
+              bold: true,
+            },
             { text: " and ", tone: "text" },
             { text: "never", tone: "amber", bold: true, underline: true },
             { text: " blank the active row.", tone: "text" },
@@ -139,14 +151,20 @@ const THREADS: PromptThread[] = [
             { text: "serialize", tone: "blue", bold: true },
             { text: ", ", tone: "text" },
             { text: "text sync", tone: "lime", bold: true },
-            { text: ", rust paint, sync, and flush so the spike gets a ", tone: "text" },
+            {
+              text: ", rust paint, sync, and flush so the spike gets a ",
+              tone: "text",
+            },
             { text: "name", tone: "accent", underline: true },
             { text: ".", tone: "text" },
           ],
           [
             { text: "Capture one ", tone: "text" },
             { text: "baseline trace", tone: "amber", bold: true },
-            { text: " before tuning; otherwise every later claim becomes ", tone: "text" },
+            {
+              text: " before tuning; otherwise every later claim becomes ",
+              tone: "text",
+            },
             { text: "fiction", tone: "amber", italic: true },
             { text: ".", tone: "text" },
           ],
@@ -159,7 +177,10 @@ const THREADS: PromptThread[] = [
           [
             { text: "Audit timer-driven ", tone: "text" },
             { text: "setText", tone: "accent", bold: true, underline: true },
-            { text: " bursts and hidden nodes still receiving updates; idle views should stay ", tone: "text" },
+            {
+              text: " bursts and hidden nodes still receiving updates; idle views should stay ",
+              tone: "text",
+            },
             { text: "boringly quiet", tone: "muted", italic: true },
             { text: ".", tone: "text" },
           ],
@@ -178,7 +199,10 @@ const THREADS: PromptThread[] = [
           [
             { text: "Show ", tone: "text" },
             { text: "intent-rich labels", tone: "blue", bold: true },
-            { text: " instead of raw prompt blobs so scanning stays ", tone: "text" },
+            {
+              text: " instead of raw prompt blobs so scanning stays ",
+              tone: "text",
+            },
             { text: "dense", tone: "lime", underline: true },
             { text: " even in a narrow sidebar.", tone: "text" },
           ],
@@ -187,7 +211,10 @@ const THREADS: PromptThread[] = [
             { text: "bold", tone: "accent", bold: true },
             { text: ", keep the motion keys ", tone: "text" },
             { text: "symmetrical", tone: "blue", italic: true },
-            { text: ", and avoid any state that depends on the mouse.", tone: "text" },
+            {
+              text: ", and avoid any state that depends on the mouse.",
+              tone: "text",
+            },
           ],
         ],
       },
@@ -196,9 +223,15 @@ const THREADS: PromptThread[] = [
         tone: "lime",
         paragraphs: [
           [
-            { text: "Long sessions need a list that still tells the operator what changed ", tone: "text" },
+            {
+              text: "Long sessions need a list that still tells the operator what changed ",
+              tone: "text",
+            },
             { text: "recently", tone: "lime", bold: true, underline: true },
-            { text: " without forcing rereads of the entire prompt.", tone: "text" },
+            {
+              text: " without forcing rereads of the entire prompt.",
+              tone: "text",
+            },
           ],
         ],
       },
@@ -206,7 +239,8 @@ const THREADS: PromptThread[] = [
   },
   {
     title: "Degradation Strategy",
-    userPrompt: "Model endpoint throws intermittent 502 and timeout bursts. Define graceful degradation.",
+    userPrompt:
+      "Model endpoint throws intermittent 502 and timeout bursts. Define graceful degradation.",
     sections: [
       {
         heading: "Recovery",
@@ -215,7 +249,10 @@ const THREADS: PromptThread[] = [
           [
             { text: "Retry ", tone: "text" },
             { text: "once", tone: "lime", bold: true, underline: true },
-            { text: " with bounded backoff, then hand off to a local fallback summarizer before the UI starts to ", tone: "text" },
+            {
+              text: " with bounded backoff, then hand off to a local fallback summarizer before the UI starts to ",
+              tone: "text",
+            },
             { text: "stutter", tone: "amber", italic: true },
             { text: ".", tone: "text" },
           ],
@@ -235,7 +272,10 @@ const THREADS: PromptThread[] = [
           [
             { text: "Page only on ", tone: "text" },
             { text: "sustained breaches", tone: "amber", bold: true },
-            { text: "; isolated spikes should be recorded but kept out of the alert stream to avoid ", tone: "text" },
+            {
+              text: "; isolated spikes should be recorded but kept out of the alert stream to avoid ",
+              tone: "text",
+            },
             { text: "operator fatigue", tone: "muted", italic: true },
             { text: ".", tone: "text" },
           ],
@@ -254,16 +294,30 @@ const THREADS: PromptThread[] = [
           [
             { text: "Run ", tone: "text" },
             { text: "typecheck", tone: "blue", bold: true, underline: true },
-            { text: " and the smoke path in the same terminal reviewers will use, because environment drift hides the most embarrassing failures.", tone: "text" },
+            {
+              text: " and the smoke path in the same terminal reviewers will use, because environment drift hides the most embarrassing failures.",
+              tone: "text",
+            },
           ],
           [
             { text: "Walk every keyboard path, especially ", tone: "text" },
             { text: "quit", tone: "accent", bold: true },
-            { text: ", composer focus, and sidebar navigation without leaning on the mouse.", tone: "text" },
+            {
+              text: ", composer focus, and sidebar navigation without leaning on the mouse.",
+              tone: "text",
+            },
           ],
           [
-            { text: "Validate narrow and wide layouts so wrapping stays ", tone: "text" },
-            { text: "intentional", tone: "lime", italic: true, underline: true },
+            {
+              text: "Validate narrow and wide layouts so wrapping stays ",
+              tone: "text",
+            },
+            {
+              text: "intentional",
+              tone: "lime",
+              italic: true,
+              underline: true,
+            },
             { text: " rather than accidental.", tone: "text" },
           ],
         ],
@@ -279,14 +333,25 @@ const THREADS: PromptThread[] = [
         tone: "accent",
         paragraphs: [
           [
-            { text: "Keep facts, decisions, constraints, and unresolved questions; drop duplicate phrasing and ", tone: "text" },
+            {
+              text: "Keep facts, decisions, constraints, and unresolved questions; drop duplicate phrasing and ",
+              tone: "text",
+            },
             { text: "stylistic filler", tone: "muted", italic: true },
             { text: " first.", tone: "text" },
           ],
           [
             { text: "Preserve exact ", tone: "text" },
-            { text: "paths, ids, versions, and owners", tone: "accent", bold: true, underline: true },
-            { text: " because literals with operational meaning should never be paraphrased.", tone: "text" },
+            {
+              text: "paths, ids, versions, and owners",
+              tone: "accent",
+              bold: true,
+              underline: true,
+            },
+            {
+              text: " because literals with operational meaning should never be paraphrased.",
+              tone: "text",
+            },
           ],
           [
             { text: "Keep a short timeline ordered from ", tone: "text" },
@@ -437,11 +502,7 @@ const sidebar = Column(
     minWidth: 28,
     minHeight: 0,
   },
-  [
-    Text({ text: "PROMPT HISTORY", foreground: THEME.blue }),
-    sidebarHint,
-    promptViewport,
-  ],
+  [Text({ text: "PROMPT HISTORY", foreground: THEME.blue }), sidebarHint, promptViewport],
 );
 
 const transcriptHeader = Text({
@@ -450,8 +511,7 @@ const transcriptHeader = Text({
 });
 
 const transcriptSubhead = Text({
-  text:
-    "dense transcript view with stable node identity, wrapped panes, and longer explanatory copy that keeps flowing under narrow widths",
+  text: "dense transcript view with stable node identity, wrapped panes, and longer explanatory copy that keeps flowing under narrow widths",
   foreground: THEME.muted,
   wrap: "word",
 });
@@ -475,8 +535,7 @@ const transcriptPanel = Column(
 );
 
 const composerHint = Text({
-  text:
-    "multiline composer demo: Enter inserts a newline, while Tab keeps the focus jump visible against the wrapped sidebar and transcript content",
+  text: "multiline composer demo: Enter inserts a newline, while Tab keeps the focus jump visible against the wrapped sidebar and transcript content",
   foreground: THEME.muted,
   wrap: "word",
 });
@@ -567,6 +626,7 @@ const root = Column(
     flexGrow: 1,
     gap: 0,
     padding: "1 1",
+    background: COLORS.default.bg,
   },
   [header, body],
 );
@@ -585,13 +645,8 @@ function wrapIndex(next: number): number {
   return next;
 }
 
-function paragraphSegments(
-  paragraph: PromptParagraph,
-  prefix = "  ",
-): StyledSegment[] {
-  const segments: StyledSegment[] = [
-    { text: prefix, foreground: THEME.muted },
-  ];
+function paragraphSegments(paragraph: PromptParagraph, prefix = "  "): StyledSegment[] {
+  const segments: StyledSegment[] = [{ text: prefix, foreground: THEME.muted }];
 
   for (const segment of paragraph) {
     segments.push({
@@ -694,41 +749,48 @@ function buildTranscriptText(thread: PromptThread): StyledText {
   for (const section of thread.sections) {
     blocks.push(
       styledLine([
-        { text: section.heading.toUpperCase(), foreground: sectionToneColor(section.tone), bold: true },
+        {
+          text: section.heading.toUpperCase(),
+          foreground: sectionToneColor(section.tone),
+          bold: true,
+        },
         { text: "\n" },
       ]),
     );
 
     for (const paragraph of section.paragraphs) {
-      blocks.push(
-        styledLine([
-          ...paragraphSegments(paragraph),
-          { text: "\n" },
-        ]),
-      );
+      blocks.push(styledLine([...paragraphSegments(paragraph), { text: "\n" }]));
     }
 
     blocks.push(styledLine([{ text: "\n" }]));
   }
 
   blocks.push(
-    styledLine([
-      { text: "RENDERER NOTES", foreground: THEME.blue, bold: true },
-      { text: "\n" },
-    ]),
+    styledLine([{ text: "RENDERER NOTES", foreground: THEME.blue, bold: true }, { text: "\n" }]),
   );
   blocks.push(
     styledLine([
       { text: "  The demo still runs through ", foreground: THEME.text },
-      { text: "bun + rust ffi", foreground: THEME.blue, bold: true, underline: true },
-      { text: " so text styling exercises the same render path as the rest of the library.\n", foreground: THEME.text },
+      {
+        text: "bun + rust ffi",
+        foreground: THEME.blue,
+        bold: true,
+        underline: true,
+      },
+      {
+        text: " so text styling exercises the same render path as the rest of the library.\n",
+        foreground: THEME.text,
+      },
     ]),
   );
   blocks.push(
     styledLine([
       { text: "  Layout stays ", foreground: THEME.text },
       { text: "wrapped", foreground: THEME.lime, bold: true },
-      { text: " and keyboard-first, while the composer can take focus without losing sidebar context.", foreground: THEME.text },
+      {
+        text: " and keyboard-first, while the composer can take focus without losing sidebar context.",
+        foreground: THEME.text,
+      },
     ]),
   );
 

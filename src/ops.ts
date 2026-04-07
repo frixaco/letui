@@ -5,12 +5,7 @@
  *   TS component tree → OpQueue methods → encoded binary chunks → Rust backend
  */
 
-import {
-  NODE_KIND_ID,
-  type NodeKind,
-  type NodeKindNum,
-  type NormalizedTextSpan,
-} from "./types";
+import { NODE_KIND_ID, type NodeKind, type NodeKindNum, type NormalizedTextSpan } from "./types";
 
 // --- Primary abstraction ---
 

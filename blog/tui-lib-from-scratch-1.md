@@ -62,12 +62,8 @@ class Button {
     for (let cy = yo; cy < this.py + yo; cy++) {
       for (let cx = xo; cx < xo + this.size().w; cx++) {
         buffer.set(
-          new BigUint64Array([
-            BigInt(" ".codePointAt(0)!),
-            BigInt(this.fg),
-            BigInt(this.bg),
-          ]),
-          (terminalWidth * cy + cx) * 3
+          new BigUint64Array([BigInt(" ".codePointAt(0)!), BigInt(this.fg), BigInt(this.bg)]),
+          (terminalWidth * cy + cx) * 3,
         );
       }
     }
@@ -76,12 +72,8 @@ class Button {
     for (let cy = yo + this.size().h - this.py; cy < yo + this.size().h; cy++) {
       for (let cx = xo; cx < xo + this.size().w; cx++) {
         buffer.set(
-          new BigUint64Array([
-            BigInt(" ".codePointAt(0)!),
-            BigInt(this.fg),
-            BigInt(this.bg),
-          ]),
-          (terminalWidth * cy + cx) * 3
+          new BigUint64Array([BigInt(" ".codePointAt(0)!), BigInt(this.fg), BigInt(this.bg)]),
+          (terminalWidth * cy + cx) * 3,
         );
       }
     }
@@ -100,17 +92,14 @@ class Button {
               BigInt(this.active_fg),
               BigInt(this.active_bg),
             ]),
-            (terminalWidth * cy + cx) * 3
+            (terminalWidth * cy + cx) * 3,
           );
         }
       }
     }
 
     // actual text
-    buffer.set(
-      this.prebuilt.subarray(0),
-      (terminalWidth * (yo + this.py) + xo + this.px) * 3
-    );
+    buffer.set(this.prebuilt.subarray(0), (terminalWidth * (yo + this.py) + xo + this.px) * 3);
 
     this.updateHitMap(xo, yo); // hit-testing mixed in here too!
   }

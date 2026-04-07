@@ -47,10 +47,10 @@ jobs:
         run: |
           # Extract version from tag (v1.0.0 -> 1.0.0)
           VERSION=${GITHUB_REF#refs/tags/v}
-          
+
           # Run generation script
           bun scripts/build-npm.ts $VERSION ${{ matrix.platform }} ${{ matrix.arch }}
-          
+
           # Determine binary name and extension based on OS
           if [ "${{ matrix.platform }}" = "win32" ]; then
             EXT="dll"
@@ -62,11 +62,11 @@ jobs:
             EXT="so"
             PREFIX="lib"
           fi
-          
+
           BINARY_NAME="${PREFIX}letui_core.${EXT}"
           SRC="core/target/release/$BINARY_NAME"
           DEST="npm/letui-${{ matrix.platform }}-${{ matrix.arch }}/"
-          
+
           echo "Copying $SRC to $DEST"
           cp "$SRC" "$DEST"
 
@@ -74,10 +74,10 @@ jobs:
         shell: bash
         run: |
           cd npm/letui-${{ matrix.platform }}-${{ matrix.arch }}
-          
+
           # Setup .npmrc with token
           echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
-          
+
           npm publish --access public
 
   publish-main:
@@ -93,9 +93,9 @@ jobs:
         run: |
           # Setup .npmrc with token
           echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
-          
+
           # Update version in package.json to match tag
           VERSION=${GITHUB_REF#refs/tags/v}
           npm version $VERSION --no-git-tag-version --allow-same-version
-          
+
           npm publish --access public

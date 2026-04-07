@@ -23,7 +23,7 @@ Remember in Part 3 when I mentioned "JSON serialization for layout" as a potenti
 const tree = JSON.stringify({
   node: serializeNode(root),
   width: terminalWidth,
-  height: terminalHeight
+  height: terminalHeight,
 });
 api.calculate_layout(ptr(Buffer.from(tree)), tree.length);
 ```
@@ -33,7 +33,7 @@ The fix was a binary protocol. Instead of JSON, I pack node data into a `Float32
 ```typescript
 const FIELDS_PER_NODE = 7; // nodeType, gap, paddingX, paddingY, border, childCount, textLength
 
-function serialize(root: Node): { nodeData: Float32Array, textData: Uint8Array } {
+function serialize(root: Node): { nodeData: Float32Array; textData: Uint8Array } {
   // Pack node properties as floats
   nodeData[offset++] = nodeType;
   nodeData[offset++] = gap;
@@ -174,7 +174,7 @@ With all these optimizations, I finally decided to benchmark LeTUI against two o
 I built equivalent demos in all three and ran them:
 
 | Library | Avg Frame Time |
-|---------|----------------|
+| ------- | -------------- |
 | LeTUI   | 2.1ms          |
 | OpenTUI | 0.4ms          |
 | pi-mono | 0.2ms          |

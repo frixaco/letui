@@ -9,12 +9,7 @@ import api from "./ffi";
 import { $, ff, type Signal } from "./signals";
 import { getFocusedNode, getFocusVersion } from "./components";
 import { dispatchInputChunk } from "./input";
-import {
-  NODE_TYPE,
-  type Node,
-  type NodeKind,
-  type NormalizedStyledText,
-} from "./types";
+import { NODE_TYPE, type Node, type NodeKind, type NormalizedStyledText } from "./types";
 import {
   EMITTED_STYLE_PROPS,
   OpQueue,
@@ -214,13 +209,10 @@ const MOUSE_EVENT_PATTERN = /\x1b\[<\d+;\d+;\d+[Mm]/g;
 
 function buildSentNodeState(node: Node): SentNodeState {
   const text =
-    node.type === NODE_TYPE.Text ||
-    node.type === NODE_TYPE.Input ||
-    node.type === NODE_TYPE.Button
+    node.type === NODE_TYPE.Text || node.type === NODE_TYPE.Input || node.type === NODE_TYPE.Button
       ? ((node.props as any).text?.() ?? "")
       : "";
-  const styledText =
-    node.type === NODE_TYPE.Text ? (node.props as any).styledText?.() : undefined;
+  const styledText = node.type === NODE_TYPE.Text ? (node.props as any).styledText?.() : undefined;
   const children = node.children?.() ?? [];
 
   return {
@@ -233,10 +225,7 @@ function buildSentNodeState(node: Node): SentNodeState {
   };
 }
 
-function hasSameNodeShape(
-  previous: SentNodeState,
-  current: SentNodeState,
-): boolean {
+function hasSameNodeShape(previous: SentNodeState, current: SentNodeState): boolean {
   if (previous.id !== current.id || previous.type !== current.type) {
     return false;
   }
@@ -512,11 +501,7 @@ function queueFullTreeInsert(node: SentNodeState, textStats: TextOpStats): void 
   }
 }
 
-function syncNodeStyle(
-  id: number,
-  previous: SentStyleState,
-  current: SentStyleState,
-): void {
+function syncNodeStyle(id: number, previous: SentStyleState, current: SentStyleState): void {
   for (const prop of EMITTED_STYLE_PROPS) {
     if (previous[prop] !== current[prop]) {
       ops.updateStyle(id, prop, current[prop]);
@@ -524,12 +509,7 @@ function syncNodeStyle(
   }
 }
 
-function syncNodeText(
-  id: number,
-  previous: string,
-  current: string,
-  textStats: TextOpStats,
-): void {
+function syncNodeText(id: number, previous: string, current: string, textStats: TextOpStats): void {
   if (previous === current) {
     return;
   }
@@ -645,9 +625,7 @@ function syncRenderTree(
 function updateNodeFrames(root: Node): void {
   const framesPtr = api.get_frames_ptr()!;
   const framesLen = Number(api.get_frames_len()!);
-  const framesArray = new Float32Array(
-    toArrayBuffer(framesPtr as Pointer, 0, framesLen * 4),
-  );
+  const framesArray = new Float32Array(toArrayBuffer(framesPtr as Pointer, 0, framesLen * 4));
 
   let idx = 0;
   const width = terminalWidth();
@@ -751,11 +729,7 @@ function handleMouseEvent(data: string): void {
   const rawBtn = Number(parts[0]);
   const rawX = Number(parts[1]);
   const rawY = Number(parts[2]);
-  if (
-    !Number.isFinite(rawBtn) ||
-    !Number.isFinite(rawX) ||
-    !Number.isFinite(rawY)
-  ) {
+  if (!Number.isFinite(rawBtn) || !Number.isFinite(rawX) || !Number.isFinite(rawY)) {
     return;
   }
 

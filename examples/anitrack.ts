@@ -114,10 +114,7 @@ function styled(segments: readonly StyledSegment[]): StyledText {
 }
 
 function toScrapeResults(payload: unknown): ScrapeResultItem[] {
-  const rawResults =
-    payload && typeof payload === "object"
-      ? (payload as any).results
-      : undefined;
+  const rawResults = payload && typeof payload === "object" ? (payload as any).results : undefined;
   if (!Array.isArray(rawResults)) return [];
 
   const normalized: ScrapeResultItem[] = [];
@@ -133,20 +130,13 @@ function toScrapeResults(payload: unknown): ScrapeResultItem[] {
   return normalized;
 }
 
-function toStreamTarget(
-  payload: unknown,
-): { infoHash: string; fileIndex: number } | null {
+function toStreamTarget(payload: unknown): { infoHash: string; fileIndex: number } | null {
   if (!payload || typeof payload !== "object") return null;
   const details = (payload as any).details;
   if (!details || typeof details !== "object") return null;
   const infoHash = details.info_hash;
   const files = details.files;
-  if (
-    typeof infoHash !== "string" ||
-    !Array.isArray(files) ||
-    files.length === 0
-  )
-    return null;
+  if (typeof infoHash !== "string" || !Array.isArray(files) || files.length === 0) return null;
   return { infoHash, fileIndex: files.length - 1 };
 }
 
@@ -174,8 +164,7 @@ async function fetchResults(query: string) {
     const response = await fetch(
       `https://scrape.anitrack.frixaco.com/scrape?q=${encodeURIComponent(query)}`,
     );
-    if (!response.ok)
-      throw new Error(`Search failed with status ${response.status}`);
+    if (!response.ok) throw new Error(`Search failed with status ${response.status}`);
     const payload = await response.json();
     const parsedResults = toScrapeResults(payload);
     results(parsedResults);
@@ -196,15 +185,11 @@ async function fetchResults(query: string) {
 async function streamResult(magnet: string) {
   loadingBar.start();
   try {
-    const response = await fetch(
-      "https://rqbit.anitrack.frixaco.com/torrents",
-      {
-        method: "post",
-        body: magnet,
-      },
-    );
-    if (!response.ok)
-      throw new Error(`Stream failed with status ${response.status}`);
+    const response = await fetch("https://rqbit.anitrack.frixaco.com/torrents", {
+      method: "post",
+      body: magnet,
+    });
+    if (!response.ok) throw new Error(`Stream failed with status ${response.status}`);
     const payload = await response.json();
     const target = toStreamTarget(payload);
     if (!target) return;
@@ -357,12 +342,7 @@ const resultsPanel = Column(
     flexGrow: 1,
     minHeight: 0,
   },
-  [
-    Text({ text: "RESULTS", foreground: T.accent }),
-    resultsSummary,
-    resultsList,
-    helpLine,
-  ],
+  [Text({ text: "RESULTS", foreground: T.accent }), resultsSummary, resultsList, helpLine],
 );
 
 // --- Layout ---
@@ -378,11 +358,7 @@ type ResultRow = {
   button: ReturnType<typeof Button>;
   title: ReturnType<typeof Text>;
   meta: ReturnType<typeof Text>;
-  setItem: (
-    item: ScrapeResultItem,
-    globalIdx: number,
-    isActive: boolean,
-  ) => void;
+  setItem: (item: ScrapeResultItem, globalIdx: number, isActive: boolean) => void;
 };
 
 const resultRows: ResultRow[] = [];
@@ -541,12 +517,7 @@ ff(() => {
       : `${all.length} results · navigating with ${activePane === "results" ? "keyboard" : "mouse"}`,
   );
   resultsSummary.setStyle({
-    foreground:
-      all.length === 0
-        ? T.muted
-        : activePane === "results"
-          ? T.active
-          : T.accent,
+    foreground: all.length === 0 ? T.muted : activePane === "results" ? T.active : T.accent,
   });
 
   if (all !== lastResultsSnapshot) {
@@ -580,9 +551,7 @@ ff(() => {
   const fallbackHeight = Math.max(
     1,
     Math.floor(
-      resultHeights.get(selected) ??
-        resultButtons[0]?.frameHeight() ??
-        searchInput.frameHeight(),
+      resultHeights.get(selected) ?? resultButtons[0]?.frameHeight() ?? searchInput.frameHeight(),
     ),
   );
   const itemHeightAt = (index: number) =>
