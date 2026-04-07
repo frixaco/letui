@@ -7,8 +7,7 @@
 3. Start with `bun run dev`, `bun run anitrack`, `examples/snake.ts`, or `examples/typing-speed.ts`
 4. Use `docs/components-and-styling.md` for current public props
 5. Use `docs/state-events-lifecycle.md` for signals, focus, input, and cleanup
-6. Use `docs/text-layout-overflow-spec.md` for multiline text / overflow design
-7. Use `docs/releasing.md` when cutting a new npm release
+6. Use `docs/releasing.md` when cutting a new npm release
 
 ## Current API shape
 
@@ -25,7 +24,15 @@
 - compatible tree shape => send style deltas and text ops only
 - incompatible tree shape => clear Rust tree state and rebuild it once
 - Rust owns persistent tree state, layout, paint, terminal buffers, and incremental flush
+- Rust text layout treats explicit newlines as hard row boundaries; wrap and overflow happen there, not in JS
 - debug metrics phases: `serialize`, `textSync`, `rust`, `sync`, `flush`
+
+## Current input scope
+
+- `Text` wrapping, clipping, overflow, and newline layout are shipped in the renderer
+- `Input` supports append-at-end typing, backspace-from-end, and multiline newline insertion
+- `Input` is not yet a full editor: no caret movement, mid-buffer insertion, selection, or scrolling
+- `placeholder` exists in props today but is not rendered yet
 
 ## Example map
 

@@ -18,6 +18,7 @@ Button(input: ButtonProps, children?: Node[]): Node
   - optional: `wrap` (`"none" | "word" | "char"`)
   - optional: `textOverflow` (`"clip" | "ellipsis"`)
   - optional: all `StyleProps`
+  - behavior note: explicit newlines always start a new visual row before wrapping
 
 - `InputProps`
   - optional: `placeholder` (`string`)
@@ -25,6 +26,8 @@ Button(input: ButtonProps, children?: Node[]): Node
   - optional: `wrap` (`"word" | "char"`) — note: `"none"` not allowed for inputs
   - optional: `onChange`, `onSubmit`, `onFocus`, `onBlur`
   - optional: all `StyleProps`
+  - current behavior note: `multiline` lets Enter insert `\n`, but `Input` is still append-only today
+  - current limitation: `placeholder` is accepted by props but is not rendered yet
 
 - `ButtonProps`
   - required: `text`, `onClick`
@@ -66,6 +69,8 @@ Button(input: ButtonProps, children?: Node[]): Node
 - Public styling/layout surface is the exported `StyleProps` + `BoxProps` above.
 - `overflow`, scrolling, and other non-exported props are not part of the public API.
 - Prefer `Row` / `Column` for common cases; use `Box` when you need explicit `direction`, including reverse directions.
+- `Text` wrapping and overflow are renderer-owned behaviors; do not expect JS-side wrapping helpers to be the source of truth.
+- `Input` supports wrapped rendering for its current text, but full editor behavior is still out of scope.
 
 ## Colors
 

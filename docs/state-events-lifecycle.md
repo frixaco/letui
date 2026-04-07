@@ -42,7 +42,7 @@ run(root: Node, options?: { debug?: boolean }): { quit: () => void }
 1. JS builds a sent-tree snapshot from the current nodes
 2. If previous and current tree shapes match, JS emits style deltas plus text ops (`SetText`, `DeleteTextRange`)
 3. If shape differs, JS clears Rust tree state and re-inserts the full tree
-4. Rust applies ops, runs layout + paint, then updates the terminal buffer
+4. Rust applies ops, resolves newline boundaries plus wrap/overflow, runs layout + paint, then updates the terminal buffer
 5. JS reads frame rectangles back into each node and rebuilds hit-testing lookup
 6. Rust flushes only changed terminal cells
 
@@ -76,9 +76,12 @@ onKey(key: string, callback: () => void): void
 
 For focused `Input` node:
 
-- printable ASCII appends to text, then calls `onChange(nextText)`
-- backspace (`\x7f`) removes one char, then calls `onChange(nextText)`
-- enter/newline triggers `onSubmit(currentText)`
+- printable input appends to the end of the current text, then calls `onChange(nextText)`
+- backspace (`\x7f`) removes the previous codepoint from the end, then calls `onChange(nextText)`
+- if `multiline` is `true`, enter/newline inserts `\n` and calls `onChange(nextText)`
+- otherwise enter/newline triggers `onSubmit(currentText)`
+- line separators are normalized to `\n` before input handling
+- current `Input` is not a full editor yet: no caret movement, mid-buffer insertion, selection, or scroll viewport
 
 ## Button behavior
 

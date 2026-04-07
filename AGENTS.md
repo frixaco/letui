@@ -18,6 +18,11 @@ For more information, read the Bun API docs in `node_modules/bun-types/docs/**.m
 
 State management primitives, component API, diffing, number of optimizations are DONE.
 
+Current text/input status:
+
+- Text wrap, clipping, overflow, and explicit newline layout are renderer-owned and working.
+- Do not assume `Input` is a full multiline editor yet; current behavior is append-only with backspace-from-end and optional newline insertion.
+
 # General
 
 - Prefer explaining concepts and building mental models over copy-paste code

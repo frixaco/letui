@@ -115,6 +115,8 @@ bun run app.ts
 - Packaged native binaries for `darwin-arm64`, `linux-x64`, `win32-x64`
 - Only deps: `crossterm` and `taffy` Rust crates, everything written from scratch.
 
+Text wrapping, clipping, and overflow are resolved in the Rust renderer. Explicit newlines are treated as hard row boundaries after text normalization.
+
 Debug metrics split the frame into `js`, `render`, `sync`, and `flush`, plus a worst-frame breakdown. Enable with `run(root, { debug: true })`; output writes to `dump/metrics.txt`.
 
 ## Performance
@@ -144,9 +146,10 @@ Benchmark snapshot (`2026-02-20`, `terminal-rerender`, `full` profile, PTY mode)
 
 - [x] Globals ops queue (see `./docs/FULL_RUST_AUTHORITY_SPEC.md`)
 - [x] Text styling: markdown and syntax highlighting API
-- [ ] Multi-line text input, text overflow and wrapping
+- [x] Text wrap, overflow, clipping, and explicit newline layout in the renderer
 - [ ] Vertical and horizontal scrolling
 - [ ] Persistent Taffy tree
+- [ ] Better Input experience: multiline editing, shortcuts, cursor movement, scrolling, placeholder rendering, etc.
 - [ ] Minimal theming support
 - [ ] Safer quit/cleanup when used as a library
 - [ ] Responsive examples for smaller terminal sizes
