@@ -16,6 +16,14 @@ pub fn wrap_text(
 ) -> WrappedText {
     let _ = spans;
 
+    if max_height == 0 {
+        return WrappedText { lines: vec![] };
+    }
+
+    if max_width == 0 {
+        return WrappedText { lines: vec![] };
+    }
+
     if text.is_empty() {
         return WrappedText {
             lines: vec![WrappedLine {
@@ -25,9 +33,62 @@ pub fn wrap_text(
         };
     }
 
-    if max_width == 0 {
-        return WrappedText { lines: vec![] };
+    let mut lines: Vec<String> = vec![];
+    let mut remaining = text;
+
+    loop {
+        let (explicit_line, rest) = match remaining.split_once('\n') {
+            Some((line, rest)) => (line, Some(rest)),
+            None => (remaining, None),
+        };
+
+        lines.extend(wrap_single_line(explicit_line, max_width, wrap, overflow));
+
+        match rest {
+            Some(rest) => {
+                remaining = rest;
+                if remaining.is_empty() {
+                    lines.push(String::new());
+                    break;
+                }
+            }
+            None => break,
+        }
     }
+
+    let clipped = lines.len() > max_height as usize;
+    if clipped {
+        lines.truncate(max_height as usize);
+    }
+
+    if overflow == TextOverflow::Ellipsis && clipped {
+        if let Some(last_line) = lines.last_mut() {
+            apply_ellipsis(last_line, max_width);
+        }
+    }
+
+    WrappedText {
+        lines: lines
+            .into_iter()
+            .map(|text| WrappedLine {
+                text,
+                spans: vec![],
+            })
+            .collect(),
+    }
+}
+
+fn wrap_single_line(
+    text: &str,
+    max_width: u32,
+    wrap: TextWrap,
+    overflow: TextOverflow,
+) -> Vec<String> {
+    if text.is_empty() {
+        return vec![String::new()];
+    }
+
+    let clipped_horizontally = wrap == TextWrap::None && text.width() > max_width as usize;
 
     let mut guws = if wrap == TextWrap::Char {
         UnicodeSegmentation::graphemes(text, true)
@@ -79,38 +140,28 @@ pub fn wrap_text(
         lines.push(line);
     }
 
-    if wrap != TextWrap::None {
-        if lines.len() <= max_height as usize {
-            return WrappedText {
-                lines: lines
-                    .into_iter()
-                    .map(|text| WrappedLine {
-                        text,
-                        spans: vec![],
-                    })
-                    .collect(),
-            };
-        }
-
-        lines = lines[..max_height as usize].to_vec();
-    }
-
-    if overflow == TextOverflow::Ellipsis {
+    if clipped_horizontally && overflow == TextOverflow::Ellipsis {
         if let Some(last_line) = lines.last_mut() {
-            last_line.pop();
-            last_line.push('…');
+            apply_ellipsis(last_line, max_width);
         }
     }
 
-    WrappedText {
-        lines: lines
-            .into_iter()
-            .map(|text| WrappedLine {
-                text,
-                spans: vec![],
-            })
-            .collect(),
+    lines
+}
+
+fn apply_ellipsis(last_line: &mut String, max_width: u32) {
+    if max_width == 0 {
+        last_line.clear();
+        return;
     }
+
+    if last_line.width() >= max_width as usize {
+        last_line.pop();
+        last_line.push('…');
+        return;
+    }
+
+    last_line.push('…');
 }
 
 #[cfg(test)]
@@ -329,6 +380,30 @@ mod tests {
     }
 
     #[test]
+    fn explicit_newlines_start_new_rows() {
+        assert_lines(
+            "alpha\nbeta",
+            10,
+            10,
+            TextWrap::Word,
+            TextOverflow::Clip,
+            &["alpha", "beta"],
+        );
+    }
+
+    #[test]
+    fn explicit_blank_lines_are_preserved() {
+        assert_lines(
+            "alpha\n\nbeta\n",
+            10,
+            10,
+            TextWrap::Word,
+            TextOverflow::Clip,
+            &["alpha", "", "beta", ""],
+        );
+    }
+
+    #[test]
     fn ellipsis_works_when_only_one_column_is_available() {
         assert_lines(
             "abcdef",
@@ -518,21 +593,12 @@ impl Surface<'_> {
         spans: &[TextSpanData],
     ) {
         let CellStyle { fg, bg, attrs: _a } = style;
-
         let x_start = rect.x as u16;
         let y_row = rect.y as u16;
 
-        if y_row >= self.th {
-            return;
-        }
-
         if spans.is_empty() {
             for (i, ch) in text.chars().enumerate() {
-                let col = x_start + i as u16;
-                if col >= self.tw {
-                    break;
-                }
-                self.set_cell(col, y_row, ch, style);
+                self.set_cell(x_start + i as u16, y_row, printable_cell_char(ch), style);
             }
             return;
         }
@@ -540,9 +606,6 @@ impl Surface<'_> {
         let mut span_index = 0usize;
         for (char_index, (byte_start, ch)) in text.char_indices().enumerate() {
             let col = x_start + char_index as u16;
-            if col >= self.tw {
-                break;
-            }
 
             while span_index < spans.len() && spans[span_index].end_byte <= byte_start {
                 span_index += 1;
@@ -564,7 +627,7 @@ impl Surface<'_> {
             self.set_cell(
                 col,
                 y_row,
-                ch,
+                printable_cell_char(ch),
                 CellStyle {
                     fg: resolved_fg,
                     bg: resolved_bg,
@@ -578,6 +641,10 @@ impl Surface<'_> {
     pub fn draw_cursor(&mut self, rect: SurfaceRect, text_len: f32, style: CellStyle) {
         self.set_cell((rect.x + text_len) as u16, rect.y as u16, '█', style);
     }
+}
+
+fn printable_cell_char(ch: char) -> char {
+    if ch.is_control() { ' ' } else { ch }
 }
 
 #[derive(Clone, Copy)]

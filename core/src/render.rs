@@ -64,6 +64,8 @@ pub extern "C" fn render() -> c_int {
                 h: layout.size.height,
             };
 
+            surface.draw_bg(root_rect, parent_bg);
+
             paint_taffy_node(
                 taffy,
                 taffy_root,
@@ -121,6 +123,7 @@ enum Content {
     },
     Input {
         content: String,
+        wrap: TextWrap,
     },
 }
 
@@ -240,6 +243,7 @@ fn node_data_to_context(data: &NodeData) -> NodeContext {
         },
         NodeType::Input => Content::Input {
             content: data.text.clone(),
+            wrap: data.style.text_wrap,
         },
     };
 
@@ -342,6 +346,28 @@ fn measure_function(
         };
     }
 
+    if let Content::Input { content, wrap } = &node_context.content {
+        let wrapped = wrap_text(
+            content,
+            &[],
+            max_width,
+            max_height,
+            *wrap,
+            TextOverflow::Clip,
+        );
+        let width = wrapped
+            .lines
+            .iter()
+            .map(|line| line.text.width())
+            .max()
+            .unwrap_or(0) as f32;
+
+        return Size {
+            width,
+            height: wrapped.lines.len() as f32,
+        };
+    }
+
     let Some(text) = node_context.text() else {
         return Size::ZERO;
     };
@@ -407,10 +433,47 @@ fn paint_taffy_node(
             surface.draw_border(rect, chrome.border, style.bg);
             style
         }
-        Content::Input { content } => {
+        Content::Input { content, wrap } => {
             surface.draw_border(rect, chrome.border, style.bg);
-            surface.draw_text(content_rect, &content, style, &[]);
-            surface.draw_cursor(content_rect, content.chars().count() as f32, style);
+            let wrapped = wrap_text(
+                content,
+                &[],
+                content_rect.w.max(0.0) as u32,
+                content_rect.h.max(0.0) as u32,
+                *wrap,
+                TextOverflow::Clip,
+            );
+
+            for (line_index, line) in wrapped.lines.iter().enumerate() {
+                surface.draw_text(
+                    SurfaceRect {
+                        x: content_rect.x,
+                        y: content_rect.y + line_index as f32,
+                        w: content_rect.w,
+                        h: 1.0,
+                    },
+                    &line.text,
+                    style,
+                    &[],
+                );
+            }
+
+            let cursor_row = wrapped.lines.len().saturating_sub(1) as f32;
+            let cursor_col = wrapped
+                .lines
+                .last()
+                .map_or(0.0, |line| line.text.width() as f32)
+                .min(content_rect.w.max(1.0) - 1.0);
+            surface.draw_cursor(
+                SurfaceRect {
+                    x: content_rect.x,
+                    y: content_rect.y + cursor_row,
+                    w: content_rect.w,
+                    h: 1.0,
+                },
+                cursor_col,
+                style,
+            );
             style
         }
         Content::Text {

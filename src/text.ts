@@ -28,7 +28,7 @@ export function prepareTextInput(text: string): PreparedTextInput {
       continue;
     }
 
-    normalizedChars.push(ch === "\r" ? "\n" : ch === "\t" ? " " : ch);
+    normalizedChars.push(isHardLineBreak(ch) ? "\n" : ch === "\t" ? " " : ch);
     newIndex += 1;
     oldIndex += 1;
     boundaryMap[oldIndex] = newIndex;
@@ -129,6 +129,10 @@ function getCodePointMetadata(text: string): {
     byteLength,
     byteOffsets,
   };
+}
+
+function isHardLineBreak(ch: string): boolean {
+  return ch === "\r" || ch === "\u0085" || ch === "\u2028" || ch === "\u2029";
 }
 
 function mapSourceBoundary(
