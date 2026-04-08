@@ -2,7 +2,7 @@
 //
 // Data flow:
 // Search input → fetchResults() → API call → toScrapeResults() → results signal update → ff() effect → result row rendering
-// Keyboard → selectNext/selectPrev → selectedIndex signal → ff() effect → UI highlight update
+// Keyboard → moveSelection()/jumpSelection() → selectedIndex signal → ff() effect → UI highlight update
 
 import { existsSync } from "fs";
 import { COLORS, Button, Column, Input, Row, Text, $, ff, onKey, run } from "@";
@@ -22,23 +22,22 @@ type ScrapeResultItem = {
 };
 
 type StyledSegment = Omit<TextSpan, "start" | "end"> & { text: string };
+type ResultRow = {
+  button: ReturnType<typeof Button>;
+  setActive: (isActive: boolean) => void;
+  measuredHeight: () => number;
+};
 
 // --- Supporting types ---
 
 const T = {
-  bg: COLORS.default.bg,
   bgAlt: COLORS.default.bg_alt,
-  bgHi: COLORS.default.bg_highlight,
   fg: COLORS.default.fg,
   muted: COLORS.default.grey,
   accent: COLORS.default.cyan,
   active: COLORS.default.green,
   warn: COLORS.default.yellow,
-  dim: COLORS.default.grey,
   border: COLORS.default.bg_highlight,
-  pink: COLORS.default.pink,
-  purple: COLORS.default.purple,
-  orange: COLORS.default.orange,
   badgeFg: COLORS.default.bg,
 } as const;
 
@@ -50,6 +49,10 @@ const results = $<ScrapeResultItem[]>([]);
 const loading = $(false);
 const selectedIndex = $(0);
 const focusTarget = $<"input" | "results">("input");
+let renderedButtons: ReturnType<typeof Button>[] = [];
+let lastResultsSnapshot: ScrapeResultItem[] | null = null;
+let lastResultsListWidth = -1;
+let resultRows: ResultRow[] = [];
 
 // --- Core algorithm ---
 
@@ -80,10 +83,6 @@ const loadingBar = LoadingBar({
   trackColor: T.border,
 });
 
-function textLength(text: string): number {
-  return Array.from(text).length;
-}
-
 function styled(segments: readonly StyledSegment[]): StyledText {
   let text = "";
   let cursor = 0;
@@ -91,7 +90,7 @@ function styled(segments: readonly StyledSegment[]): StyledText {
   for (const seg of segments) {
     const start = cursor;
     text += seg.text;
-    cursor += textLength(seg.text);
+    cursor += Array.from(seg.text).length;
     if (
       seg.foreground !== undefined ||
       seg.background !== undefined ||
@@ -140,23 +139,6 @@ function toStreamTarget(payload: unknown): { infoHash: string; fileIndex: number
   return { infoHash, fileIndex: files.length - 1 };
 }
 
-function resetResultsToInput(): void {
-  results([]);
-  selectedIndex(0);
-  focusInput();
-}
-
-function blurSearchInputIfFocused(): void {
-  if (searchInput.isFocused()) {
-    searchInput.blur();
-  }
-}
-
-function focusResults(): void {
-  focusTarget("results");
-  blurSearchInputIfFocused();
-}
-
 async function fetchResults(query: string) {
   loading(true);
   loadingBar.start();
@@ -169,13 +151,9 @@ async function fetchResults(query: string) {
     const parsedResults = toScrapeResults(payload);
     results(parsedResults);
     selectedIndex(0);
-    if (parsedResults.length > 0) {
-      focusResults();
-    } else {
-      focusInput();
-    }
+    setPane(parsedResults.length > 0 ? "results" : "input");
   } catch {
-    resetResultsToInput();
+    clearResults();
   } finally {
     loading(false);
     loadingBar.stop();
@@ -212,19 +190,8 @@ async function streamResult(magnet: string) {
 const idleBorder = { color: T.border, style: "rounded" as const };
 const focusBorder = { color: T.active, style: "rounded" as const };
 
-const headerTitle = Text({
-  text: styled([
-    { text: "ANITRACK", foreground: T.accent, bold: true },
-    { text: " // ", foreground: T.muted },
-    { text: "TORRENT SEARCH", foreground: T.fg, bold: true },
-  ]),
-});
-
-const headerMeta = Text({
-  text: "",
-  foreground: T.muted,
-  wrap: "word",
-});
+const headerTitle = Text({ text: "ANITRACK // TORRENT SEARCH", foreground: T.accent });
+const headerMeta = Text({ text: "", foreground: T.muted });
 
 const statusBadge = Text({
   text: " idle ",
@@ -269,7 +236,7 @@ const searchInput = Input({
   onSubmit: (val) => {
     const query = val.trim();
     if (query.length === 0) {
-      resetResultsToInput();
+      clearResults();
       return;
     }
     fetchResults(query);
@@ -281,15 +248,22 @@ const searchInput = Input({
   onBlur: (self) => self.setStyle({ border: idleBorder }),
 });
 
-const searchHint = Text({
-  text: styled([
-    { text: "Enter", foreground: T.accent, bold: true },
-    { text: " search", foreground: T.muted },
-    { text: "   ", foreground: T.muted },
-    { text: "Tab", foreground: T.accent, bold: true },
-    { text: " results", foreground: T.muted },
-  ]),
-});
+function setPane(target: "input" | "results"): void {
+  if (target === "results" && results().length > 0) {
+    focusTarget("results");
+    if (searchInput.isFocused()) searchInput.blur();
+    return;
+  }
+
+  focusTarget("input");
+  searchInput.focus();
+}
+
+function clearResults(): void {
+  results([]);
+  selectedIndex(0);
+  setPane("input");
+}
 
 const searchPanel = Column(
   {
@@ -301,7 +275,7 @@ const searchPanel = Column(
   [
     Row({ gap: 1, alignItems: "center", flexWrap: "wrap" }, [
       Text({ text: "SEARCH", foreground: T.accent }),
-      searchHint,
+      Text({ text: "Enter search   Tab results", foreground: T.muted }),
     ]),
     Row({ alignItems: "stretch" }, [searchInput]),
     Row({}, [loadingBar.node]),
@@ -317,22 +291,8 @@ const resultsSummary = Text({
 const resultsList = Column({ padding: "0 0", flexGrow: 1, gap: 0 }, []);
 
 const helpLine = Text({
-  text: styled([
-    { text: "/", foreground: T.accent, bold: true },
-    { text: " search", foreground: T.muted },
-    { text: "  ", foreground: T.muted },
-    { text: "j/k", foreground: T.active, bold: true },
-    { text: " navigate", foreground: T.muted },
-    { text: "  ", foreground: T.muted },
-    { text: "h/l", foreground: T.active, bold: true },
-    { text: " jump", foreground: T.muted },
-    { text: "  ", foreground: T.muted },
-    { text: "Enter", foreground: T.orange, bold: true },
-    { text: " stream", foreground: T.muted },
-    { text: "  ", foreground: T.muted },
-    { text: "q", foreground: T.pink, bold: true },
-    { text: " quit", foreground: T.muted },
-  ]),
+  text: "/ search   j/k move   h/l jump   Enter stream   q quit",
+  foreground: T.muted,
 });
 
 const resultsPanel = Column(
@@ -348,37 +308,42 @@ const resultsPanel = Column(
 // --- Layout ---
 const root = Column({ flexGrow: 1 }, [header, searchPanel, resultsPanel]);
 
-// --- Result Row Pool ---
-let resultButtons: ReturnType<typeof Button>[] = [];
-let visibleStartIndex = 0;
-let lastResultsSnapshot: ScrapeResultItem[] | null = null;
-const resultHeights = new Map<number, number>();
+function resultTitleText(item: ScrapeResultItem, isActive: boolean): StyledText {
+  return styled([
+    { text: isActive ? "▸ " : "  ", foreground: isActive ? T.active : T.muted },
+    {
+      text: item.title,
+      foreground: isActive ? T.active : T.fg,
+      bold: isActive,
+    },
+  ]);
+}
 
-type ResultRow = {
-  button: ReturnType<typeof Button>;
-  title: ReturnType<typeof Text>;
-  meta: ReturnType<typeof Text>;
-  setItem: (item: ScrapeResultItem, globalIdx: number, isActive: boolean) => void;
-};
+function resultMetaText(item: ScrapeResultItem, isActive: boolean): StyledText {
+  return styled([
+    { text: `  ${item.size}`, foreground: isActive ? T.accent : T.muted },
+    { text: "  ·  ", foreground: T.border },
+    {
+      text: item.date,
+      foreground: isActive ? T.accent : T.muted,
+      italic: true,
+    },
+  ]);
+}
 
-const resultRows: ResultRow[] = [];
-
-function createResultRow(): ResultRow {
-  let globalIdx = 0;
-  let magnet = "";
-  let currentItem: ScrapeResultItem | null = null;
-  let currentActive = false;
-  let currentGlobalIdx = -1;
-
+function createResultRow(
+  item: ScrapeResultItem,
+  index: number,
+  isActive: boolean,
+): ResultRow {
   const title = Text({
-    text: "",
+    text: resultTitleText(item, isActive),
     wrap: "word",
-    foreground: T.fg,
   });
+
   const meta = Text({
-    text: "",
+    text: resultMetaText(item, isActive),
     wrap: "word",
-    foreground: T.muted,
   });
 
   const button = Button(
@@ -387,81 +352,102 @@ function createResultRow(): ResultRow {
       border: undefined,
       padding: "0 1",
       foreground: T.fg,
+      background: isActive ? T.bgAlt : undefined,
       onFocus: () => {
-        if (focusTarget() !== "results") focusTarget("results");
-        if (selectedIndex() !== globalIdx) selectedIndex(globalIdx);
+        setPane("results");
+        if (selectedIndex() !== index) selectedIndex(index);
       },
       onClick: () => {
-        if (focusTarget() !== "results") focusTarget("results");
-        if (selectedIndex() !== globalIdx) selectedIndex(globalIdx);
-        if (magnet.length > 0) streamResult(magnet);
+        setPane("results");
+        if (selectedIndex() !== index) selectedIndex(index);
+        if (item.magnet.length > 0) streamResult(item.magnet);
       },
     },
     [Column({ gap: 0 }, [title, meta])],
   );
 
+  let active = isActive;
+
   return {
     button,
-    title,
-    meta,
-    setItem: (item, nextGlobalIdx, isActive) => {
-      const itemChanged = currentItem !== item;
-      const activeChanged = currentActive !== isActive;
-      const indexChanged = currentGlobalIdx !== nextGlobalIdx;
+    setActive: (nextActive) => {
+      if (nextActive === active) return;
 
-      globalIdx = nextGlobalIdx;
-      magnet = item.magnet;
-
-      if (!itemChanged && !activeChanged && !indexChanged) {
-        return;
-      }
-
-      currentItem = item;
-      currentActive = isActive;
-      currentGlobalIdx = nextGlobalIdx;
-
-      const marker = isActive ? "▸ " : "  ";
-
-      if (itemChanged || activeChanged) {
-        title.setText(
-          styled([
-            { text: marker, foreground: isActive ? T.active : T.muted },
-            {
-              text: item.title,
-              foreground: isActive ? T.active : T.fg,
-              bold: isActive,
-            },
-          ]),
-        );
-        meta.setText(
-          styled([
-            {
-              text: `  ${item.size}`,
-              foreground: isActive ? T.accent : T.muted,
-            },
-            { text: "  ·  ", foreground: T.border },
-            {
-              text: item.date,
-              foreground: isActive ? T.accent : T.muted,
-              italic: true,
-            },
-          ]),
-        );
-      }
-
-      if (itemChanged || activeChanged) {
-        button.setStyle({
-          background: isActive ? T.bgAlt : undefined,
-        });
-      }
+      active = nextActive;
+      title.setText(resultTitleText(item, nextActive));
+      meta.setText(resultMetaText(item, nextActive));
+      button.setStyle({ background: nextActive ? T.bgAlt : undefined });
     },
+    measuredHeight: () => Math.floor(button.frameHeight()),
   };
 }
 
-function ensureResultRows(count: number): void {
-  while (resultRows.length < count) {
-    resultRows.push(createResultRow());
+function visibleWindow(
+  rows: readonly ResultRow[],
+  selected: number,
+  availableHeight: number,
+): { start: number; end: number } {
+  if (rows.length === 0) {
+    return { start: 0, end: 0 };
   }
+
+  const clampedSelected = Math.max(0, Math.min(selected, rows.length - 1));
+  const rowHeightAt = (index: number) => Math.max(1, rows[index]?.measuredHeight() ?? 0);
+
+  let start = clampedSelected;
+  let end = clampedSelected + 1;
+  let usedHeight = rowHeightAt(clampedSelected);
+  let heightBeforeSelection = 0;
+  const targetHeightBeforeSelection = Math.max(0, Math.floor((availableHeight - usedHeight) / 2));
+
+  while (start > 0) {
+    const nextHeight = rowHeightAt(start - 1);
+    if (usedHeight + nextHeight > availableHeight) break;
+    if (heightBeforeSelection + nextHeight > targetHeightBeforeSelection) break;
+
+    start -= 1;
+    usedHeight += nextHeight;
+    heightBeforeSelection += nextHeight;
+  }
+
+  while (end < rows.length) {
+    const nextHeight = rowHeightAt(end);
+    if (usedHeight + nextHeight > availableHeight) break;
+
+    usedHeight += nextHeight;
+    end += 1;
+  }
+
+  while (start > 0) {
+    const nextHeight = rowHeightAt(start - 1);
+    if (usedHeight + nextHeight > availableHeight) break;
+
+    start -= 1;
+    usedHeight += nextHeight;
+  }
+
+  return {
+    start,
+    end,
+  };
+}
+
+function setVisibleButtons(nextButtons: ReturnType<typeof Button>[]): void {
+  const buttonsChanged =
+    nextButtons.length !== renderedButtons.length ||
+    nextButtons.some((button, index) => renderedButtons[index] !== button);
+
+  if (!buttonsChanged) return;
+
+  renderedButtons = nextButtons;
+  resultsList.setChildren?.(nextButtons);
+}
+
+function rebuildResultRows(items: readonly ScrapeResultItem[], selected: number, listWidth: number): void {
+  resultRows = items.map((item, index) => createResultRow(item, index, index === selected));
+  lastResultsSnapshot = [...items];
+  lastResultsListWidth = listWidth;
+  renderedButtons = [];
 }
 
 // --- Reactive effects ---
@@ -488,55 +474,25 @@ ff(() => {
     background: all.length > 0 ? T.accent : undefined,
   });
 
-  // Update header metadata.
   headerMeta.setText(
-    styled([
-      { text: "focus ", foreground: T.muted },
-      {
-        text: activePane,
-        foreground: activePane === "input" ? T.active : T.accent,
-        bold: true,
-      },
-      ...(all.length > 0
-        ? [
-            { text: "   viewing ", foreground: T.muted },
-            {
-              text: `${Math.min(all.length, selected + 1)}/${all.length}`,
-              foreground: T.accent,
-              bold: true as const,
-            },
-          ]
-        : []),
-    ]),
+    all.length > 0
+      ? `focus ${activePane}   viewing ${Math.min(all.length, selected + 1)}/${all.length}`
+      : `focus ${activePane}`,
   );
 
-  // Update the results summary line.
   resultsSummary.setText(
-    all.length === 0
-      ? "no results — enter a query to search"
-      : `${all.length} results · navigating with ${activePane === "results" ? "keyboard" : "mouse"}`,
+    all.length === 0 ? "no results - enter a query to search" : `${all.length} results`,
   );
   resultsSummary.setStyle({
-    foreground: all.length === 0 ? T.muted : activePane === "results" ? T.active : T.accent,
+    foreground: all.length === 0 ? T.muted : T.accent,
   });
 
-  if (all !== lastResultsSnapshot) {
-    resultHeights.clear();
-    lastResultsSnapshot = all;
-  }
-
-  for (let i = 0; i < resultButtons.length; i++) {
-    const measuredHeight = Math.floor(resultButtons[i]?.frameHeight() ?? 0);
-    if (measuredHeight > 0) {
-      resultHeights.set(visibleStartIndex + i, measuredHeight);
-    }
-  }
-
   if (all.length === 0) {
-    visibleStartIndex = 0;
-    resultButtons = [];
-    resultsList.setChildren?.([]);
-    if (focusTarget() === "results") focusInput();
+    resultRows = [];
+    lastResultsSnapshot = [];
+    lastResultsListWidth = -1;
+    setVisibleButtons([]);
+    if (activePane === "results") setPane("input");
     return;
   }
 
@@ -546,138 +502,92 @@ ff(() => {
     return;
   }
 
-  // Window the visible results to the measured viewport height.
+  const listWidth = Math.floor(resultsList.frameWidth());
+  const resultsChanged =
+    all.length !== lastResultsSnapshot?.length || all.some((item, index) => lastResultsSnapshot?.[index] !== item);
+
+  if (resultsChanged || listWidth !== lastResultsListWidth) {
+    rebuildResultRows(all, clampedSelected, listWidth);
+  } else {
+    for (let index = 0; index < resultRows.length; index++) {
+      resultRows[index]?.setActive(index === clampedSelected);
+    }
+  }
+
+  const allButtons = resultRows.map((row) => row.button);
+  const allMeasured = resultRows.every((row) => row.measuredHeight() > 0);
+  if (!allMeasured) {
+    // Mount every row for one render pass so the layout engine can measure them.
+    setVisibleButtons(allButtons);
+    return;
+  }
+
   const availableHeight = Math.max(1, Math.floor(resultsList.frameHeight()));
-  const fallbackHeight = Math.max(
-    1,
-    Math.floor(
-      resultHeights.get(selected) ?? resultButtons[0]?.frameHeight() ?? searchInput.frameHeight(),
-    ),
-  );
-  const itemHeightAt = (index: number) =>
-    Math.max(1, Math.floor(resultHeights.get(index) ?? fallbackHeight));
-
-  let start = selected;
-  let usedHeight = 0;
-  while (start >= 0) {
-    const height = itemHeightAt(start);
-    if (usedHeight + height > availableHeight) {
-      if (usedHeight > 0) start += 1;
-      break;
-    }
-    usedHeight += height;
-    if (start === 0) break;
-    start -= 1;
-  }
-  start = Math.max(0, start);
-
-  let end = start;
-  let windowHeight = 0;
-  while (end < all.length) {
-    const height = itemHeightAt(end);
-    if (windowHeight + height > availableHeight) {
-      if (end === start) end += 1;
-      break;
-    }
-    windowHeight += height;
-    end += 1;
-  }
-
-  const visible = all.slice(start, end);
-  visibleStartIndex = start;
-  ensureResultRows(visible.length);
-  const nextButtons = visible.map((item, i) => {
-    const globalIdx = start + i;
-    const isActive = globalIdx === selected;
-    const row = resultRows[i]!;
-    row.setItem(item, globalIdx, isActive);
-    return row.button;
-  });
-
-  const buttonsChanged =
-    nextButtons.length !== resultButtons.length ||
-    nextButtons.some((button, i) => resultButtons[i] !== button);
-
-  if (buttonsChanged) {
-    resultButtons = nextButtons;
-    resultsList.setChildren?.(resultButtons);
-  }
+  const { start, end } = visibleWindow(resultRows, clampedSelected, availableHeight);
+  setVisibleButtons(allButtons.slice(start, end));
 });
 
 // --- Keyboard navigation ---
-onKey("/", () => focusInput());
-onKey("\t", () => toggleFocusTarget());
-onKey("\x1b[Z", () => toggleFocusTarget());
-onKey("j", () => selectNext());
-onKey("\x1b[B", () => selectNext());
-onKey("k", () => selectPrev());
-onKey("\x1b[A", () => selectPrev());
-onKey("l", () => selectLast());
-onKey("\x1b[C", () => selectLast());
-onKey("h", () => selectFirst());
-onKey("\x1b[D", () => selectFirst());
-onKey("\r", () => streamSelectedResult());
-onKey("\n", () => streamSelectedResult());
+onKey("/", () => setPane("input"));
+for (const key of ["\t", "\x1b[Z"]) {
+  onKey(key, () => togglePane());
+}
+
+for (const key of ["j", "\x1b[B"]) {
+  onKey(key, () => moveSelection(1));
+}
+
+for (const key of ["k", "\x1b[A"]) {
+  onKey(key, () => moveSelection(-1));
+}
+
+for (const key of ["h", "\x1b[D"]) {
+  onKey(key, () => jumpSelection(0));
+}
+
+for (const key of ["l", "\x1b[C"]) {
+  onKey(key, () => jumpSelection(results().length - 1));
+}
+
+for (const key of ["\r", "\n"]) {
+  onKey(key, () => streamSelectedResult());
+}
 
 onKey("q", () => {
   saveMetrics();
   app.quit();
 });
 
-function selectNext() {
+function moveSelection(offset: number): void {
   if (focusTarget() !== "results") return;
+
   const max = results().length - 1;
-  if (selectedIndex() < max) selectedIndex(selectedIndex() + 1);
+  if (max < 0) return;
+
+  selectedIndex(Math.max(0, Math.min(selectedIndex() + offset, max)));
 }
 
-function selectPrev() {
+function jumpSelection(index: number): void {
   if (focusTarget() !== "results") return;
-  if (selectedIndex() > 0) selectedIndex(selectedIndex() - 1);
-}
 
-function selectFirst() {
-  if (focusTarget() !== "results") return;
-  selectedIndex(0);
-}
-
-function selectLast() {
-  if (focusTarget() !== "results") return;
   const max = results().length - 1;
-  if (max >= 0) selectedIndex(max);
+  if (max < 0) return;
+
+  selectedIndex(Math.max(0, Math.min(index, max)));
 }
 
-function focusInput() {
-  focusTarget("input");
-  searchInput.focus();
-}
-
-function streamSelectedResult() {
+function streamSelectedResult(): void {
   if (focusTarget() !== "results") return;
+
   const item = results()[selectedIndex()];
   if (!item || item.magnet.length === 0) return;
   streamResult(item.magnet);
 }
 
-function focusResultsPane() {
-  if (results().length === 0) {
-    focusInput();
-    return;
-  }
-  focusResults();
-}
-
-function toggleFocusTarget() {
-  if (results().length === 0) {
-    focusInput();
-    return;
-  }
-  if (focusTarget() === "input") {
-    focusResultsPane();
-  } else {
-    focusInput();
-  }
+function togglePane(): void {
+  setPane(focusTarget() === "input" ? "results" : "input");
 }
 
 // --- Start ---
 const app = run(root, { debug: true });
-focusInput();
+setPane("input");

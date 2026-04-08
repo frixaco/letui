@@ -22,18 +22,12 @@ git clone https://github.com/frixaco/letui.git
 cd letui
 bun install
 bun run build-ffi
-bun run examples/hello-world.ts
 ```
 
 More examples:
 
 ```bash
-bun run dev
-bun run examples/snake.ts
 bun run examples/typing-speed.ts
-bun run examples/ai-agent.ts
-bun run examples/visualizer.ts
-bun run examples/progress-bar.ts
 ```
 
 (`bun run anitrack` is for personal testing and requires `mpv` player configured with `Anime4K` shaders)
@@ -42,8 +36,7 @@ Checks:
 
 ```bash
 bun run typecheck
-bun run smoke
-bun run metrics:smoke
+bun run check:rust
 ```
 
 ## Install as a library

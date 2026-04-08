@@ -4,10 +4,9 @@
 
 1. Read `docs/getting-started.md`
 2. Run `bun run build-ffi`
-3. Start with `bun run dev`, `bun run anitrack`, `examples/snake.ts`, or `examples/typing-speed.ts`
-4. Use `docs/components-and-styling.md` for current public props
-5. Use `docs/state-events-lifecycle.md` for signals, focus, input, and cleanup
-6. Use `docs/releasing.md` when cutting a new npm release
+3. Use `docs/components-and-styling.md` for current public props
+4. Use `docs/state-events-lifecycle.md` for signals, focus, input, and cleanup
+5. Use `docs/releasing.md` when cutting a new npm release
 
 ## Current API shape
 
@@ -25,7 +24,7 @@
 - incompatible tree shape => clear Rust tree state and rebuild it once
 - Rust owns persistent tree state, layout, paint, terminal buffers, and incremental flush
 - Rust text layout treats explicit newlines as hard row boundaries; wrap and overflow happen there, not in JS
-- debug metrics phases: `serialize`, `textSync`, `rust`, `sync`, `flush`
+- debug metrics phases: `js`, `render`, `sync`, `flush`
 
 ## Current input scope
 
@@ -36,19 +35,13 @@
 
 ## Example map
 
-- `examples/smoke.ts`: deterministic PTY smoke target for CI and agents
 - `examples/anitrack.ts`: interactive torrent-search demo
-- `examples/snake.ts`: keyboard-driven snake game with stable grid nodes
 - `examples/typing-speed.ts`: centered Colemak Mod-DH typing tester
-- `examples/ai-agent.ts`: keyboard-driven split-pane demo
-- `examples/visualizer.ts`: metrics-friendly animated renderer stress demo
 
 ## Agent skills
 
 Repo-local agent skills live in `.agents/skills/`.
 
-- `.agents/skills/letui-api-doc-drift/SKILL.md`: docs/API drift workflow for this repo
-- `.agents/skills/letui-smoke-runner/SKILL.md`: manual and CI-style TUI smoke validation
 - `.agents/skills/kitty-tui-control/SKILL.md`: kitty tab/window control for interactive terminal testing
 
 ## Constraints to remember

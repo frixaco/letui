@@ -11,13 +11,10 @@
   "module": "index.ts",
   "scripts": {
     "build-ffi": "cd core && cargo build --release",
-    "dev": "bun run build-ffi && bun run examples/hello-world.ts",
     "anitrack": "bun run build-ffi && bun run examples/anitrack.ts",
     "typecheck": "bun x tsc -p tsconfig.check.json",
     "check:rust": "cargo check --manifest-path core/Cargo.toml",
-    "smoke": "bun run build-ffi && bun run scripts/smoke.ts",
-    "metrics:smoke": "bun run build-ffi && bun run scripts/capture-metrics.ts",
-    "check": "bun run typecheck && bun run check:rust && bun run smoke"
+    "check": "bun run typecheck && bun run check:rust"
   },
   "dependencies": {},
   "devDependencies": {

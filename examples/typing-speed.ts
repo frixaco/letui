@@ -1,13 +1,14 @@
 // Typing speed demo: keyboard trainer with live accuracy and pacing feedback.
 //
 // Data flow:
-// Key press → handleTypedChar() → typed signal update → ff() effect → UI sync (stats, highlight, key states)
+// Key press → typed/start/finish signals → ff() effect → stats, prompt, and key highlights
 
 import { Column, Row, Text, $, ff, onKey, run } from "@";
+import type { StyledText, TextSpan } from "@";
 
 // --- Domain vocabulary ---
 
-type KeyNode = {
+type KeyCell = {
   value: string;
   node: ReturnType<typeof Text>;
 };
@@ -59,6 +60,9 @@ const PROMPTS = [
   "read ahead stay loose and keep the strokes light",
 ];
 
+const DEFAULT_HINT = "type letters + space   backspace edit   enter next   esc quit";
+const FINISHED_HINT = "enter next prompt   backspace revise   esc quit";
+
 // --- Internal state ---
 
 const promptIndex = $(0);
@@ -69,14 +73,14 @@ const now = $(Date.now());
 
 // --- Core algorithm ---
 
-function cyclePrompt(index: number): number {
-  return (index + 1) % PROMPTS.length;
+function currentPrompt(): string {
+  return PROMPTS[promptIndex()] ?? PROMPTS[0]!;
 }
 
-function countErrors(prompt: string, typed: string): number {
+function countErrors(prompt: string, value: string): number {
   let errors = 0;
-  for (let i = 0; i < typed.length; i++) {
-    if (typed[i] !== prompt[i]) errors++;
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] !== prompt[i]) errors++;
   }
   return errors;
 }
@@ -89,27 +93,108 @@ function formatSeconds(ms: number): string {
   return (ms / 1000).toFixed(1);
 }
 
+function resetPrompt(nextIndex = promptIndex()): void {
+  promptIndex(nextIndex);
+  typed("");
+  startedAt(null);
+  finishedAt(null);
+}
+
+function appendChar(char: string): void {
+  const prompt = currentPrompt();
+  const value = typed();
+
+  if (finishedAt() !== null || value.length >= prompt.length) return;
+  if (startedAt() === null) startedAt(Date.now());
+
+  const nextValue = `${value}${char}`;
+  typed(nextValue);
+  if (nextValue.length === prompt.length) finishedAt(Date.now());
+}
+
+function backspace(): void {
+  const value = typed();
+  if (value.length === 0) return;
+
+  typed(value.slice(0, -1));
+  if (finishedAt() !== null) finishedAt(null);
+}
+
+function advancePrompt(): void {
+  resetPrompt((promptIndex() + 1) % PROMPTS.length);
+}
+
 function keyLabel(value: string): string {
   return value.length === 0 ? "   " : ` ${value} `;
 }
 
-function createKey(value: string): KeyNode {
+function createKeyboardHand(rows: readonly (readonly string[])[]): {
+  node: ReturnType<typeof Column>;
+  cells: KeyCell[];
+} {
+  const cells: KeyCell[] = [];
+
   return {
-    value,
-    node: Text({
-      text: keyLabel(value),
-      foreground: value.length === 0 ? undefined : THEME.muted,
-    }),
+    cells,
+    node: Column(
+      {
+        flexGrow: 1,
+        height: HAND_BOX_HEIGHT,
+        minWidth: HAND_BOX_WIDTH,
+        padding: `${HAND_PADDING_Y} ${HAND_PADDING_X}`,
+        justifyContent: "spaceEvenly",
+        border: { color: THEME.border, style: "rounded" },
+      },
+      rows.map((row) =>
+        Row(
+          { gap: KEY_GAP, justifyContent: "center" },
+          row.map((value) => {
+            const cell = {
+              value,
+              node: Text({
+                text: keyLabel(value),
+                foreground: value.length === 0 ? undefined : THEME.muted,
+              }),
+            };
+
+            if (value.length > 0) cells.push(cell);
+            return cell.node;
+          }),
+        ),
+      ),
+    ),
   };
 }
 
-function createKeyRow(keys: readonly string[], store: KeyNode[]): ReturnType<typeof Row> {
-  const nodes = keys.map((value) => {
-    const key = createKey(value);
-    if (value.length > 0) store.push(key);
-    return key.node;
+function setKeyState(node: ReturnType<typeof Text>, active: boolean, correct: boolean): void {
+  node.setStyle({
+    foreground: active ? THEME.ink : THEME.muted,
+    background: active ? (correct ? THEME.ok : THEME.fail) : undefined,
   });
-  return Row({ gap: KEY_GAP, justifyContent: "center" }, nodes);
+}
+
+function buildPromptText(prompt: string, value: string): StyledText {
+  const spans: TextSpan[] = [];
+
+  for (let index = 0; index < value.length && index < prompt.length; index++) {
+    spans.push({
+      start: index,
+      end: index + 1,
+      foreground: value[index] === prompt[index] ? THEME.muted : THEME.fail,
+    });
+  }
+
+  if (value.length < prompt.length) {
+    spans.push({
+      start: value.length,
+      end: value.length + 1,
+      foreground: THEME.accent,
+      bold: true,
+      underline: true,
+    });
+  }
+
+  return { text: prompt, spans };
 }
 
 // --- View state ---
@@ -129,62 +214,21 @@ const promptLine = Text({
   foreground: THEME.text,
 });
 
-const typedLine = Text({
-  text: "",
-  foreground: THEME.muted,
-});
-
 const hintLine = Text({
-  text: "type letters + space   backspace edit   enter next   esc quit",
+  text: DEFAULT_HINT,
   foreground: THEME.muted,
 });
 
-const allKeys: KeyNode[] = [];
-const leftBox = Column(
-  {
-    flexGrow: 1,
-    height: HAND_BOX_HEIGHT,
-    minWidth: HAND_BOX_WIDTH,
-    padding: `${HAND_PADDING_Y} ${HAND_PADDING_X}`,
-    justifyContent: "spaceEvenly",
-    border: { color: THEME.border, style: "rounded" },
-  },
-  LEFT_ROWS.map((row) => createKeyRow(row, allKeys)),
-);
-
-const rightBox = Column(
-  {
-    flexGrow: 1,
-    height: HAND_BOX_HEIGHT,
-    minWidth: HAND_BOX_WIDTH,
-    padding: `${HAND_PADDING_Y} ${HAND_PADDING_X}`,
-    justifyContent: "spaceEvenly",
-    border: { color: THEME.border, style: "rounded" },
-  },
-  RIGHT_ROWS.map((row) => createKeyRow(row, allKeys)),
-);
-
+const leftHand = createKeyboardHand(LEFT_ROWS);
+const rightHand = createKeyboardHand(RIGHT_ROWS);
+const keyCells = [...leftHand.cells, ...rightHand.cells];
 const spacebarLabel = Text({
   text: "               space               ",
   foreground: THEME.muted,
 });
 
-const spacebarBox = Column(
-  {
-    minHeight: 3,
-    padding: "0 1",
-    alignItems: "center",
-    justifyContent: "center",
-    border: { color: THEME.border, style: "rounded" },
-  },
-  [spacebarLabel],
-);
-
 const keyboard = Column(
-  {
-    width: KEYBOARD_WIDTH,
-    gap: 1,
-  },
+  { width: KEYBOARD_WIDTH, gap: 1 },
   [
     Row(
       {
@@ -192,18 +236,19 @@ const keyboard = Column(
         gap: HAND_GAP,
         alignItems: "stretch",
       },
-      [leftBox, rightBox],
+      [leftHand.node, rightHand.node],
     ),
-    spacebarBox,
+    Column(
+      {
+        minHeight: 3,
+        padding: "0 1",
+        alignItems: "center",
+        justifyContent: "center",
+        border: { color: THEME.border, style: "rounded" },
+      },
+      [spacebarLabel],
+    ),
   ],
-);
-
-const content = Column(
-  {
-    gap: 1,
-    alignItems: "center",
-  },
-  [title, statsLine, promptLine, typedLine, keyboard, hintLine],
 );
 
 const root = Column(
@@ -213,105 +258,62 @@ const root = Column(
     alignItems: "center",
     padding: "1 1",
   },
-  [content],
+  [
+    Column(
+      {
+        gap: 1,
+        alignItems: "center",
+      },
+      [title, statsLine, promptLine, keyboard, hintLine],
+    ),
+  ],
 );
-
-// --- Interaction helpers ---
-
-function resetTest(nextIndex = promptIndex()): void {
-  promptIndex(nextIndex);
-  typed("");
-  startedAt(null);
-  finishedAt(null);
-}
-
-function nextPrompt(): void {
-  resetTest(cyclePrompt(promptIndex()));
-}
-
-function handleTypedChar(char: string): void {
-  const prompt = PROMPTS[promptIndex()] ?? PROMPTS[0]!;
-  const current = typed();
-  if (finishedAt() !== null || current.length >= prompt.length) return;
-  if (startedAt() === null) startedAt(Date.now());
-
-  const nextTyped = `${current}${char}`;
-  typed(nextTyped);
-  if (nextTyped.length === prompt.length) {
-    finishedAt(Date.now());
-  }
-}
-
-function handleBackspace(): void {
-  const current = typed();
-  if (current.length === 0) return;
-  typed(current.slice(0, -1));
-  if (finishedAt() !== null) finishedAt(null);
-}
 
 // --- Reactive sync ---
 
 ff(() => {
-  const prompt = PROMPTS[promptIndex()] ?? PROMPTS[0]!;
-  const currentTyped = typed();
-  const errors = countErrors(prompt, currentTyped);
-  const elapsedMs =
-    startedAt() === null ? 0 : Math.max(1, (finishedAt() ?? now()) - (startedAt() ?? now()));
+  const prompt = currentPrompt();
+  const value = typed();
+  const errors = countErrors(prompt, value);
+  const start = startedAt();
+  const finish = finishedAt();
+  const elapsedMs = start === null ? 0 : Math.max(1, (finish ?? now()) - start);
   const minutes = elapsedMs / 60000;
-  const grossWpm = minutes > 0 ? currentTyped.length / 5 / minutes : 0;
+  const wpm = minutes > 0 ? value.length / 5 / minutes : 0;
   const accuracy =
-    currentTyped.length === 0
-      ? 100
-      : clampPercent(((currentTyped.length - errors) / currentTyped.length) * 100);
-  const finished = finishedAt() !== null;
-  const lastTyped = currentTyped[currentTyped.length - 1] ?? "";
-  const lastExpected = prompt[currentTyped.length - 1] ?? "";
+    value.length === 0 ? 100 : clampPercent(((value.length - errors) / value.length) * 100);
+  const finished = finish !== null;
+  const lastTyped = value[value.length - 1] ?? "";
+  const lastExpected = prompt[value.length - 1] ?? "";
   const lastWasCorrect = lastTyped.length > 0 && lastTyped === lastExpected;
 
   statsLine.setText(
-    `wpm ${grossWpm.toFixed(1)}   acc ${accuracy.toFixed(0)}%   errors ${errors}   time ${formatSeconds(elapsedMs)}s`,
+    `wpm ${wpm.toFixed(1)}   acc ${accuracy.toFixed(0)}%   errors ${errors}   time ${formatSeconds(elapsedMs)}s`,
   );
   statsLine.setStyle({
     foreground: finished ? THEME.ok : errors > 0 ? THEME.warn : THEME.text,
   });
 
-  promptLine.setText(prompt);
-  promptLine.setStyle({ foreground: THEME.text });
+  promptLine.setText(buildPromptText(prompt, value));
 
-  typedLine.setText(currentTyped.length === 0 ? "start typing" : currentTyped);
-  typedLine.setStyle({
-    foreground:
-      finished && errors === 0
-        ? THEME.accent
-        : errors > 0 && lastTyped !== prompt[currentTyped.length - 1]
-          ? THEME.fail
-          : THEME.muted,
-  });
-
-  for (const key of allKeys) {
-    const isLastPressed = key.value === lastTyped && lastTyped.length > 0;
-    key.node.setStyle({
-      foreground: isLastPressed ? THEME.ink : THEME.muted,
-      background: isLastPressed ? (lastWasCorrect ? THEME.ok : THEME.fail) : undefined,
-    });
+  for (const key of keyCells) {
+    setKeyState(
+      key.node,
+      key.value === lastTyped && lastTyped.length > 0,
+      lastWasCorrect,
+    );
   }
 
-  const lastWasSpace = lastTyped === " ";
-  spacebarLabel.setStyle({
-    foreground: lastWasSpace ? THEME.ink : THEME.muted,
-    background: lastWasSpace ? (lastWasCorrect ? THEME.ok : THEME.fail) : undefined,
+  setKeyState(spacebarLabel, lastTyped === " ", lastWasCorrect);
+
+  hintLine.setText(finished ? FINISHED_HINT : DEFAULT_HINT);
+  hintLine.setStyle({
+    foreground: finished
+      ? errors === 0
+        ? THEME.ok
+        : THEME.warn
+      : THEME.muted,
   });
-
-  if (finished) {
-    hintLine.setText("enter next prompt   backspace revise   esc quit");
-    hintLine.setStyle({
-      foreground: errors === 0 ? THEME.ok : THEME.warn,
-    });
-    return;
-  }
-
-  hintLine.setText("type letters + space   backspace edit   enter next   esc quit");
-  hintLine.setStyle({ foreground: THEME.muted });
 });
 
 // --- Runtime ---
@@ -331,13 +333,16 @@ function quit(): void {
   app.quit();
 }
 
-for (const letter of "abcdefghijklmnopqrstuvwxyz") {
-  onKey(letter, () => handleTypedChar(letter));
+for (const key of "abcdefghijklmnopqrstuvwxyz ") {
+  onKey(key, () => appendChar(key));
 }
 
-onKey(" ", () => handleTypedChar(" "));
-onKey("\x08", handleBackspace);
-onKey("\x7f", handleBackspace);
-onKey("\r", nextPrompt);
-onKey("\n", nextPrompt);
+for (const key of ["\x08", "\x7f"]) {
+  onKey(key, backspace);
+}
+
+for (const key of ["\r", "\n"]) {
+  onKey(key, advancePrompt);
+}
+
 onKey("\x1b", quit);

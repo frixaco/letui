@@ -17,7 +17,7 @@ What this does: compiles `core/` with `cargo build --release`.
 
 ## 2. Create first demo file
 
-Create `examples/hello-world.ts`:
+Create a demo file under `examples/`:
 
 ```ts
 import { COLORS, Column, Text, $, ff, onKey, run } from "../index.ts";
@@ -65,7 +65,7 @@ onKey("q", () => app.quit());
 ## 3. Run it
 
 ```bash
-bun run examples/hello-world.ts
+bun run examples/<your-file>.ts
 ```
 
 ## 4. Interact + quit
@@ -84,10 +84,8 @@ bun run examples/hello-world.ts
 
 ## Notes
 
-- `bun run dev` runs `examples/hello-world.ts` after building FFI
 - In `examples/`, relative import from `../index.ts` is simplest starter path
 - Existing examples also use `@/...` alias for modules inside `src/`
-- The starter snippet above matches [examples/hello-world.ts](/Users/frixa/Documents/letui/examples/hello-world.ts)
 - Current public props come from `StyleProps`, `BoxProps`, `TextProps`, `InputProps`, and `ButtonProps` in `src/types.ts`
 - Keep node references stable across updates when you can; same-shape trees let runtime send deltas instead of rebuilding Rust tree state
 - `run(root, { debug: true })` writes phase timings to `dump/metrics.txt`: `js`, `render`, `sync`, `flush`, plus worst-frame breakdown
