@@ -64,6 +64,18 @@ onKey(key: string, callback: () => void): void
 - `onKey("q", ...)` handles `q`
 - default hard quit already bound to `Ctrl+Q` (`"\\x11"`)
 
+## Global scroll handlers
+
+```ts
+onScroll((event) => {
+  // event.deltaY is -1 for wheel up, +1 for wheel down
+}): void
+```
+
+- wheel/touchpad scroll packets are decoded from terminal mouse input
+- handlers receive terminal cell coordinates plus the hit-tested `target` node
+- scroll input does not synthesize clicks or focus changes on its own
+
 ## Focus and interaction model
 
 - Focus tracked globally (single focused node)

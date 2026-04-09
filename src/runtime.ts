@@ -35,6 +35,14 @@ export type RunOptions = {
   debug?: boolean;
 };
 
+export type ScrollEvent = {
+  x: number;
+  y: number;
+  deltaX: number;
+  deltaY: number;
+  target: Node | undefined;
+};
+
 export function run(root: Node, options?: RunOptions): { quit: () => void } {
   if (api.init_buffer() !== 1) {
     throw new Error("Failed to initialize letui buffer");
@@ -48,6 +56,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   terminalWidth = $(api.get_width());
   terminalHeight = $(api.get_height());
   globalKeyHandlers = globalKeyHandlers ?? new Map();
+  globalScrollHandlers = globalScrollHandlers ?? new Set();
   nodeRegistry = new Map();
   ops = new OpQueue();
   previousSentTree = null;
@@ -174,6 +183,13 @@ export function onKey(key: string, callback: () => void): void {
     globalKeyHandlers = new Map();
   }
   globalKeyHandlers.set(key, callback);
+}
+
+export function onScroll(callback: (event: ScrollEvent) => void): void {
+  if (!globalScrollHandlers) {
+    globalScrollHandlers = new Set();
+  }
+  globalScrollHandlers.add(callback);
 }
 
 type SentStyleState = Partial<Record<StylePropName, StylePropValue>>;
@@ -733,9 +749,20 @@ function handleMouseEvent(data: string): void {
   const btn = rawBtn & 0b11;
   const x = rawX - 1;
   const y = rawY - 1;
+  const target = getNodeAt(x, y);
+
+  if ((rawBtn & 0b0100_0000) !== 0 && isPress) {
+    const wheel = rawBtn & 0b11;
+    const deltaX = wheel === 2 ? -1 : wheel === 3 ? 1 : 0;
+    const deltaY = wheel === 0 ? -1 : wheel === 1 ? 1 : 0;
+
+    if (deltaX !== 0 || deltaY !== 0) {
+      dispatchScrollEvent({ x, y, deltaX, deltaY, target });
+    }
+    return;
+  }
 
   const isLeftButton = btn === 0;
-  const target = getNodeAt(x, y);
 
   if (isPress && isLeftButton) {
     if (target) {
@@ -797,6 +824,7 @@ let terminalHeight: Signal<number>;
 let spatialLookup: Uint32Array;
 let nodeRegistry: Map<number, Node>;
 let globalKeyHandlers: Map<string, () => void>;
+let globalScrollHandlers: Set<(event: ScrollEvent) => void>;
 let pressedNodeId: number | null = null;
 let isRunning = false;
 let quitFn: (() => void) | null = null;
@@ -811,6 +839,12 @@ function getNodeAt(x: number, y: number): Node | undefined {
   }
   const id = spatialLookup[y * terminalWidth() + x] ?? 0;
   return id !== 0 ? nodeRegistry.get(id) : undefined;
+}
+
+function dispatchScrollEvent(event: ScrollEvent): void {
+  for (const handler of globalScrollHandlers) {
+    handler(event);
+  }
 }
 
 function sameStyleValue(left: StylePropValue, right: StylePropValue): boolean {
