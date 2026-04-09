@@ -342,6 +342,8 @@ enum StyleProp {
     FlexShrink,
     FlexBasis,
     FlexWrap,
+    Overflow,
+    ScrollTop,
     Wrap,
     TextOverflow,
     BoxSizing,
@@ -383,6 +385,8 @@ impl StyleProp {
             "flexShrink" => Some(Self::FlexShrink),
             "flexBasis" => Some(Self::FlexBasis),
             "flexWrap" => Some(Self::FlexWrap),
+            "overflow" => Some(Self::Overflow),
+            "scrollTop" => Some(Self::ScrollTop),
             "wrap" => Some(Self::Wrap),
             "textOverflow" => Some(Self::TextOverflow),
             "boxSizing" => Some(Self::BoxSizing),
@@ -431,6 +435,12 @@ pub enum TextOverflow {
 pub enum BoxSizing {
     BorderBox,
     ContentBox,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ColumnOverflow {
+    NotScrollable,
+    Scroll,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -548,6 +558,13 @@ fn parse_box_sizing(value: &str) -> Option<BoxSizing> {
     match value {
         "borderBox" => Some(BoxSizing::BorderBox),
         "contentBox" => Some(BoxSizing::ContentBox),
+        _ => None,
+    }
+}
+
+fn parse_column_overflow(value: &str) -> Option<ColumnOverflow> {
+    match value {
+        "scroll" => Some(ColumnOverflow::Scroll),
         _ => None,
     }
 }
@@ -686,6 +703,8 @@ fn apply_style(node: &mut NodeContext, prop: StyleProp, value: StyleValue<'_>) -
         StyleProp::FlexShrink => apply_f32(&mut node.style.flex_shrink, 1.0, value),
         StyleProp::FlexBasis => apply_dimension(&mut node.style.flex_basis, value),
         StyleProp::FlexWrap => apply_flex_wrap_value(&mut node.style.flex_wrap, value),
+        StyleProp::Overflow => apply_column_overflow_value(node, value),
+        StyleProp::ScrollTop => apply_f64(&mut node.style.scroll_top, 0.0, value),
         StyleProp::Wrap => apply_text_wrap_value(node, value),
         StyleProp::TextOverflow => apply_text_overflow_value(&mut node.style.text_overflow, value),
         StyleProp::BoxSizing => apply_box_sizing(&mut node.style.box_sizing, value),
@@ -715,6 +734,15 @@ fn apply_bool(slot: &mut bool, value: StyleValue<'_>) -> Option<()> {
     match value {
         StyleValue::Reset => *slot = false,
         StyleValue::Number(value) => *slot = value != 0.0,
+        StyleValue::String(_) => return None,
+    }
+    Some(())
+}
+
+fn apply_f64(slot: &mut f64, reset: f64, value: StyleValue<'_>) -> Option<()> {
+    match value {
+        StyleValue::Reset => *slot = reset,
+        StyleValue::Number(value) => *slot = value,
         StyleValue::String(_) => return None,
     }
     Some(())
@@ -798,6 +826,19 @@ fn apply_flex_wrap_value(slot: &mut FlexWrap, value: StyleValue<'_>) -> Option<(
     Some(())
 }
 
+fn apply_column_overflow_value(node: &mut NodeContext, value: StyleValue<'_>) -> Option<()> {
+    if node.kind != NodeType::Column {
+        return None;
+    }
+
+    match value {
+        StyleValue::Reset => node.style.column_overflow = ColumnOverflow::NotScrollable,
+        StyleValue::String(value) => node.style.column_overflow = parse_column_overflow(value)?,
+        StyleValue::Number(_) => return None,
+    }
+    Some(())
+}
+
 fn apply_text_wrap_value(node: &mut NodeContext, value: StyleValue<'_>) -> Option<()> {
     match value {
         StyleValue::Reset => node.style.text_wrap = node.kind.default_text_wrap(),
@@ -846,7 +887,6 @@ pub struct TreeState {
     pub ids: HashMap<u32, NodeId>,
     pub root: Option<NodeId>,
 }
-
 
 #[derive(Debug, Clone)]
 pub struct TextSpanData {
@@ -960,6 +1000,8 @@ pub struct NodeStyle {
     pub flex_shrink: f32,
     pub flex_basis: StyleDimension,
     pub flex_wrap: FlexWrap,
+    pub column_overflow: ColumnOverflow,
+    pub scroll_top: f64,
     pub text_wrap: TextWrap,
     pub text_overflow: TextOverflow,
     pub box_sizing: BoxSizing,
@@ -991,6 +1033,8 @@ impl NodeStyle {
             flex_shrink: 1.0,
             flex_basis: StyleDimension::Auto,
             flex_wrap: FlexWrap::NoWrap,
+            column_overflow: ColumnOverflow::NotScrollable,
+            scroll_top: 0.0,
             text_wrap: kind.default_text_wrap(),
             text_overflow: TextOverflow::Clip,
             box_sizing: BoxSizing::BorderBox,
@@ -1069,10 +1113,21 @@ pub fn node_context_to_taffy_style(ctx: &NodeContext) -> Style {
             if s.align_items.is_none() {
                 style.align_items = Some(AlignItems::Stretch);
             }
-            style.overflow = Point {
-                x: Overflow::Hidden,
-                y: Overflow::Hidden,
-            };
+            match s.column_overflow {
+                ColumnOverflow::NotScrollable => {
+                    style.overflow = Point {
+                        x: Overflow::Hidden,
+                        y: Overflow::Hidden,
+                    };
+                }
+                ColumnOverflow::Scroll => {
+                    style.overflow = Point {
+                        x: Overflow::Clip,
+                        y: Overflow::Scroll,
+                    };
+                    style.scrollbar_width = 0.0;
+                }
+            }
         }
         NodeType::Input => {
             if s.flex_grow == 0.0 {

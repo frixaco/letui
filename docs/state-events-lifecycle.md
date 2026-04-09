@@ -43,7 +43,7 @@ run(root: Node, options?: { debug?: boolean }): { quit: () => void }
 2. If previous and current tree shapes match, JS emits style deltas plus text ops (`SetText`, `DeleteTextRange`)
 3. If shape differs, JS clears Rust tree state and re-inserts the full tree
 4. Rust applies ops, resolves newline boundaries plus wrap/overflow, runs layout + paint, then updates the terminal buffer
-5. JS reads frame rectangles back into each node and rebuilds hit-testing lookup
+5. JS reads frame rectangles back into each node for measurement, while interaction uses the Rust-owned hitmap from the final painted frame
 6. Rust flushes only changed terminal cells
 
 Debug phase names in `dump/metrics.txt` match that pipeline:
@@ -71,6 +71,7 @@ onKey(key: string, callback: () => void): void
 - Clicking empty space blurs current focus
 - Keyboard input routed to focused node first
 - If focused node consumes key event, global `onKey` handler does not run
+- For scrolled content, Rust is the final authority on which interactive cells are visible/clickable
 
 ## Input behavior
 
@@ -114,3 +115,4 @@ onKey("q", quit);
 
 - Keep long-lived nodes and mutate them with `setText`, `setStyle`, or signals
 - Rebuilding whole subtrees every tick changes tree shape and forces Rust tree rebuilds
+- `Column.setStyle({ scrollTop })` stays on the style-diff path, so vertical scrolling does not require remounting children

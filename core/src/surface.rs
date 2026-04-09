@@ -775,6 +775,123 @@ mod tests {
             Some(0x112233),
         );
     }
+
+    #[test]
+    fn surface_rect_intersection_clips_negative_coordinates() {
+        let rect = SurfaceRect {
+            x: -2.0,
+            y: -1.0,
+            w: 5.0,
+            h: 4.0,
+        };
+        let clip = SurfaceRect {
+            x: 0.0,
+            y: 0.0,
+            w: 10.0,
+            h: 10.0,
+        };
+
+        let visible = rect.intersect(clip).unwrap();
+        assert_eq!(visible.x, 0.0);
+        assert_eq!(visible.y, 0.0);
+        assert_eq!(visible.w, 3.0);
+        assert_eq!(visible.h, 3.0);
+    }
+
+    #[test]
+    fn fill_bounds_clamps_to_terminal_without_unsigned_wrap() {
+        let rect = SurfaceRect {
+            x: -3.0,
+            y: -2.0,
+            w: 6.0,
+            h: 4.0,
+        };
+
+        let bounds = rect.fill_bounds(8, 6).unwrap();
+        assert_eq!(bounds.x_start, 0);
+        assert_eq!(bounds.x_end, 3);
+        assert_eq!(bounds.y_start, 0);
+        assert_eq!(bounds.y_end, 2);
+    }
+
+    fn read_cell_char(buf: &[u64], width: u16, col: u16, row: u16) -> char {
+        let idx = (width as usize * row as usize + col as usize) * FIELDS_PER_CELL;
+        char::from_u32(buf[idx] as u32).unwrap_or('\0')
+    }
+
+    #[test]
+    fn draw_text_skips_wide_graphemes_clipped_on_left_edge() {
+        let mut buf = vec![0u64; 4 * FIELDS_PER_CELL];
+        let mut surface = Surface {
+            buf: &mut buf,
+            tw: 4,
+            th: 1,
+        };
+
+        surface.draw_text(
+            SurfaceRect {
+                x: 0.0,
+                y: 0.0,
+                w: 3.0,
+                h: 1.0,
+            },
+            SurfaceRect {
+                x: 1.0,
+                y: 0.0,
+                w: 2.0,
+                h: 1.0,
+            },
+            "界a",
+            CellStyle {
+                fg: DEFAULT_FG,
+                bg: 0,
+                attrs: 0,
+            },
+            &[],
+        );
+
+        assert_eq!(read_cell_char(&buf, 4, 0, 0), '\0');
+        assert_eq!(read_cell_char(&buf, 4, 1, 0), '\0');
+        assert_eq!(read_cell_char(&buf, 4, 2, 0), 'a');
+        assert_eq!(read_cell_char(&buf, 4, 3, 0), '\0');
+    }
+
+    #[test]
+    fn draw_text_skips_wide_graphemes_clipped_on_right_edge() {
+        let mut buf = vec![0u64; 4 * FIELDS_PER_CELL];
+        let mut surface = Surface {
+            buf: &mut buf,
+            tw: 4,
+            th: 1,
+        };
+
+        surface.draw_text(
+            SurfaceRect {
+                x: 0.0,
+                y: 0.0,
+                w: 3.0,
+                h: 1.0,
+            },
+            SurfaceRect {
+                x: 0.0,
+                y: 0.0,
+                w: 2.0,
+                h: 1.0,
+            },
+            "a界",
+            CellStyle {
+                fg: DEFAULT_FG,
+                bg: 0,
+                attrs: 0,
+            },
+            &[],
+        );
+
+        assert_eq!(read_cell_char(&buf, 4, 0, 0), 'a');
+        assert_eq!(read_cell_char(&buf, 4, 1, 0), '\0');
+        assert_eq!(read_cell_char(&buf, 4, 2, 0), '\0');
+        assert_eq!(read_cell_char(&buf, 4, 3, 0), '\0');
+    }
 }
 
 pub fn text_span_attr_flags(span: &TextSpanData) -> u8 {
@@ -798,13 +915,19 @@ pub struct Surface<'a> {
 }
 
 impl Surface<'_> {
-    pub fn draw_bg(&mut self, rect: SurfaceRect, color: u32) {
-        let SurfaceBounds {
+    pub fn draw_bg(&mut self, rect: SurfaceRect, viewport: SurfaceRect, color: u32) {
+        let Some(SurfaceBounds {
             x_start,
             x_end,
             y_start,
             y_end,
-        } = rect.fill_bounds(self.tw, self.th);
+        }) = rect
+            .intersect(viewport)
+            // going from Taffy coords to terminal coords
+            .and_then(|visible| visible.fill_bounds(self.tw, self.th))
+        else {
+            return;
+        };
 
         for row in y_start..y_end {
             for col in x_start..x_end {
@@ -838,22 +961,39 @@ impl Surface<'_> {
         self.buf[idx + 3] = u64::from(style.attrs);
     }
 
-    pub fn draw_border(&mut self, rect: SurfaceRect, border: ResolvedBorder, bg: u32) {
+    pub fn draw_border(
+        &mut self,
+        rect: SurfaceRect,
+        clip_rect: SurfaceRect,
+        border: ResolvedBorder,
+        bg: u32,
+    ) {
         if !border.has_any_visible_side() {
             return;
         }
 
-        let bounds = rect.border_bounds(self.tw, self.th);
+        let Some(bounds) = rect.border_bounds(self.tw, self.th) else {
+            return;
+        };
+        let Some(viewport_bounds) = clip_rect.fill_bounds(self.tw, self.th) else {
+            return;
+        };
 
         if let Some((fg, style)) = border.is_uniform_full_box() {
-            self.draw_uniform_border(style, bounds, fg, bg);
+            self.draw_uniform_border(style, bounds, viewport_bounds, fg, bg);
             return;
         }
 
-        self.draw_mixed_border(bounds, border, bg);
+        self.draw_mixed_border(bounds, viewport_bounds, border, bg);
     }
 
-    fn draw_mixed_border(&mut self, bounds: SurfaceBounds, border: ResolvedBorder, bg: u32) {
+    fn draw_mixed_border(
+        &mut self,
+        bounds: SurfaceBounds,
+        viewport_bounds: SurfaceBounds,
+        border: ResolvedBorder,
+        bg: u32,
+    ) {
         let SurfaceBounds {
             x_start,
             x_end,
@@ -875,47 +1015,54 @@ impl Surface<'_> {
         if top {
             style.fg = border.top.color;
             for col in x_start..=x_end {
-                self.set_cell(col, y_start, '─', style);
+                self.set_cell_if_clipped(col, y_start, '─', style, viewport_bounds);
             }
         }
         if bottom {
             style.fg = border.bottom.color;
             for col in x_start..=x_end {
-                self.set_cell(col, y_end, '─', style);
+                self.set_cell_if_clipped(col, y_end, '─', style, viewport_bounds);
             }
         }
         if left {
             style.fg = border.left.color;
             for row in y_start..=y_end {
-                self.set_cell(x_start, row, '│', style);
+                self.set_cell_if_clipped(x_start, row, '│', style, viewport_bounds);
             }
         }
         if right {
             style.fg = border.right.color;
             for row in y_start..=y_end {
-                self.set_cell(x_end, row, '│', style);
+                self.set_cell_if_clipped(x_end, row, '│', style, viewport_bounds);
             }
         }
 
         if top && left {
             style.fg = border.top.color;
-            self.set_cell(x_start, y_start, '┌', style);
+            self.set_cell_if_clipped(x_start, y_start, '┌', style, viewport_bounds);
         }
         if top && right {
             style.fg = border.top.color;
-            self.set_cell(x_end, y_start, '┐', style);
+            self.set_cell_if_clipped(x_end, y_start, '┐', style, viewport_bounds);
         }
         if bottom && left {
             style.fg = border.bottom.color;
-            self.set_cell(x_start, y_end, '└', style);
+            self.set_cell_if_clipped(x_start, y_end, '└', style, viewport_bounds);
         }
         if bottom && right {
             style.fg = border.bottom.color;
-            self.set_cell(x_end, y_end, '┘', style);
+            self.set_cell_if_clipped(x_end, y_end, '┘', style, viewport_bounds);
         }
     }
 
-    fn draw_uniform_border(&mut self, style: BorderStyle, bounds: SurfaceBounds, fg: u32, bg: u32) {
+    fn draw_uniform_border(
+        &mut self,
+        style: BorderStyle,
+        bounds: SurfaceBounds,
+        clip_bounds: SurfaceBounds,
+        fg: u32,
+        bg: u32,
+    ) {
         let SurfaceBounds {
             x_start,
             x_end,
@@ -930,18 +1077,18 @@ impl Surface<'_> {
 
         let style = CellStyle { fg, bg, attrs: 0 };
 
-        self.set_cell(x_start, y_start, tl, style);
-        self.set_cell(x_end, y_start, tr, style);
-        self.set_cell(x_start, y_end, bl, style);
-        self.set_cell(x_end, y_end, br, style);
+        self.set_cell_if_clipped(x_start, y_start, tl, style, clip_bounds);
+        self.set_cell_if_clipped(x_end, y_start, tr, style, clip_bounds);
+        self.set_cell_if_clipped(x_start, y_end, bl, style, clip_bounds);
+        self.set_cell_if_clipped(x_end, y_end, br, style, clip_bounds);
 
         for col in (x_start + 1)..x_end {
-            self.set_cell(col, y_start, h_line, style);
-            self.set_cell(col, y_end, h_line, style);
+            self.set_cell_if_clipped(col, y_start, h_line, style, clip_bounds);
+            self.set_cell_if_clipped(col, y_end, h_line, style, clip_bounds);
         }
         for row in (y_start + 1)..y_end {
-            self.set_cell(x_start, row, v_line, style);
-            self.set_cell(x_end, row, v_line, style);
+            self.set_cell_if_clipped(x_start, row, v_line, style, clip_bounds);
+            self.set_cell_if_clipped(x_end, row, v_line, style, clip_bounds);
         }
         return;
     }
@@ -949,6 +1096,7 @@ impl Surface<'_> {
     pub fn draw_text(
         &mut self,
         rect: SurfaceRect,
+        clip_rect: SurfaceRect,
         text: &str,
         style: CellStyle,
         spans: &[TextSpanData],
@@ -958,8 +1106,24 @@ impl Surface<'_> {
             return;
         }
 
-        let x_start = rect.x as u16;
-        let y_row = rect.y as u16;
+        let Some(visible_rect) = rect
+            .intersect(clip_rect)
+            .and_then(|visible| visible.intersect(SurfaceRect::terminal_bounds(self.tw, self.th)))
+        else {
+            return;
+        };
+        let Some(visible_bounds) = visible_rect.fill_bounds(self.tw, self.th) else {
+            return;
+        };
+
+        let x_start = visible_bounds.x_start;
+        let y_row = visible_bounds.y_start;
+        let clip_left = ((visible_rect.x - rect.x).max(0.0).floor()) as usize;
+        let visible_width = (visible_rect.w.max(0.0).ceil()) as usize;
+        if visible_width == 0 {
+            return;
+        }
+        let clip_right = clip_left + visible_width;
 
         let mut span_index = 0usize;
         let mut col_offset = 0usize;
@@ -970,12 +1134,26 @@ impl Surface<'_> {
                 continue;
             }
 
+            if col_offset >= max_width {
+                break;
+            }
+            if col_offset + grapheme_width <= clip_left {
+                col_offset += grapheme_width;
+                continue;
+            }
+            if col_offset >= clip_left + visible_width {
+                break;
+            }
             if col_offset + grapheme_width > max_width {
                 break;
             }
+            if col_offset < clip_left || col_offset + grapheme_width > clip_right {
+                col_offset += grapheme_width;
+                continue;
+            }
 
             let byte_end = byte_start + grapheme.len();
-            let col = x_start + col_offset as u16;
+            let col = x_start + (col_offset - clip_left) as u16;
 
             while span_index < spans.len() && spans[span_index].end_byte <= byte_start {
                 span_index += 1;
@@ -995,11 +1173,12 @@ impl Surface<'_> {
             self.set_cell(col, y_row, printable_grapheme_char(grapheme), cell_style);
 
             for continuation_offset in 1..grapheme_width {
-                self.set_cell(
+                self.set_cell_if_clipped(
                     col + continuation_offset as u16,
                     y_row,
                     CONTINUATION_CELL,
                     cell_style,
+                    visible_bounds,
                 );
             }
 
@@ -1007,9 +1186,39 @@ impl Surface<'_> {
         }
     }
 
-    // TODO: weird stuff happening here
-    pub fn draw_cursor(&mut self, rect: SurfaceRect, text_len: f32, style: CellStyle) {
-        self.set_cell((rect.x + text_len) as u16, rect.y as u16, '█', style);
+    pub fn draw_cursor(
+        &mut self,
+        rect: SurfaceRect,
+        clip_rect: SurfaceRect,
+        text_len: f32,
+        style: CellStyle,
+    ) {
+        let cell_rect = SurfaceRect {
+            x: rect.x + text_len,
+            y: rect.y,
+            w: 1.0,
+            h: 1.0,
+        };
+        let Some(visible) = cell_rect
+            .intersect(clip_rect)
+            .and_then(|visible| visible.fill_bounds(self.tw, self.th))
+        else {
+            return;
+        };
+        self.set_cell(visible.x_start, visible.y_start, '█', style);
+    }
+
+    fn set_cell_if_clipped(
+        &mut self,
+        col: u16,
+        row: u16,
+        ch: char,
+        style: CellStyle,
+        clip_bounds: SurfaceBounds,
+    ) {
+        if cell_in_bounds(col, row, clip_bounds) {
+            self.set_cell(col, row, ch, style);
+        }
     }
 }
 
@@ -1032,6 +1241,7 @@ pub struct SurfaceRect {
     pub h: f32,
 }
 
+#[derive(Clone, Copy)]
 pub struct SurfaceBounds {
     pub x_start: u16,
     pub x_end: u16,
@@ -1040,37 +1250,100 @@ pub struct SurfaceBounds {
 }
 
 impl SurfaceRect {
-    fn fill_bounds(&self, max_w: u16, max_h: u16) -> SurfaceBounds {
-        let x_start = self.x as u16;
-        let y_start = self.y as u16;
-        let x_end = (self.x + self.w).min(max_w as f32) as u16;
-        let y_end = (self.y + self.h).min(max_h as f32) as u16;
+    pub fn terminal_bounds(max_w: u16, max_h: u16) -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            w: max_w as f32,
+            h: max_h as f32,
+        }
+    }
 
-        SurfaceBounds {
+    pub fn is_empty(&self) -> bool {
+        !self.x.is_finite()
+            || !self.y.is_finite()
+            || !self.w.is_finite()
+            || !self.h.is_finite()
+            || self.w <= 0.0
+            || self.h <= 0.0
+    }
+
+    pub fn intersect(&self, other: SurfaceRect) -> Option<SurfaceRect> {
+        if self.is_empty() || other.is_empty() {
+            return None;
+        }
+
+        let x_start = self.x.max(other.x);
+        let y_start = self.y.max(other.y);
+        let x_end = (self.x + self.w).min(other.x + other.w);
+        let y_end = (self.y + self.h).min(other.y + other.h);
+
+        let width = x_end - x_start;
+        let height = y_end - y_start;
+        if width <= 0.0 || height <= 0.0 {
+            return None;
+        }
+
+        Some(SurfaceRect {
+            x: x_start,
+            y: y_start,
+            w: width,
+            h: height,
+        })
+    }
+
+    pub(crate) fn fill_bounds(&self, max_w: u16, max_h: u16) -> Option<SurfaceBounds> {
+        let visible = self.intersect(Self::terminal_bounds(max_w, max_h))?;
+        let x_start = visible.x.floor().max(0.0) as u16;
+        let y_start = visible.y.floor().max(0.0) as u16;
+        let x_end = (visible.x + visible.w).ceil().min(max_w as f32) as u16;
+        let y_end = (visible.y + visible.h).ceil().min(max_h as f32) as u16;
+        if x_start >= x_end || y_start >= y_end {
+            return None;
+        }
+
+        Some(SurfaceBounds {
             x_start,
             x_end,
             y_start,
             y_end,
-        }
+        })
     }
 
-    fn border_bounds(&self, max_w: u16, max_h: u16) -> SurfaceBounds {
-        let x_start = self.x as u16;
-        let y_start = self.y as u16;
-        let x_end = ((self.x + self.w) as u16)
-            .saturating_sub(1)
-            .min(max_w.saturating_sub(1));
-        let y_end = ((self.y + self.h) as u16)
-            .saturating_sub(1)
-            .min(max_h.saturating_sub(1));
+    fn border_bounds(&self, max_w: u16, max_h: u16) -> Option<SurfaceBounds> {
+        if self.is_empty() {
+            return None;
+        }
 
-        SurfaceBounds {
+        let x_start = self.x.floor();
+        let y_start = self.y.floor();
+        let x_end = (self.x + self.w).ceil() - 1.0;
+        let y_end = (self.y + self.h).ceil() - 1.0;
+
+        if x_end < 0.0 || y_end < 0.0 || x_start >= max_w as f32 || y_start >= max_h as f32 {
+            return None;
+        }
+
+        let x_start = x_start.max(0.0) as u16;
+        let y_start = y_start.max(0.0) as u16;
+        let x_end = x_end.min(max_w.saturating_sub(1) as f32) as u16;
+        let y_end = y_end.min(max_h.saturating_sub(1) as f32) as u16;
+
+        if x_start > x_end || y_start > y_end {
+            return None;
+        }
+
+        Some(SurfaceBounds {
             x_start,
             x_end,
             y_start,
             y_end,
-        }
+        })
     }
+}
+
+fn cell_in_bounds(col: u16, row: u16, bounds: SurfaceBounds) -> bool {
+    col >= bounds.x_start && col < bounds.x_end && row >= bounds.y_start && row < bounds.y_end
 }
 
 #[derive(Clone, Copy)]

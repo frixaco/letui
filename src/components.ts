@@ -9,7 +9,9 @@ import type {
   Frame,
   Node,
   BoxNode,
+  ColumnNode,
   BoxProps,
+  ColumnProps,
   TextNode,
   TextProps,
   InputNode,
@@ -23,8 +25,10 @@ import type {
   NormalizedStyledText,
   TextWrap,
   TextOverflow,
+  Overflow,
   _StyleProps,
   _BoxProps,
+  _ColumnProps,
   _TextProps,
   _InputProps,
   _ButtonProps,
@@ -62,8 +66,31 @@ export function Box(input: BoxProps, children: Node[]): BoxNode {
   return node;
 }
 
-export function Column(props: Omit<BoxProps, "direction">, children: Node[]): BoxNode {
-  return Box({ ...props, direction: "column" }, children);
+export function Column(input: ColumnProps, children: Node[]): ColumnNode {
+  const props = createColumnSignals(input);
+  const childrenSignal = $(children);
+  const frameWidth = $(0);
+  const frameHeight = $(0);
+  const setStyleSignals = makeSetStyle(props);
+
+  // Scrolling available only for Column, so we are not inheriting from Box like for Row
+  const node: ColumnNode = {
+    type: NODE_TYPE.Column,
+    id: generateId(),
+    props,
+    handlers: {},
+    frame: getInitialFrame(),
+    frameWidth,
+    frameHeight,
+    children: childrenSignal,
+    setChildren: (nodes) => childrenSignal(nodes),
+    setStyle: (newProps) => setStyleSignals(newProps),
+    focus: () => focusNode(node),
+    blur: () => blurNode(node),
+    isFocused: () => focusedNode === node,
+  };
+
+  return node;
 }
 
 export function Row(props: Omit<BoxProps, "direction">, children: Node[]): BoxNode {
@@ -210,6 +237,14 @@ function createBoxSignals(input: BoxProps): _BoxProps {
     ...createStyleSignals(input),
     gap: $(input.gap),
     direction: $(input.direction),
+  };
+}
+
+function createColumnSignals(input: ColumnProps): _ColumnProps {
+  return {
+    ...createBoxSignals({ ...input, direction: "column" }),
+    overflow: $(input.overflow),
+    scrollTop: $(input.scrollTop),
   };
 }
 

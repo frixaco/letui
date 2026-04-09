@@ -7,6 +7,7 @@ pub(crate) static LAST_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
 pub(crate) static CURRENT_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
 pub(crate) static TERMINAL_SIZE: Mutex<(u16, u16)> = Mutex::new((0, 0));
 pub(crate) static FRAMES: Mutex<Option<Vec<f32>>> = Mutex::new(None);
+pub(crate) static HITMAP: Mutex<Option<Vec<u32>>> = Mutex::new(None);
 pub(crate) static FIRST_DIFF: Mutex<bool> = Mutex::new(true);
 pub(crate) const DEFAULT_BG: u32 = 0x16181a;
 pub(crate) const DEFAULT_FG: u32 = 0xffffff;

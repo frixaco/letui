@@ -51,7 +51,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   nodeRegistry = new Map();
   ops = new OpQueue();
   previousSentTree = null;
-  spatialLookup = new Array(terminalWidth() * terminalHeight());
+  spatialLookup = new Uint32Array(terminalWidth() * terminalHeight());
   pressedNodeId = null;
   isRunning = true;
   let cleanedUp = false;
@@ -122,7 +122,6 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     const frameStart = options?.debug ? startFrame() : 0;
     const jsStart = options?.debug ? startPhase() : 0;
 
-    spatialLookup.fill(undefined);
     nodeRegistry.clear();
     const sentTree = buildSentNodeState(root);
 
@@ -412,6 +411,18 @@ function readSentStyleState(node: Node): SentStyleState {
     style.wrap = wrap;
   }
 
+  if (node.type === NODE_TYPE.Column) {
+    const overflow = props.overflow?.();
+    if (overflow === true || overflow === "scroll") {
+      style.overflow = "scroll";
+    }
+
+    const scrollTop = props.scrollTop?.();
+    if (scrollTop !== undefined) {
+      style.scrollTop = Number.isNaN(scrollTop) ? 0 : scrollTop;
+    }
+  }
+
   const textOverflow = props.textOverflow?.();
   if (textOverflow !== undefined) {
     style.textOverflow = textOverflow;
@@ -503,7 +514,7 @@ function queueFullTreeInsert(node: SentNodeState, textStats: TextOpStats): void 
 
 function syncNodeStyle(id: number, previous: SentStyleState, current: SentStyleState): void {
   for (const prop of EMITTED_STYLE_PROPS) {
-    if (previous[prop] !== current[prop]) {
+    if (!sameStyleValue(previous[prop], current[prop])) {
       ops.updateStyle(id, prop, current[prop]);
     }
   }
@@ -626,28 +637,15 @@ function updateNodeFrames(root: Node): void {
   const framesPtr = api.get_frames_ptr()!;
   const framesLen = Number(api.get_frames_len()!);
   const framesArray = new Float32Array(toArrayBuffer(framesPtr as Pointer, 0, framesLen * 4));
+  const hitmapPtr = api.get_hitmap_ptr?.();
+  const hitmapLen = Number(api.get_hitmap_len?.() ?? 0);
+
+  spatialLookup =
+    hitmapPtr && hitmapLen > 0
+      ? new Uint32Array(toArrayBuffer(hitmapPtr as Pointer, 0, hitmapLen * 4))
+      : new Uint32Array(terminalWidth() * terminalHeight());
 
   let idx = 0;
-  const width = terminalWidth();
-  const height = terminalHeight();
-
-  function markInteractiveHitArea(node: Node): void {
-    if (node.type !== NODE_TYPE.Input && node.type !== NODE_TYPE.Button) return;
-
-    const startX = Math.max(0, Math.floor(node.frame.x));
-    const startY = Math.max(0, Math.floor(node.frame.y));
-    const endX = Math.min(width, Math.ceil(node.frame.x + node.frame.width));
-    const endY = Math.min(height, Math.ceil(node.frame.y + node.frame.height));
-
-    if (startX >= endX || startY >= endY) return;
-
-    for (let y = startY; y < endY; y++) {
-      const rowOffset = y * width;
-      for (let x = startX; x < endX; x++) {
-        spatialLookup[rowOffset + x] = node.id;
-      }
-    }
-  }
 
   function updateFrames(node: Node): void {
     nodeRegistry.set(node.id, node);
@@ -659,7 +657,6 @@ function updateNodeFrames(root: Node): void {
 
     node.frameWidth(node.frame.width);
     node.frameHeight(node.frame.height);
-    markInteractiveHitArea(node);
 
     const children = node.children?.() ?? [];
     for (const child of children) {
@@ -792,12 +789,12 @@ function handleResize(): void {
 
   terminalWidth(api.get_width());
   terminalHeight(api.get_height());
-  spatialLookup = new Array(terminalWidth() * terminalHeight());
+  spatialLookup = new Uint32Array(terminalWidth() * terminalHeight());
 }
 
 let terminalWidth: Signal<number>;
 let terminalHeight: Signal<number>;
-let spatialLookup: (number | undefined)[];
+let spatialLookup: Uint32Array;
 let nodeRegistry: Map<number, Node>;
 let globalKeyHandlers: Map<string, () => void>;
 let pressedNodeId: number | null = null;
@@ -809,8 +806,16 @@ let previousSentTree: SentNodeState | null = null;
 const textEncoder = new TextEncoder();
 
 function getNodeAt(x: number, y: number): Node | undefined {
-  const id = spatialLookup[y * terminalWidth() + x];
-  return id !== undefined ? nodeRegistry.get(id) : undefined;
+  if (x < 0 || y < 0 || x >= terminalWidth() || y >= terminalHeight()) {
+    return undefined;
+  }
+  const id = spatialLookup[y * terminalWidth() + x] ?? 0;
+  return id !== 0 ? nodeRegistry.get(id) : undefined;
+}
+
+function sameStyleValue(left: StylePropValue, right: StylePropValue): boolean {
+  if (left === right) return true;
+  return typeof left === "number" && typeof right === "number" && Number.isNaN(left) && Number.isNaN(right);
 }
 
 function ensureParentDir(path: string): void {

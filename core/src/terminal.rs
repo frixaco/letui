@@ -1,8 +1,8 @@
 //! Terminal lifecycle and flush routines exposed over the Rust FFI boundary.
 
 use crate::shared::{
-    CONTINUATION_CELL, CURRENT_BUFFER, FIELDS_PER_CELL, FIRST_DIFF, LAST_BUFFER, TERMINAL_SIZE,
-    TEXT_ATTR_ALL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
+    CONTINUATION_CELL, CURRENT_BUFFER, FIELDS_PER_CELL, FIRST_DIFF, HITMAP, LAST_BUFFER,
+    TERMINAL_SIZE, TEXT_ATTR_ALL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
 };
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
@@ -31,6 +31,8 @@ pub extern "C" fn init_buffer() -> c_int {
     *cb = Some(vec![0u64; buffer_size]);
     let mut lb = LAST_BUFFER.lock().unwrap();
     *lb = Some(vec![0u64; buffer_size]);
+    let mut hitmap = HITMAP.lock().unwrap();
+    *hitmap = Some(vec![0u32; (w as usize) * (h as usize)]);
 
     1
 }
@@ -146,6 +148,7 @@ pub extern "C" fn get_buffer_len() -> u64 {
 pub extern "C" fn free_buffer() -> c_int {
     *CURRENT_BUFFER.lock().unwrap() = None;
     *LAST_BUFFER.lock().unwrap() = None;
+    *HITMAP.lock().unwrap() = None;
     *FIRST_DIFF.lock().unwrap() = true;
 
     execute!(

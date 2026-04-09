@@ -45,6 +45,7 @@ export type JustifyContent =
 export type FlexWrap = "noWrap" | "wrap" | "wrapReverse";
 export type TextWrap = "none" | "word" | "char";
 export type TextOverflow = "clip" | "ellipsis";
+export type Overflow = boolean | "scroll";
 
 export type TextSpan = {
   start: number;
@@ -110,6 +111,11 @@ export type _BoxProps = _StyleProps & {
   direction: Signal<Direction | undefined>;
 };
 
+export type _ColumnProps = _BoxProps & {
+  overflow: Signal<Overflow | undefined>;
+  scrollTop: Signal<number | undefined>;
+};
+
 export type _TextProps = _StyleProps & {
   text: Signal<string>;
   styledText: Signal<NormalizedStyledText | undefined>;
@@ -163,6 +169,11 @@ export type StyleProps = {
 export type BoxProps = StyleProps & {
   gap?: number;
   direction?: Direction;
+};
+
+export type ColumnProps = Omit<BoxProps, "direction"> & {
+  overflow?: Overflow;
+  scrollTop?: number;
 };
 
 export type TextProps = StyleProps & {
@@ -293,4 +304,15 @@ export type BoxNode = NodeBase<BoxKind> &
     setStyle: (p: Partial<BoxProps>) => void;
   };
 
-export type Node = TextNode | InputNode | ButtonNode | BoxNode;
+export type RowNode = Omit<BoxNode, "type" | "setStyle"> & {
+  type: typeof NODE_TYPE.Row;
+  setStyle: (p: Partial<Omit<BoxProps, "direction">>) => void;
+};
+
+export type ColumnNode = Omit<BoxNode, "type" | "props" | "setStyle"> & {
+  type: typeof NODE_TYPE.Column;
+  props: _ColumnProps;
+  setStyle: (p: Partial<ColumnProps>) => void;
+};
+
+export type Node = TextNode | InputNode | ButtonNode | RowNode | ColumnNode | BoxNode;

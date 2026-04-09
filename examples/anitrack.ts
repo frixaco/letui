@@ -1,8 +1,8 @@
-// ANITRACK torrent search demo: keyboard-first results browsing with stream staging.
+// ANITRACK torrent search demo: vertical scrolling playground with stream staging.
 //
 // Data flow:
-// Search input → fetchResults() → API call → toScrapeResults() → results signal update → ff() effect → result row rendering
-// Keyboard → moveSelection()/jumpSelection() → selectedIndex signal → ff() effect → UI highlight update
+// Search input → fetchResults() → API call → toScrapeResults() → results signal update → ff() effect → full row tree render
+// Keyboard → scrollTop signal → scrollable Column viewport → Rust paint-time clipping/hit-testing
 
 import { existsSync } from "fs";
 import { COLORS, Button, Column, Input, Row, Text, $, ff, onKey, run } from "@";
@@ -24,8 +24,6 @@ type ScrapeResultItem = {
 type StyledSegment = Omit<TextSpan, "start" | "end"> & { text: string };
 type ResultRow = {
   button: ReturnType<typeof Button>;
-  setActive: (isActive: boolean) => void;
-  measuredHeight: () => number;
 };
 
 // --- Supporting types ---
@@ -47,11 +45,9 @@ const MPV_SOCKET_WAIT_MS = 5000;
 
 const results = $<ScrapeResultItem[]>([]);
 const loading = $(false);
-const selectedIndex = $(0);
+const resultsScrollTop = $(0);
 const focusTarget = $<"input" | "results">("input");
-let renderedButtons: ReturnType<typeof Button>[] = [];
 let lastResultsSnapshot: ScrapeResultItem[] | null = null;
-let lastResultsListWidth = -1;
 let resultRows: ResultRow[] = [];
 
 // --- Core algorithm ---
@@ -150,7 +146,7 @@ async function fetchResults(query: string) {
     const payload = await response.json();
     const parsedResults = toScrapeResults(payload);
     results(parsedResults);
-    selectedIndex(0);
+    resultsScrollTop(0);
     setPane(parsedResults.length > 0 ? "results" : "input");
   } catch {
     clearResults();
@@ -261,7 +257,7 @@ function setPane(target: "input" | "results"): void {
 
 function clearResults(): void {
   results([]);
-  selectedIndex(0);
+  resultsScrollTop(0);
   setPane("input");
 }
 
@@ -288,10 +284,19 @@ const resultsSummary = Text({
   foreground: T.muted,
 });
 
-const resultsList = Column({ padding: "0 0", flexGrow: 1, gap: 0 }, []);
+const resultsViewport = Column(
+  {
+    flexGrow: 1,
+    minHeight: 0,
+    gap: 0,
+    overflow: true,
+    scrollTop: 0,
+  },
+  [],
+);
 
 const helpLine = Text({
-  text: "/ search   j/k move   h/l jump   Enter stream   q quit",
+  text: "/ search   Tab pane   j/k scroll   h top   l +10   Enter/click stream   q quit",
   foreground: T.muted,
 });
 
@@ -302,47 +307,42 @@ const resultsPanel = Column(
     flexGrow: 1,
     minHeight: 0,
   },
-  [Text({ text: "RESULTS", foreground: T.accent }), resultsSummary, resultsList, helpLine],
+  [Text({ text: "RESULTS", foreground: T.accent }), resultsSummary, resultsViewport, helpLine],
 );
 
 // --- Layout ---
 const root = Column({ flexGrow: 1 }, [header, searchPanel, resultsPanel]);
 
-function resultTitleText(item: ScrapeResultItem, isActive: boolean): StyledText {
+function resultTitleText(item: ScrapeResultItem): StyledText {
   return styled([
-    { text: isActive ? "▸ " : "  ", foreground: isActive ? T.active : T.muted },
+    { text: "  ", foreground: T.muted },
     {
       text: item.title,
-      foreground: isActive ? T.active : T.fg,
-      bold: isActive,
+      foreground: T.fg,
     },
   ]);
 }
 
-function resultMetaText(item: ScrapeResultItem, isActive: boolean): StyledText {
+function resultMetaText(item: ScrapeResultItem): StyledText {
   return styled([
-    { text: `  ${item.size}`, foreground: isActive ? T.accent : T.muted },
+    { text: `  ${item.size}`, foreground: T.accent },
     { text: "  ·  ", foreground: T.border },
     {
       text: item.date,
-      foreground: isActive ? T.accent : T.muted,
+      foreground: T.muted,
       italic: true,
     },
   ]);
 }
 
-function createResultRow(
-  item: ScrapeResultItem,
-  index: number,
-  isActive: boolean,
-): ResultRow {
+function createResultRow(item: ScrapeResultItem): ResultRow {
   const title = Text({
-    text: resultTitleText(item, isActive),
+    text: resultTitleText(item),
     wrap: "word",
   });
 
   const meta = Text({
-    text: resultMetaText(item, isActive),
+    text: resultMetaText(item),
     wrap: "word",
   });
 
@@ -352,110 +352,33 @@ function createResultRow(
       border: undefined,
       padding: "0 1",
       foreground: T.fg,
-      background: isActive ? T.bgAlt : undefined,
       onFocus: () => {
         setPane("results");
-        if (selectedIndex() !== index) selectedIndex(index);
       },
       onClick: () => {
         setPane("results");
-        if (selectedIndex() !== index) selectedIndex(index);
         if (item.magnet.length > 0) streamResult(item.magnet);
       },
     },
     [Column({ gap: 0 }, [title, meta])],
   );
 
-  let active = isActive;
-
   return {
     button,
-    setActive: (nextActive) => {
-      if (nextActive === active) return;
-
-      active = nextActive;
-      title.setText(resultTitleText(item, nextActive));
-      meta.setText(resultMetaText(item, nextActive));
-      button.setStyle({ background: nextActive ? T.bgAlt : undefined });
-    },
-    measuredHeight: () => Math.floor(button.frameHeight()),
   };
 }
-
-function visibleWindow(
-  rows: readonly ResultRow[],
-  selected: number,
-  availableHeight: number,
-): { start: number; end: number } {
-  if (rows.length === 0) {
-    return { start: 0, end: 0 };
-  }
-
-  const clampedSelected = Math.max(0, Math.min(selected, rows.length - 1));
-  const rowHeightAt = (index: number) => Math.max(1, rows[index]?.measuredHeight() ?? 0);
-
-  let start = clampedSelected;
-  let end = clampedSelected + 1;
-  let usedHeight = rowHeightAt(clampedSelected);
-  let heightBeforeSelection = 0;
-  const targetHeightBeforeSelection = Math.max(0, Math.floor((availableHeight - usedHeight) / 2));
-
-  while (start > 0) {
-    const nextHeight = rowHeightAt(start - 1);
-    if (usedHeight + nextHeight > availableHeight) break;
-    if (heightBeforeSelection + nextHeight > targetHeightBeforeSelection) break;
-
-    start -= 1;
-    usedHeight += nextHeight;
-    heightBeforeSelection += nextHeight;
-  }
-
-  while (end < rows.length) {
-    const nextHeight = rowHeightAt(end);
-    if (usedHeight + nextHeight > availableHeight) break;
-
-    usedHeight += nextHeight;
-    end += 1;
-  }
-
-  while (start > 0) {
-    const nextHeight = rowHeightAt(start - 1);
-    if (usedHeight + nextHeight > availableHeight) break;
-
-    start -= 1;
-    usedHeight += nextHeight;
-  }
-
-  return {
-    start,
-    end,
-  };
-}
-
-function setVisibleButtons(nextButtons: ReturnType<typeof Button>[]): void {
-  const buttonsChanged =
-    nextButtons.length !== renderedButtons.length ||
-    nextButtons.some((button, index) => renderedButtons[index] !== button);
-
-  if (!buttonsChanged) return;
-
-  renderedButtons = nextButtons;
-  resultsList.setChildren?.(nextButtons);
-}
-
-function rebuildResultRows(items: readonly ScrapeResultItem[], selected: number, listWidth: number): void {
-  resultRows = items.map((item, index) => createResultRow(item, index, index === selected));
+function rebuildResultRows(items: readonly ScrapeResultItem[]): void {
+  resultRows = items.map((item) => createResultRow(item));
   lastResultsSnapshot = [...items];
-  lastResultsListWidth = listWidth;
-  renderedButtons = [];
+  resultsViewport.setChildren?.(resultRows.map((row) => row.button));
 }
 
 // --- Reactive effects ---
 ff(() => {
   const all = results();
-  const selected = selectedIndex();
   const isLoading = loading();
   const activePane = focusTarget();
+  const scrollTop = resultsScrollTop();
 
   // Update header badges.
   if (isLoading) {
@@ -476,55 +399,35 @@ ff(() => {
 
   headerMeta.setText(
     all.length > 0
-      ? `focus ${activePane}   viewing ${Math.min(all.length, selected + 1)}/${all.length}`
+      ? `focus ${activePane}   scrollTop ${scrollTop}`
       : `focus ${activePane}`,
   );
 
   resultsSummary.setText(
-    all.length === 0 ? "no results - enter a query to search" : `${all.length} results`,
+    all.length === 0
+      ? "no results - enter a query to search"
+      : `${all.length} results   scrollTop ${scrollTop}`,
   );
   resultsSummary.setStyle({
     foreground: all.length === 0 ? T.muted : T.accent,
   });
+  resultsViewport.setStyle({ scrollTop });
 
   if (all.length === 0) {
     resultRows = [];
     lastResultsSnapshot = [];
-    lastResultsListWidth = -1;
-    setVisibleButtons([]);
+    resultsViewport.setChildren?.([]);
     if (activePane === "results") setPane("input");
     return;
   }
 
-  const clampedSelected = Math.max(0, Math.min(selected, all.length - 1));
-  if (clampedSelected !== selected) {
-    selectedIndex(clampedSelected);
-    return;
-  }
-
-  const listWidth = Math.floor(resultsList.frameWidth());
   const resultsChanged =
-    all.length !== lastResultsSnapshot?.length || all.some((item, index) => lastResultsSnapshot?.[index] !== item);
+    all.length !== lastResultsSnapshot?.length ||
+    all.some((item, index) => lastResultsSnapshot?.[index] !== item);
 
-  if (resultsChanged || listWidth !== lastResultsListWidth) {
-    rebuildResultRows(all, clampedSelected, listWidth);
-  } else {
-    for (let index = 0; index < resultRows.length; index++) {
-      resultRows[index]?.setActive(index === clampedSelected);
-    }
+  if (resultsChanged) {
+    rebuildResultRows(all);
   }
-
-  const allButtons = resultRows.map((row) => row.button);
-  const allMeasured = resultRows.every((row) => row.measuredHeight() > 0);
-  if (!allMeasured) {
-    // Mount every row for one render pass so the layout engine can measure them.
-    setVisibleButtons(allButtons);
-    return;
-  }
-
-  const availableHeight = Math.max(1, Math.floor(resultsList.frameHeight()));
-  const { start, end } = visibleWindow(resultRows, clampedSelected, availableHeight);
-  setVisibleButtons(allButtons.slice(start, end));
 });
 
 // --- Keyboard navigation ---
@@ -534,23 +437,19 @@ for (const key of ["\t", "\x1b[Z"]) {
 }
 
 for (const key of ["j", "\x1b[B"]) {
-  onKey(key, () => moveSelection(1));
+  onKey(key, () => scrollResults(1));
 }
 
 for (const key of ["k", "\x1b[A"]) {
-  onKey(key, () => moveSelection(-1));
+  onKey(key, () => scrollResults(-1));
 }
 
-for (const key of ["h", "\x1b[D"]) {
-  onKey(key, () => jumpSelection(0));
+for (const key of ["h"]) {
+  onKey(key, () => resetScroll());
 }
 
-for (const key of ["l", "\x1b[C"]) {
-  onKey(key, () => jumpSelection(results().length - 1));
-}
-
-for (const key of ["\r", "\n"]) {
-  onKey(key, () => streamSelectedResult());
+for (const key of ["l"]) {
+  onKey(key, () => scrollResults(10));
 }
 
 onKey("q", () => {
@@ -558,30 +457,14 @@ onKey("q", () => {
   app.quit();
 });
 
-function moveSelection(offset: number): void {
+function scrollResults(offset: number): void {
   if (focusTarget() !== "results") return;
-
-  const max = results().length - 1;
-  if (max < 0) return;
-
-  selectedIndex(Math.max(0, Math.min(selectedIndex() + offset, max)));
+  resultsScrollTop(Math.max(0, resultsScrollTop() + offset));
 }
 
-function jumpSelection(index: number): void {
+function resetScroll(): void {
   if (focusTarget() !== "results") return;
-
-  const max = results().length - 1;
-  if (max < 0) return;
-
-  selectedIndex(Math.max(0, Math.min(index, max)));
-}
-
-function streamSelectedResult(): void {
-  if (focusTarget() !== "results") return;
-
-  const item = results()[selectedIndex()];
-  if (!item || item.magnet.length === 0) return;
-  streamResult(item.magnet);
+  resultsScrollTop(0);
 }
 
 function togglePane(): void {

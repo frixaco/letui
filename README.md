@@ -97,7 +97,7 @@ bun run app.ts
 2. Each reactive frame snapshots the current node tree into JS-side sent state
 3. If node shape stays compatible, JS sends only style deltas plus text ops; if shape changes, Rust tree state is rebuilt once
 4. Rust keeps persistent tree state, runs layout + paint, and owns the terminal buffers
-5. Frame data is synced back to JS nodes for hit-testing and `frame` / `frameWidth()` / `frameHeight()`
+5. Frame data is synced back to JS nodes for `frame` / `frameWidth()` / `frameHeight()`, while Rust also exposes the final visible hitmap for interaction
 6. Terminal output is cell-based and incremental; flush only writes changed cells
 
 ## Architecture
@@ -109,6 +109,22 @@ bun run app.ts
 - Only deps: `crossterm` and `taffy` Rust crates, everything written from scratch.
 
 Text wrapping, clipping, and overflow are resolved in the Rust renderer. Explicit newlines are treated as hard row boundaries after text normalization.
+
+Vertical scrolling is available on `Column` only:
+
+```ts
+const viewport = Column(
+  {
+    flexGrow: 1,
+    minHeight: 0,
+    overflow: true,
+    scrollTop: 12,
+  },
+  [content],
+);
+```
+
+`overflow: true` and `overflow: "scroll"` are equivalent. `scrollTop` is a row offset; Rust clamps oversized values, floors fractional values to whole rows, and owns the final hit-testing for the visible scrolled region.
 
 Debug metrics split the frame into `js`, `render`, `sync`, and `flush`, plus a worst-frame breakdown. Enable with `run(root, { debug: true })`; output writes to `dump/metrics.txt`.
 

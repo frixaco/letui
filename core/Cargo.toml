@@ -11,6 +11,7 @@ taffy = { version = "0.9.1", default-features = false, features = [
   "flexbox",
   "grid",
   "block_layout",
+  "content_size",
 ] }
 unicode-segmentation = "1.13.2"
 unicode-width = "0.2.2"

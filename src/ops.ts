@@ -173,6 +173,8 @@ export type StylePropName =
   | "flexBasis"
   | "flexWrap"
   | "boxSizing"
+  | "overflow"
+  | "scrollTop"
   | "wrap"
   | "textOverflow"
   | "cursorVisible";
@@ -213,6 +215,8 @@ export const EMITTED_STYLE_PROPS = [
   "flexBasis",
   "flexWrap",
   "boxSizing",
+  "overflow",
+  "scrollTop",
   "wrap",
   "textOverflow",
   "cursorVisible",
