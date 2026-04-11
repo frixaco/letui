@@ -1,6 +1,6 @@
 //! Layout, frame extraction, and terminal painting for the Rust renderer.
 
-use crate::shared::{CURRENT_BUFFER, FRAMES, HITMAP, RESET_COLOR, TERMINAL_SIZE};
+use crate::shared::{CURRENT_BUFFER, FRAMES, HITMAP, RESET_COLOR, SCROLL_HITMAP, TERMINAL_SIZE};
 use crate::surface::{CellStyle, Surface, SurfaceRect, inherited_style, wrap_text};
 use crate::tree::{ColumnOverflow, NodeContext, NodeType, TREE_STATE, TextOverflow, TextWrap};
 use std::os::raw::c_int;
@@ -55,6 +55,14 @@ pub extern "C" fn render() -> c_int {
         }
         hitmap_vec.fill(0);
 
+        let mut scroll_hitmap_lock = SCROLL_HITMAP.lock().unwrap();
+        let scroll_hitmap_vec =
+            scroll_hitmap_lock.get_or_insert_with(|| vec![0u32; (tw as usize) * (th as usize)]);
+        if scroll_hitmap_vec.len() != expected_hitmap_len {
+            scroll_hitmap_vec.resize(expected_hitmap_len, 0);
+        }
+        scroll_hitmap_vec.fill(0);
+
         let root_ctx = taffy.get_node_context(taffy_root);
         let parent_fg = root_ctx.map_or(RESET_COLOR, |c| c.style.fg);
         let parent_bg = root_ctx.map_or(RESET_COLOR, |c| c.style.bg);
@@ -80,6 +88,7 @@ pub extern "C" fn render() -> c_int {
                 parent_bg,
                 &mut surface,
                 hitmap_vec,
+                scroll_hitmap_vec,
                 root_rect,
                 root_clip,
             );
@@ -119,6 +128,24 @@ pub extern "C" fn get_hitmap_ptr() -> *const u32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn get_hitmap_len() -> u64 {
     let hitmap = HITMAP.lock().unwrap();
+    match *hitmap {
+        Some(ref vec) => vec.len() as u64,
+        None => 0,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_scroll_hitmap_ptr() -> *const u32 {
+    let hitmap = SCROLL_HITMAP.lock().unwrap();
+    match *hitmap {
+        Some(ref vec) => vec.as_ptr(),
+        None => std::ptr::null(),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn get_scroll_hitmap_len() -> u64 {
+    let hitmap = SCROLL_HITMAP.lock().unwrap();
     match *hitmap {
         Some(ref vec) => vec.len() as u64,
         None => 0,
@@ -221,6 +248,7 @@ fn paint_taffy_node(
     parent_bg: u32,
     surface: &mut Surface<'_>,
     hitmap: &mut [u32],
+    scroll_hitmap: &mut [u32],
     surface_rect: SurfaceRect,
     viewport: SurfaceRect,
 ) {
@@ -340,6 +368,9 @@ fn paint_taffy_node(
     if matches!(ctx.kind, NodeType::Input | NodeType::Button) {
         fill_hitmap_rect(hitmap, surface.tw, surface.th, visible_rect, ctx.id);
     }
+    if ctx.kind == NodeType::Column && ctx.style.column_overflow == ColumnOverflow::Scroll {
+        fill_hitmap_rect(scroll_hitmap, surface.tw, surface.th, visible_rect, ctx.id);
+    }
 
     let CellStyle { fg, bg, .. } = style;
     let mut child_origin = rect;
@@ -361,6 +392,7 @@ fn paint_taffy_node(
             bg,
             surface,
             hitmap,
+            scroll_hitmap,
             child_origin,
             child_clip,
         );

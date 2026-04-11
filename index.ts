@@ -9,6 +9,7 @@ export { NODE_TYPE, NODE_KIND_ID } from "./src/types";
 export type {
   Frame,
   Node,
+  ScrollViewNode,
   BoxProps,
   ScrollViewProps,
   TextProps,
@@ -32,6 +33,7 @@ export type {
   StyledText,
   NormalizedTextSpan,
   NormalizedStyledText,
+  ScrollEvent,
 } from "./src/types";
 
 // TODO: expose the raw FFI surface for low-level use cases?

@@ -177,6 +177,7 @@ export type BoxProps = StyleProps & {
 export type ScrollViewProps = Omit<BoxProps, "direction"> & {
   overflow?: never;
   scrollY?: number;
+  onScroll?: (event: ScrollEvent) => void;
 };
 
 export type TextProps = StyleProps & {
@@ -232,6 +233,10 @@ export type NodeKindNum = (typeof NODE_KIND_ID)[NodeKind];
 // --- Supporting types ---
 
 export type BoxHandlers = {};
+
+export type ScrollViewHandlers = {
+  onScroll?: (event: ScrollEvent) => void;
+};
 
 export type TextHandlers = {};
 
@@ -316,6 +321,13 @@ export type BoxNode = NodeBase<BoxKind> &
     setStyle: (p: Partial<BoxProps>) => void;
   };
 
+export type ScrollViewNode = NodeBase<typeof NODE_TYPE.Column> &
+  ContainerNode & {
+    props: _ScrollViewProps;
+    handlers: ScrollViewHandlers;
+    setStyle: (p: Partial<Omit<ScrollViewProps, "onScroll">>) => void;
+  };
+
 export type RowNode = Omit<BoxNode, "type" | "setStyle"> & {
   type: typeof NODE_TYPE.Row;
   setStyle: (p: Partial<Omit<BoxProps, "direction">>) => void;
@@ -330,6 +342,15 @@ export type Node =
   | TextNode
   | InputNode
   | ButtonNode
+  | ScrollViewNode
   | RowNode
   | ColumnNode
   | BoxNode;
+
+export type ScrollEvent = {
+  x: number;
+  y: number;
+  deltaX: number;
+  deltaY: number;
+  target: Node | undefined;
+};

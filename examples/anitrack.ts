@@ -18,7 +18,6 @@ import {
   appearance,
   ff,
   onKey,
-  onScroll,
   run,
 } from "@";
 import { saveMetrics } from "@/metrics";
@@ -202,7 +201,10 @@ function startAniTrackDemo(): ReturnType<typeof run> {
   }
 
   function idleBorder() {
-    return { color: currentTheme().surfaceHighlight, style: "rounded" as const };
+    return {
+      color: currentTheme().surfaceHighlight,
+      style: "rounded" as const,
+    };
   }
 
   function focusBorder() {
@@ -234,7 +236,10 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     text: "Enter search   Tab results",
     foreground: initialTheme.muted,
   });
-  const resultsTitle = Text({ text: "RESULTS", foreground: initialTheme.accent });
+  const resultsTitle = Text({
+    text: "RESULTS",
+    foreground: initialTheme.accent,
+  });
 
   const statusBadge = Text({
     text: " idle ",
@@ -320,6 +325,9 @@ function startAniTrackDemo(): ReturnType<typeof run> {
       minHeight: 0,
       gap: 0,
       scrollY: 0,
+      onScroll: ({ deltaY, x, y }) => {
+        scrollResultsFromPointer(deltaY, x, y);
+      },
     },
     [],
   );
@@ -336,15 +344,14 @@ function startAniTrackDemo(): ReturnType<typeof run> {
       flexGrow: 1,
       minHeight: 0,
     },
-    [
-      resultsTitle,
-      resultsSummary,
-      resultsViewport,
-      helpLine,
-    ],
+    [resultsTitle, resultsSummary, resultsViewport, helpLine],
   );
 
-  const root = Column({ flexGrow: 1, background: initialTheme.surface }, [header, searchPanel, resultsPanel]);
+  const root = Column({ flexGrow: 1, background: initialTheme.surface }, [
+    header,
+    searchPanel,
+    resultsPanel,
+  ]);
 
   function setPane(target: Pane): void {
     if (target === "results" && results().length > 0) {
@@ -466,7 +473,11 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     resultsScrollY(Math.max(0, resultsScrollY() + offset));
   }
 
-  function scrollResultsFromPointer(deltaY: number, x: number, y: number): void {
+  function scrollResultsFromPointer(
+    deltaY: number,
+    x: number,
+    y: number,
+  ): void {
     if (deltaY === 0 || results().length === 0) return;
     if (!isPointInside(resultsViewport, x, y)) return;
 
@@ -602,10 +613,6 @@ function startAniTrackDemo(): ReturnType<typeof run> {
   onKey("q", () => {
     saveMetrics();
     app.quit();
-  });
-
-  onScroll(({ deltaY, x, y }) => {
-    scrollResultsFromPointer(deltaY, x, y);
   });
 
   setPane("input");

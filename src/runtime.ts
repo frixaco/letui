@@ -15,7 +15,14 @@ import api from "./ffi";
 import { $, ff, type Signal } from "./signals";
 import { getFocusedNode, getFocusVersion } from "./components";
 import { dispatchInputChunk } from "./input";
-import { NODE_TYPE, type AppearanceMode, type Node, type NodeKind, type NormalizedStyledText } from "./types";
+import {
+  NODE_TYPE,
+  type AppearanceMode,
+  type Node,
+  type NodeKind,
+  type NormalizedStyledText,
+  type ScrollEvent,
+} from "./types";
 import {
   EMITTED_STYLE_PROPS,
   OpQueue,
@@ -42,15 +49,8 @@ export type RunOptions = {
   appearance?: AppearanceMode;
 };
 
-export type ScrollEvent = {
-  x: number;
-  y: number;
-  deltaX: number;
-  deltaY: number;
-  target: Node | undefined;
-};
-
 export { appearance, refreshAppearance } from "./appearance";
+export type { ScrollEvent } from "./types";
 
 export function run(root: Node, options?: RunOptions): { quit: () => void } {
   configureAppearanceSession(options?.appearance ?? "auto");
@@ -67,11 +67,11 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   terminalWidth = $(api.get_width());
   terminalHeight = $(api.get_height());
   globalKeyHandlers = globalKeyHandlers ?? new Map();
-  globalScrollHandlers = globalScrollHandlers ?? new Set();
   nodeRegistry = new Map();
   ops = new OpQueue();
   previousSentTree = null;
   spatialLookup = new Uint32Array(terminalWidth() * terminalHeight());
+  scrollSpatialLookup = new Uint32Array(terminalWidth() * terminalHeight());
   pressedNodeId = null;
   isRunning = true;
   let cleanedUp = false;
@@ -196,13 +196,6 @@ export function onKey(key: string, callback: () => void): void {
     globalKeyHandlers = new Map();
   }
   globalKeyHandlers.set(key, callback);
-}
-
-export function onScroll(callback: (event: ScrollEvent) => void): void {
-  if (!globalScrollHandlers) {
-    globalScrollHandlers = new Set();
-  }
-  globalScrollHandlers.add(callback);
 }
 
 type SentStyleState = Partial<Record<StylePropName, StylePropValue>>;
@@ -668,10 +661,16 @@ function updateNodeFrames(root: Node): void {
   const framesArray = new Float32Array(toArrayBuffer(framesPtr as Pointer, 0, framesLen * 4));
   const hitmapPtr = api.get_hitmap_ptr?.();
   const hitmapLen = Number(api.get_hitmap_len?.() ?? 0);
+  const scrollHitmapPtr = api.get_scroll_hitmap_ptr?.();
+  const scrollHitmapLen = Number(api.get_scroll_hitmap_len?.() ?? 0);
 
   spatialLookup =
     hitmapPtr && hitmapLen > 0
       ? new Uint32Array(toArrayBuffer(hitmapPtr as Pointer, 0, hitmapLen * 4))
+      : new Uint32Array(terminalWidth() * terminalHeight());
+  scrollSpatialLookup =
+    scrollHitmapPtr && scrollHitmapLen > 0
+      ? new Uint32Array(toArrayBuffer(scrollHitmapPtr as Pointer, 0, scrollHitmapLen * 4))
       : new Uint32Array(terminalWidth() * terminalHeight());
 
   let idx = 0;
@@ -763,6 +762,7 @@ function handleMouseEvent(data: string): void {
   const x = rawX - 1;
   const y = rawY - 1;
   const target = getNodeAt(x, y);
+  const scrollTarget = getScrollNodeAt(x, y);
 
   if ((rawBtn & 0b0100_0000) !== 0 && isPress) {
     const wheel = rawBtn & 0b11;
@@ -770,7 +770,7 @@ function handleMouseEvent(data: string): void {
     const deltaY = wheel === 0 ? -1 : wheel === 1 ? 1 : 0;
 
     if (deltaX !== 0 || deltaY !== 0) {
-      dispatchScrollEvent({ x, y, deltaX, deltaY, target });
+      dispatchScrollEvent({ x, y, deltaX, deltaY, target }, scrollTarget);
     }
     return;
   }
@@ -833,14 +833,15 @@ function handleResize(): void {
   terminalWidth(api.get_width());
   terminalHeight(api.get_height());
   spatialLookup = new Uint32Array(terminalWidth() * terminalHeight());
+  scrollSpatialLookup = new Uint32Array(terminalWidth() * terminalHeight());
 }
 
 let terminalWidth: Signal<number>;
 let terminalHeight: Signal<number>;
 let spatialLookup: Uint32Array;
+let scrollSpatialLookup: Uint32Array;
 let nodeRegistry: Map<number, Node>;
 let globalKeyHandlers: Map<string, () => void>;
-let globalScrollHandlers: Set<(event: ScrollEvent) => void>;
 let pressedNodeId: number | null = null;
 let isRunning = false;
 let quitFn: (() => void) | null = null;
@@ -857,9 +858,20 @@ function getNodeAt(x: number, y: number): Node | undefined {
   return id !== 0 ? nodeRegistry.get(id) : undefined;
 }
 
-function dispatchScrollEvent(event: ScrollEvent): void {
-  for (const handler of globalScrollHandlers) {
+function getScrollNodeAt(x: number, y: number): Node | undefined {
+  if (x < 0 || y < 0 || x >= terminalWidth() || y >= terminalHeight()) {
+    return undefined;
+  }
+  const id = scrollSpatialLookup[y * terminalWidth() + x] ?? 0;
+  return id !== 0 ? nodeRegistry.get(id) : undefined;
+}
+
+function dispatchScrollEvent(event: ScrollEvent, scrollTarget: Node | undefined): void {
+  const handler = (scrollTarget?.handlers as { onScroll?: (event: ScrollEvent) => void } | undefined)
+    ?.onScroll;
+  if (handler) {
     handler(event);
+    return;
   }
 }
 

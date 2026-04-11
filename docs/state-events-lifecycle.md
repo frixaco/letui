@@ -80,17 +80,33 @@ onKey(key: string, callback: () => void): void
 - `onKey("q", ...)` handles `q`
 - default hard quit already bound to `Ctrl+Q` (`"\\x11"`)
 
-## Global scroll handlers
+## Scroll handlers
+
+```ts
+const viewport = ScrollView(
+  {
+    scrollY: 0,
+    onScroll: (event) => {
+      // event.deltaY is -1 for wheel up, +1 for wheel down
+    },
+  },
+  children,
+);
+```
+
+- wheel/touchpad scroll packets are decoded from terminal mouse input
+- `ScrollView({ onScroll })` is the primary API
+- handlers fire for any visible cell inside that scroll view's viewport, including empty background or text-only regions
+- `event.target` is still the regular hit-tested node under the pointer, so it may be `undefined` over non-interactive content
+- scroll input does not synthesize clicks or focus changes on its own
+
+Global fallback still exists:
 
 ```ts
 onScroll((event) => {
   // event.deltaY is -1 for wheel up, +1 for wheel down
 }): void
 ```
-
-- wheel/touchpad scroll packets are decoded from terminal mouse input
-- handlers receive terminal cell coordinates plus the hit-tested `target` node
-- scroll input does not synthesize clicks or focus changes on its own
 
 ## Focus and interaction model
 

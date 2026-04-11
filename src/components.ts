@@ -11,6 +11,7 @@ import type {
   BoxNode,
   ColumnNode,
   BoxProps,
+  ScrollViewNode,
   ScrollViewProps,
   TextNode,
   TextProps,
@@ -32,12 +33,6 @@ import type {
   _InputProps,
   _ButtonProps,
 } from "./types";
-
-// Exist only for users
-type ScrollViewNode = ColumnNode & {
-  props: _ScrollViewProps;
-  setStyle: (p: Partial<ScrollViewProps>) => void;
-};
 
 export function Box(input: BoxProps, children: Node[]): BoxNode {
   const props = createBoxSignals(input);
@@ -72,7 +67,8 @@ export function Box(input: BoxProps, children: Node[]): BoxNode {
 }
 
 export function ScrollView(input: ScrollViewProps, children: Node[]): ScrollViewNode {
-  const props = createScrollViewSignals(input);
+  const { onScroll, ...styleInput } = input;
+  const props = createScrollViewSignals(styleInput);
   const childrenSignal = $(children);
   const frameWidth = $(0);
   const frameHeight = $(0);
@@ -82,7 +78,7 @@ export function ScrollView(input: ScrollViewProps, children: Node[]): ScrollView
     type: NODE_TYPE.Column,
     id: generateId(),
     props,
-    handlers: {},
+    handlers: { onScroll },
     frame: getInitialFrame(),
     frameWidth,
     frameHeight,
@@ -250,7 +246,7 @@ function createBoxSignals(input: BoxProps): _BoxProps {
   };
 }
 
-function createScrollViewSignals(input: ScrollViewProps): _ScrollViewProps {
+function createScrollViewSignals(input: Omit<ScrollViewProps, "onScroll">): _ScrollViewProps {
   return {
     ...createBoxSignals({ ...input, direction: "column" }),
     overflow: $("scroll" as Overflow | undefined),

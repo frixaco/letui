@@ -93,6 +93,14 @@ const { symbols: api } = dlopen(path, {
     args: [],
     returns: "u64",
   },
+  get_scroll_hitmap_ptr: {
+    args: [],
+    returns: "pointer",
+  },
+  get_scroll_hitmap_len: {
+    args: [],
+    returns: "u64",
+  },
   get_width: {
     args: [],
     returns: "u16",
