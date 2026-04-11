@@ -11,7 +11,7 @@ export type {
   Frame,
   Node,
   BoxProps,
-  ColumnProps,
+  ScrollViewProps,
   TextProps,
   InputProps,
   ButtonProps,

@@ -127,4 +127,4 @@ onKey("q", quit);
 
 - Keep long-lived nodes and mutate them with `setText`, `setStyle`, or signals
 - Rebuilding whole subtrees every tick changes tree shape and forces Rust tree rebuilds
-- `Column.setStyle({ scrollTop })` stays on the style-diff path, so vertical scrolling does not require remounting children
+- `ScrollView.setStyle({ scrollY })` stays on the style-diff path, so vertical scrolling does not require remounting children

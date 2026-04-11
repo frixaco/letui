@@ -11,7 +11,7 @@ import type {
   BoxNode,
   ColumnNode,
   BoxProps,
-  ColumnProps,
+  ScrollViewProps,
   TextNode,
   TextProps,
   InputNode,
@@ -24,15 +24,20 @@ import type {
   StyledText,
   NormalizedStyledText,
   TextWrap,
-  TextOverflow,
   Overflow,
   _StyleProps,
   _BoxProps,
-  _ColumnProps,
+  _ScrollViewProps,
   _TextProps,
   _InputProps,
   _ButtonProps,
 } from "./types";
+
+// Exist only for users
+type ScrollViewNode = ColumnNode & {
+  props: _ScrollViewProps;
+  setStyle: (p: Partial<ScrollViewProps>) => void;
+};
 
 export function Box(input: BoxProps, children: Node[]): BoxNode {
   const props = createBoxSignals(input);
@@ -66,15 +71,14 @@ export function Box(input: BoxProps, children: Node[]): BoxNode {
   return node;
 }
 
-export function Column(input: ColumnProps, children: Node[]): ColumnNode {
-  const props = createColumnSignals(input);
+export function ScrollView(input: ScrollViewProps, children: Node[]): ScrollViewNode {
+  const props = createScrollViewSignals(input);
   const childrenSignal = $(children);
   const frameWidth = $(0);
   const frameHeight = $(0);
   const setStyleSignals = makeSetStyle(props);
 
-  // Scrolling available only for Column, so we are not inheriting from Box like for Row
-  const node: ColumnNode = {
+  const node: ScrollViewNode = {
     type: NODE_TYPE.Column,
     id: generateId(),
     props,
@@ -91,6 +95,12 @@ export function Column(input: ColumnProps, children: Node[]): ColumnNode {
   };
 
   return node;
+}
+
+export function Column(props: Omit<BoxProps, "direction">, children: Node[]): ColumnNode {
+  const input: BoxProps = { ...props, direction: "column" };
+
+  return Box(input, children) as ColumnNode;
 }
 
 export function Row(props: Omit<BoxProps, "direction">, children: Node[]): BoxNode {
@@ -240,11 +250,11 @@ function createBoxSignals(input: BoxProps): _BoxProps {
   };
 }
 
-function createColumnSignals(input: ColumnProps): _ColumnProps {
+function createScrollViewSignals(input: ScrollViewProps): _ScrollViewProps {
   return {
     ...createBoxSignals({ ...input, direction: "column" }),
-    overflow: $(input.overflow),
-    scrollTop: $(input.scrollTop),
+    overflow: $("scroll" as Overflow | undefined),
+    scrollY: $(input.scrollY),
   };
 }
 
@@ -294,7 +304,7 @@ function createInputSignals(
   input: {
     placeholder?: string;
     multiline?: boolean;
-    wrap?: Exclude<TextWrap, "none">;
+    wrap?: TextWrap;
   } & StyleProps,
 ): _InputProps {
   return {

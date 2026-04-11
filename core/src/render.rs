@@ -347,7 +347,7 @@ fn paint_taffy_node(
     if ctx.kind == NodeType::Column && ctx.style.column_overflow == ColumnOverflow::Scroll {
         if let Some(viewport_clip) = viewport.intersect(content_rect) {
             child_clip = viewport_clip;
-            child_origin.y -= sanitize_scroll_top(layout, ctx.style.scroll_top);
+            child_origin.y -= sanitize_scroll_y(layout, ctx.style.scroll_y);
         } else {
             return;
         }
@@ -384,7 +384,7 @@ fn fill_hitmap_rect(hitmap: &mut [u32], width: u16, height: u16, rect: SurfaceRe
     }
 }
 
-fn sanitize_scroll_top(layout: &Layout, requested: f64) -> f32 {
+fn sanitize_scroll_y(layout: &Layout, requested: f64) -> f32 {
     let requested = if requested.is_finite() && requested > 0.0 {
         requested
     } else {
@@ -416,21 +416,21 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_scroll_top_floors_and_clamps() {
+    fn sanitize_scroll_y_floors_and_clamps() {
         let layout = layout_with_scroll_height(5.0, 17.0);
 
-        assert_eq!(sanitize_scroll_top(&layout, 3.9), 3.0);
-        assert_eq!(sanitize_scroll_top(&layout, 99.0), 12.0);
-        assert_eq!(sanitize_scroll_top(&layout, -4.0), 0.0);
+        assert_eq!(sanitize_scroll_y(&layout, 3.9), 3.0);
+        assert_eq!(sanitize_scroll_y(&layout, 99.0), 12.0);
+        assert_eq!(sanitize_scroll_y(&layout, -4.0), 0.0);
     }
 
     #[test]
-    fn sanitize_scroll_top_treats_non_finite_as_zero() {
+    fn sanitize_scroll_y_treats_non_finite_as_zero() {
         let layout = layout_with_scroll_height(5.0, 17.0);
 
-        assert_eq!(sanitize_scroll_top(&layout, f64::NAN), 0.0);
-        assert_eq!(sanitize_scroll_top(&layout, f64::INFINITY), 0.0);
-        assert_eq!(sanitize_scroll_top(&layout, f64::NEG_INFINITY), 0.0);
+        assert_eq!(sanitize_scroll_y(&layout, f64::NAN), 0.0);
+        assert_eq!(sanitize_scroll_y(&layout, f64::INFINITY), 0.0);
+        assert_eq!(sanitize_scroll_y(&layout, f64::NEG_INFINITY), 0.0);
     }
 
     #[test]

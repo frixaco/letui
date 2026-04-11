@@ -174,7 +174,7 @@ export type StylePropName =
   | "flexWrap"
   | "boxSizing"
   | "overflow"
-  | "scrollTop"
+  | "scrollY"
   | "wrap"
   | "textOverflow"
   | "cursorVisible";
@@ -216,7 +216,7 @@ export const EMITTED_STYLE_PROPS = [
   "flexWrap",
   "boxSizing",
   "overflow",
-  "scrollTop",
+  "scrollY",
   "wrap",
   "textOverflow",
   "cursorVisible",

@@ -110,21 +110,20 @@ bun run app.ts
 
 Text wrapping, clipping, and overflow are resolved in the Rust renderer. Explicit newlines are treated as hard row boundaries after text normalization.
 
-Vertical scrolling is available on `Column` only:
+Vertical scrolling is available on `ScrollView`:
 
 ```ts
-const viewport = Column(
+const viewport = ScrollView(
   {
     flexGrow: 1,
     minHeight: 0,
-    overflow: true,
-    scrollTop: 12,
+    scrollY: 12,
   },
   [content],
 );
 ```
 
-`overflow: true` and `overflow: "scroll"` are equivalent. `scrollTop` is a row offset; Rust clamps oversized values, floors fractional values to whole rows, and owns the final hit-testing for the visible scrolled region.
+`ScrollView` always scrolls vertically. `scrollY` is a row offset; Rust clamps oversized values, floors fractional values to whole rows, and owns the final hit-testing for the visible scrolled region.
 
 Debug metrics split the frame into `js`, `render`, `sync`, and `flush`, plus a worst-frame breakdown. Enable with `run(root, { debug: true })`; output writes to `dump/metrics.txt`.
 

@@ -111,9 +111,9 @@ export type _BoxProps = _StyleProps & {
   direction: Signal<Direction | undefined>;
 };
 
-export type _ColumnProps = _BoxProps & {
+export type _ScrollViewProps = _BoxProps & {
   overflow: Signal<Overflow | undefined>;
-  scrollTop: Signal<number | undefined>;
+  scrollY: Signal<number | undefined>;
 };
 
 export type _TextProps = _StyleProps & {
@@ -127,7 +127,7 @@ export type _InputProps = _StyleProps & {
   text: Signal<string>;
   placeholder: Signal<string | undefined>;
   multiline: Signal<boolean | undefined>;
-  wrap: Signal<Exclude<TextWrap, "none"> | undefined>;
+  wrap: Signal<TextWrap | undefined>;
 };
 
 export type _ButtonProps = _StyleProps & {
@@ -171,9 +171,9 @@ export type BoxProps = StyleProps & {
   direction?: Direction;
 };
 
-export type ColumnProps = Omit<BoxProps, "direction"> & {
-  overflow?: Overflow;
-  scrollTop?: number;
+export type ScrollViewProps = Omit<BoxProps, "direction"> & {
+  overflow?: never;
+  scrollY?: number;
 };
 
 export type TextProps = StyleProps & {
@@ -185,7 +185,7 @@ export type TextProps = StyleProps & {
 export type InputProps = StyleProps & {
   placeholder?: string;
   multiline?: boolean;
-  wrap?: Exclude<TextWrap, "none">;
+  wrap?: TextWrap;
   onChange?: (value: string) => void;
   onSubmit?: (value: string) => void;
   onFocus?: (self: Node) => void;
@@ -211,7 +211,10 @@ export const NODE_TYPE = {
 } as const;
 
 export type NodeKind = (typeof NODE_TYPE)[keyof typeof NODE_TYPE];
-export type BoxKind = (typeof NODE_TYPE)[keyof Pick<typeof NODE_TYPE, "Row" | "Column">];
+export type BoxKind = (typeof NODE_TYPE)[keyof Pick<
+  typeof NODE_TYPE,
+  "Row" | "Column"
+>];
 
 export const NODE_KIND_ID: Record<NodeKind, number> = {
   [NODE_TYPE.Row]: 1,
@@ -273,7 +276,9 @@ export type TextNode = NodeBase<typeof NODE_TYPE.Text> &
   LeafNode & {
     props: _TextProps;
     handlers: TextHandlers;
-    setStyle: (p: Partial<StyleProps & { wrap?: TextWrap; textOverflow?: TextOverflow }>) => void;
+    setStyle: (
+      p: Partial<StyleProps & { wrap?: TextWrap; textOverflow?: TextOverflow }>,
+    ) => void;
     setText: (v: string | StyledText) => void;
   };
 
@@ -283,7 +288,11 @@ export type InputNode = NodeBase<typeof NODE_TYPE.Input> &
     handlers: InputHandlers;
     setStyle: (
       p: Partial<
-        StyleProps & { placeholder?: string; multiline?: boolean; wrap?: Exclude<TextWrap, "none"> }
+        StyleProps & {
+          placeholder?: string;
+          multiline?: boolean;
+          wrap?: TextWrap;
+        }
       >,
     ) => void;
     setText: (v: string) => void;
@@ -309,10 +318,15 @@ export type RowNode = Omit<BoxNode, "type" | "setStyle"> & {
   setStyle: (p: Partial<Omit<BoxProps, "direction">>) => void;
 };
 
-export type ColumnNode = Omit<BoxNode, "type" | "props" | "setStyle"> & {
+export type ColumnNode = Omit<BoxNode, "type" | "setStyle"> & {
   type: typeof NODE_TYPE.Column;
-  props: _ColumnProps;
-  setStyle: (p: Partial<ColumnProps>) => void;
+  setStyle: (p: Partial<Omit<BoxProps, "direction">>) => void;
 };
 
-export type Node = TextNode | InputNode | ButtonNode | RowNode | ColumnNode | BoxNode;
+export type Node =
+  | TextNode
+  | InputNode
+  | ButtonNode
+  | RowNode
+  | ColumnNode
+  | BoxNode;

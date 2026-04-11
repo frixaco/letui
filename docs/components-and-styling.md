@@ -39,12 +39,11 @@ Button(input: ButtonProps, children?: Node[]): Node
   - optional: `direction` (`"row" | "column" | "rowReverse" | "columnReverse"`)
   - optional: all `StyleProps`
 
-- `ColumnProps`
+- `ScrollViewProps`
   - optional: all `Omit<BoxProps, "direction">`
-  - optional: `overflow` (`boolean | "scroll"`)
-  - optional: `scrollTop` (`number`)
-  - behavior note: only `overflow: true` / `"scroll"` opt into scrolling
-  - behavior note: `scrollTop` is vertical-only and interpreted in row units
+  - optional: `scrollY` (`number`)
+  - behavior note: `ScrollView` always uses vertical scrolling
+  - behavior note: `scrollY` is vertical-only and interpreted in row units
 
 ## Shared style fields (`StyleProps`)
 
@@ -71,18 +70,18 @@ Button(input: ButtonProps, children?: Node[]): Node
 - `gap`
 - `direction`: `"row" | "column" | "rowReverse" | "columnReverse"`
 
-## Column-only scrolling
+## ScrollView Scrolling
 
-- `Column({ overflow: true })` and `Column({ overflow: "scroll" })` are equivalent
+- `ScrollView` is the only public scrolling container in v1
 - scrolling is vertical-only in v1
-- `scrollTop` is paint-time state, not tree-shape state, so updates stay on the style-diff path
-- Rust clamps `scrollTop`, floors fractional values to whole rows, and decides final visible hit-testing
-- `Row` and `Box` do not expose scrolling props in v1
+- `scrollY` is paint-time state, not tree-shape state, so updates stay on the style-diff path
+- Rust clamps `scrollY`, floors fractional values to whole rows, and decides final visible hit-testing
+- `Row`, `Column`, and `Box` do not expose scrolling props in v1
 
 ## Current scope
 
 - Public styling/layout surface is the exported `StyleProps` + `BoxProps` above.
-- `ColumnProps` adds the only public scrolling surface in v1: `overflow` and `scrollTop`.
+- `ScrollViewProps` adds the only public scrolling surface in v1: `scrollY`.
 - Prefer `Row` / `Column` for common cases; use `Box` when you need explicit `direction`, including reverse directions.
 - `Text` wrapping and overflow are renderer-owned behaviors; do not expect JS-side wrapping helpers to be the source of truth.
 - `Input` supports wrapped rendering for its current text, but full editor behavior is still out of scope.

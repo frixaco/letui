@@ -433,9 +433,9 @@ function readSentStyleState(node: Node): SentStyleState {
       style.overflow = "scroll";
     }
 
-    const scrollTop = props.scrollTop?.();
-    if (scrollTop !== undefined) {
-      style.scrollTop = Number.isNaN(scrollTop) ? 0 : scrollTop;
+    const scrollY = props.scrollY?.();
+    if (scrollY !== undefined) {
+      style.scrollY = Number.isNaN(scrollY) ? 0 : scrollY;
     }
   }
 
