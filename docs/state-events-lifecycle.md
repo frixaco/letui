@@ -30,12 +30,28 @@ Available exports include: `$`, `dd`, `ff`, `af`, `wait`, `whenSettled`.
 ## Runtime entrypoint
 
 ```ts
-run(root: Node, options?: { debug?: boolean }): { quit: () => void }
+run(root: Node, options?: {
+  debug?: boolean;
+  appearance?: "auto" | "light" | "dark";
+}): { quit: () => void }
 ```
 
 - `run(root)` starts stdin handling, resize handling, render loop
 - `run(root, { debug: true })` enables metrics output (`dump/metrics.txt`)
+- `run(root, { appearance: "auto" })` queries the terminal background and updates runtime appearance state
+- `run(root, { appearance: "light" | "dark" })` forces an appearance without terminal detection
 - returned `quit()` tears everything down and exits process
+
+## Appearance detection
+
+```ts
+appearance(): "light" | "dark" | "unknown"
+refreshAppearance(): Promise<"light" | "dark" | "unknown">
+```
+
+- `appearance()` is reactive: call it inside `ff(...)` to restyle nodes when the terminal theme is detected
+- auto detection uses terminal background query (`OSC 11`), so it tracks terminal appearance rather than guessing from the OS
+- unsupported terminals stay on `"unknown"`; most apps should treat that as "use your default theme"
 
 ## Render pipeline
 

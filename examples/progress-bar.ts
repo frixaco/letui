@@ -22,6 +22,7 @@ export type LoadingBarController = {
   node: Node;
   start: () => void;
   stop: () => void;
+  setColors: (colors: { dotColor: number; trackColor: number }) => void;
 };
 
 // --- Primary abstraction ---
@@ -113,5 +114,20 @@ export function LoadingBar(props: LoadingBarProps): LoadingBarController {
     rightTrack.setText?.("");
   }
 
-  return { node, start, stop };
+  function setColors(colors: { dotColor: number; trackColor: number }) {
+    leftTrack.setStyle?.({
+      background: colors.trackColor,
+      foreground: colors.trackColor,
+    });
+    dot.setStyle?.({
+      background: colors.dotColor,
+      foreground: colors.dotColor,
+    });
+    rightTrack.setStyle?.({
+      background: colors.trackColor,
+      foreground: colors.trackColor,
+    });
+  }
+
+  return { node, start, stop, setColors };
 }

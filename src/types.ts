@@ -11,6 +11,9 @@ export type Frame = {
   height: number;
 };
 
+export type Appearance = "light" | "dark" | "unknown";
+export type AppearanceMode = Appearance | "auto";
+
 export type BorderStyle = "square" | "rounded";
 
 export type BorderProps = {

@@ -50,7 +50,7 @@ On supported targets, install pulls the matching native binary automatically.
 Minimal reactive app:
 
 ```ts
-import { $, Column, Text, ff, onKey, run } from "@frixaco/letui";
+import { $, Column, Text, appearance, ff, onKey, run } from "@frixaco/letui";
 
 const THEME = {
   fg: 0xf5f7fa,
@@ -86,6 +86,13 @@ const root = Column(
     }),
   ],
 );
+
+ff(() => {
+  const mode = appearance();
+  root.setStyle({
+    background: mode === "light" ? 0xffffff : THEME.surface,
+  });
+});
 
 const app = run(root);
 
@@ -133,6 +140,8 @@ const viewport = ScrollView(
 `ScrollView` always scrolls vertically. `scrollY` is a row offset; Rust clamps oversized values, floors fractional values to whole rows, and owns the final hit-testing for the visible scrolled region.
 
 Debug metrics split the frame into `js`, `render`, `sync`, and `flush`, plus a worst-frame breakdown. Enable with `run(root, { debug: true })`; output writes to `dump/metrics.txt`.
+
+Appearance detection uses the terminal background query (`OSC 11`). `appearance()` returns `"light"`, `"dark"`, or `"unknown"`, and `refreshAppearance()` lets apps re-query later if needed.
 
 ## Performance
 

@@ -99,6 +99,8 @@ const palette = {
 
 Rule: pass numeric hex colors (`0xRRGGBB`), not CSS strings.
 
+If you want the app palette to follow the terminal theme, use the runtime `appearance()` helper inside `ff(...)` and switch your numeric palette there.
+
 ## Node methods exposed by constructors
 
 - `setStyle(partialStyle)` on all nodes

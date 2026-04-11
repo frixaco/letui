@@ -23,6 +23,8 @@ export type {
   TextWrap,
   TextOverflow,
   Overflow,
+  Appearance,
+  AppearanceMode,
   BorderStyle,
   BorderProps,
   BorderSideProps,

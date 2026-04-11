@@ -5,11 +5,17 @@
 import { toArrayBuffer, type Pointer } from "bun:ffi";
 import { mkdirSync, writeFileSync } from "fs";
 import { dirname } from "path";
+import {
+  cleanupAppearanceSession,
+  configureAppearanceSession,
+  refreshAppearance as refreshRuntimeAppearance,
+  stripAppearanceResponses,
+} from "./appearance";
 import api from "./ffi";
 import { $, ff, type Signal } from "./signals";
 import { getFocusedNode, getFocusVersion } from "./components";
 import { dispatchInputChunk } from "./input";
-import { NODE_TYPE, type Node, type NodeKind, type NormalizedStyledText } from "./types";
+import { NODE_TYPE, type AppearanceMode, type Node, type NodeKind, type NormalizedStyledText } from "./types";
 import {
   EMITTED_STYLE_PROPS,
   OpQueue,
@@ -33,6 +39,7 @@ import { logWriter } from "./debug";
 
 export type RunOptions = {
   debug?: boolean;
+  appearance?: AppearanceMode;
 };
 
 export type ScrollEvent = {
@@ -43,7 +50,11 @@ export type ScrollEvent = {
   target: Node | undefined;
 };
 
+export { appearance, refreshAppearance } from "./appearance";
+
 export function run(root: Node, options?: RunOptions): { quit: () => void } {
+  configureAppearanceSession(options?.appearance ?? "auto");
+
   if (api.init_buffer() !== 1) {
     throw new Error("Failed to initialize letui buffer");
   }
@@ -79,6 +90,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     if (cleanedUp) return;
     cleanedUp = true;
     isRunning = false;
+    cleanupAppearanceSession();
     process.stdin.off("data", stdinHandler);
     process.stdout.off("resize", handleResize);
     process.off("SIGINT", handleSigint);
@@ -120,6 +132,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   process.on("SIGTERM", handleSigterm);
   process.on("uncaughtException", handleUncaughtException);
   process.on("unhandledRejection", handleUnhandledRejection);
+  void refreshRuntimeAppearance();
 
   ff(() => {
     if (!isRunning) return;
@@ -787,6 +800,9 @@ function handleMouseEvent(data: string): void {
 }
 
 function handleInput(data: string): void {
+  data = stripAppearanceResponses(data);
+  if (data.length === 0) return;
+
   if (data === "\x11") {
     quitFn?.();
     return;

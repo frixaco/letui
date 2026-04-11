@@ -15,13 +15,14 @@ import {
   ScrollView,
   Text,
   $,
+  appearance,
   ff,
   onKey,
   onScroll,
   run,
 } from "@";
 import { saveMetrics } from "@/metrics";
-import type { StyledText, TextSpan } from "@";
+import type { Appearance, StyledText, TextSpan } from "@";
 import { COLORS } from "./colors.ts";
 import { LoadingBar } from "./progress-bar";
 
@@ -42,8 +43,15 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 
   type StyledSegment = Omit<TextSpan, "start" | "end"> & { text: string };
 
-  type ResultRow = {
-    button: ReturnType<typeof Button>;
+  type DemoTheme = {
+    surface: number;
+    surfaceHighlight: number;
+    fg: number;
+    muted: number;
+    accent: number;
+    active: number;
+    warn: number;
+    badgeFg: number;
   };
 
   function createMpvIpcPath(): string {
@@ -144,17 +152,19 @@ function startAniTrackDemo(): ReturnType<typeof run> {
   }
 
   function resultTitleText(item: ScrapeResultItem): StyledText {
+    const theme = currentTheme();
     return styled([
-      { text: "  ", foreground: T.muted },
-      { text: item.title, foreground: T.fg },
+      { text: "  ", foreground: theme.muted },
+      { text: item.title, foreground: theme.fg },
     ]);
   }
 
   function resultMetaText(item: ScrapeResultItem): StyledText {
+    const theme = currentTheme();
     return styled([
-      { text: `  ${item.size}`, foreground: T.accent },
-      { text: "  ·  ", foreground: T.border },
-      { text: item.date, foreground: T.muted, italic: true },
+      { text: `  ${item.size}`, foreground: theme.accent },
+      { text: "  ·  ", foreground: theme.surfaceHighlight },
+      { text: item.date, foreground: theme.muted, italic: true },
     ]);
   }
 
@@ -173,56 +183,77 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 
   const MPV_SOCKET_WAIT_MS = 5000;
 
-  const T = {
-    fg: COLORS.default.fg,
-    muted: COLORS.default.grey,
-    accent: COLORS.default.cyan,
-    active: COLORS.default.green,
-    warn: COLORS.default.yellow,
-    border: COLORS.default.surfaceHighlight,
-    badgeFg: COLORS.default.surface,
-  } as const;
+  function themeForAppearance(mode: Appearance): DemoTheme {
+    const palette = mode === "light" ? COLORS.light : COLORS.default;
+    return {
+      surface: palette.surface,
+      surfaceHighlight: palette.surfaceHighlight,
+      fg: palette.fg,
+      muted: palette.grey,
+      accent: palette.cyan,
+      active: palette.green,
+      warn: palette.yellow,
+      badgeFg: palette.surface,
+    };
+  }
 
-  const idleBorder = { color: T.border, style: "rounded" as const };
-  const focusBorder = { color: T.active, style: "rounded" as const };
+  function currentTheme(): DemoTheme {
+    return themeForAppearance(appearance());
+  }
+
+  function idleBorder() {
+    return { color: currentTheme().surfaceHighlight, style: "rounded" as const };
+  }
+
+  function focusBorder() {
+    return { color: currentTheme().active, style: "rounded" as const };
+  }
+
+  const initialTheme = currentTheme();
 
   const results = $<ScrapeResultItem[]>([]);
   const loading = $(false);
   const resultsScrollY = $(0);
   const focusTarget = $<Pane>("input");
   const loadingBar = LoadingBar({
-    dotColor: T.accent,
-    trackColor: T.border,
+    dotColor: initialTheme.accent,
+    trackColor: initialTheme.surfaceHighlight,
   });
 
   let lastResultsSnapshot: ScrapeResultItem[] | null = null;
-  let resultRows: ResultRow[] = [];
+  let lastAppearanceMode: Appearance | null = null;
 
   const headerTitle = Text({
     text: "ANITRACK // TORRENT SEARCH",
-    foreground: T.accent,
+    foreground: initialTheme.accent,
   });
 
-  const headerMeta = Text({ text: "", foreground: T.muted });
+  const headerMeta = Text({ text: "", foreground: initialTheme.muted });
+  const searchTitle = Text({ text: "SEARCH", foreground: initialTheme.accent });
+  const searchHint = Text({
+    text: "Enter search   Tab results",
+    foreground: initialTheme.muted,
+  });
+  const resultsTitle = Text({ text: "RESULTS", foreground: initialTheme.accent });
 
   const statusBadge = Text({
     text: " idle ",
-    foreground: T.badgeFg,
-    background: T.muted,
+    foreground: initialTheme.badgeFg,
+    background: initialTheme.muted,
     paddingX: 1,
   });
 
   const countBadge = Text({
     text: "",
-    foreground: T.badgeFg,
-    background: T.accent,
+    foreground: initialTheme.badgeFg,
+    background: initialTheme.accent,
     paddingX: 1,
   });
 
   const header = Column(
     {
       paddingX: 1,
-      borderBottom: { color: T.border },
+      borderBottom: { color: initialTheme.surfaceHighlight },
     },
     [
       Row(
@@ -242,9 +273,9 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 
   const searchInput = Input({
     placeholder: "search torrents...",
-    border: idleBorder,
+    border: idleBorder(),
     paddingX: 1,
-    foreground: T.fg,
+    foreground: initialTheme.fg,
     onSubmit: (val) => {
       const query = val.trim();
       if (query.length === 0) {
@@ -256,22 +287,22 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     },
     onFocus: (self) => {
       focusTarget("input");
-      self.setStyle({ border: focusBorder });
+      self.setStyle({ border: focusBorder() });
     },
-    onBlur: (self) => self.setStyle({ border: idleBorder }),
+    onBlur: (self) => self.setStyle({ border: idleBorder() }),
   });
 
   const searchPanel = Column(
     {
       gap: 1,
       paddingX: 1,
-      borderBottom: { color: T.border },
+      borderBottom: { color: initialTheme.surfaceHighlight },
       flexShrink: 0,
     },
     [
       Row({ gap: 1, alignItems: "center", flexWrap: "wrap" }, [
-        Text({ text: "SEARCH", foreground: T.accent }),
-        Text({ text: "Enter search   Tab results", foreground: T.muted }),
+        searchTitle,
+        searchHint,
       ]),
       Row({ alignItems: "stretch" }, [searchInput]),
       Row({}, [loadingBar.node]),
@@ -280,7 +311,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 
   const resultsSummary = Text({
     text: "",
-    foreground: T.muted,
+    foreground: initialTheme.muted,
   });
 
   const resultsViewport = ScrollView(
@@ -295,7 +326,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 
   const helpLine = Text({
     text: "/ search   Tab pane   j/k or wheel scroll   h top   l +10   Enter/click stream   q quit",
-    foreground: T.muted,
+    foreground: initialTheme.muted,
   });
 
   const resultsPanel = Column(
@@ -306,14 +337,14 @@ function startAniTrackDemo(): ReturnType<typeof run> {
       minHeight: 0,
     },
     [
-      Text({ text: "RESULTS", foreground: T.accent }),
+      resultsTitle,
       resultsSummary,
       resultsViewport,
       helpLine,
     ],
   );
 
-  const root = Column({ flexGrow: 1 }, [header, searchPanel, resultsPanel]);
+  const root = Column({ flexGrow: 1, background: initialTheme.surface }, [header, searchPanel, resultsPanel]);
 
   function setPane(target: Pane): void {
     if (target === "results" && results().length > 0) {
@@ -394,7 +425,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     }
   }
 
-  function createResultRow(item: ScrapeResultItem): ResultRow {
+  function createResultRow(item: ScrapeResultItem): ReturnType<typeof Button> {
     const title = Text({
       text: resultTitleText(item),
       wrap: "word",
@@ -410,7 +441,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
         text: "",
         border: undefined,
         paddingX: 1,
-        foreground: T.fg,
+        foreground: currentTheme().fg,
         onFocus: () => {
           setPane("results");
         },
@@ -422,13 +453,12 @@ function startAniTrackDemo(): ReturnType<typeof run> {
       [Column({ gap: 0 }, [title, meta])],
     );
 
-    return { button };
+    return button;
   }
 
   function rebuildResultRows(items: readonly ScrapeResultItem[]): void {
-    resultRows = items.map((item) => createResultRow(item));
     lastResultsSnapshot = [...items];
-    resultsViewport.setChildren?.(resultRows.map((row) => row.button));
+    resultsViewport.setChildren?.(items.map(createResultRow));
   }
 
   function scrollResults(offset: number): void {
@@ -458,21 +488,56 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     const isLoading = loading();
     const activePane = focusTarget();
     const scrollY = resultsScrollY();
+    const appearanceMode = appearance();
+    const theme = themeForAppearance(appearanceMode);
+    const themeChanged = appearanceMode !== lastAppearanceMode;
+
+    root.setStyle({ background: theme.surface });
+    header.setStyle({
+      borderBottom: { color: theme.surfaceHighlight },
+    });
+    searchPanel.setStyle({
+      borderBottom: { color: theme.surfaceHighlight },
+    });
+    searchInput.setStyle({
+      foreground: theme.fg,
+      border: searchInput.isFocused() ? focusBorder() : idleBorder(),
+    });
+    headerTitle.setStyle({ foreground: theme.accent });
+    headerMeta.setStyle({ foreground: theme.muted });
+    searchTitle.setStyle({ foreground: theme.accent });
+    searchHint.setStyle({ foreground: theme.muted });
+    resultsTitle.setStyle({ foreground: theme.accent });
+    helpLine.setStyle({ foreground: theme.muted });
+    loadingBar.setColors({
+      dotColor: theme.accent,
+      trackColor: theme.surfaceHighlight,
+    });
 
     if (isLoading) {
       statusBadge.setText(" searching ");
-      statusBadge.setStyle({ background: T.warn });
+      statusBadge.setStyle({
+        foreground: theme.badgeFg,
+        background: theme.warn,
+      });
     } else if (all.length > 0) {
       statusBadge.setText(" ready ");
-      statusBadge.setStyle({ background: T.active });
+      statusBadge.setStyle({
+        foreground: theme.badgeFg,
+        background: theme.active,
+      });
     } else {
       statusBadge.setText(" idle ");
-      statusBadge.setStyle({ background: T.muted });
+      statusBadge.setStyle({
+        foreground: theme.badgeFg,
+        background: theme.muted,
+      });
     }
 
     countBadge.setText(all.length > 0 ? ` ${all.length} results ` : "");
     countBadge.setStyle({
-      background: all.length > 0 ? T.accent : undefined,
+      foreground: theme.badgeFg,
+      background: all.length > 0 ? theme.accent : undefined,
     });
 
     headerMeta.setText(
@@ -487,13 +552,13 @@ function startAniTrackDemo(): ReturnType<typeof run> {
         : `${all.length} results   scrollY ${scrollY}`,
     );
     resultsSummary.setStyle({
-      foreground: all.length === 0 ? T.muted : T.accent,
+      foreground: all.length === 0 ? theme.muted : theme.accent,
     });
     resultsViewport.setStyle({ scrollY });
 
     if (all.length === 0) {
-      resultRows = [];
       lastResultsSnapshot = [];
+      lastAppearanceMode = appearanceMode;
       resultsViewport.setChildren?.([]);
       if (activePane === "results") setPane("input");
       return;
@@ -503,9 +568,11 @@ function startAniTrackDemo(): ReturnType<typeof run> {
       all.length !== lastResultsSnapshot?.length ||
       all.some((item, index) => lastResultsSnapshot?.[index] !== item);
 
-    if (resultsChanged) {
+    if (resultsChanged || themeChanged) {
       rebuildResultRows(all);
     }
+
+    lastAppearanceMode = appearanceMode;
   });
 
   onKey("/", () => setPane("input"));
