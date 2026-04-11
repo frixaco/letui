@@ -50,12 +50,19 @@ On supported targets, install pulls the matching native binary automatically.
 Minimal reactive app:
 
 ```ts
-import { $, COLORS, Column, Text, ff, onKey, run } from "@frixaco/letui";
+import { $, Column, Text, ff, onKey, run } from "@frixaco/letui";
+
+const THEME = {
+  fg: 0xf5f7fa,
+  muted: 0x94a0b2,
+  surface: 0x16181a,
+  border: 0x3c4048,
+} as const;
 
 const count = $(0);
 const counterText = Text({
   text: "count: 0",
-  foreground: COLORS.default.fg,
+  foreground: THEME.fg,
 });
 
 ff(() => {
@@ -67,15 +74,15 @@ const root = Column(
     flexGrow: 1,
     gap: 1,
     padding: "1 1",
-    background: COLORS.default.bg,
-    border: { color: COLORS.default.bg_highlight, style: "rounded" },
+    background: THEME.surface,
+    border: { color: THEME.border, style: "rounded" },
   },
   [
-    Text({ text: "hello from letui", foreground: COLORS.default.fg }),
+    Text({ text: "hello from letui", foreground: THEME.fg }),
     counterText,
     Text({
       text: "+ / - update, q quit, Ctrl+Q default quit",
-      foreground: COLORS.default.grey,
+      foreground: THEME.muted,
     }),
   ],
 );

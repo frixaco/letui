@@ -1,6 +1,6 @@
 //! Layout, frame extraction, and terminal painting for the Rust renderer.
 
-use crate::shared::{CURRENT_BUFFER, DEFAULT_BG, DEFAULT_FG, FRAMES, HITMAP, TERMINAL_SIZE};
+use crate::shared::{CURRENT_BUFFER, FRAMES, HITMAP, RESET_COLOR, TERMINAL_SIZE};
 use crate::surface::{CellStyle, Surface, SurfaceRect, inherited_style, wrap_text};
 use crate::tree::{ColumnOverflow, NodeContext, NodeType, TREE_STATE, TextOverflow, TextWrap};
 use std::os::raw::c_int;
@@ -56,8 +56,8 @@ pub extern "C" fn render() -> c_int {
         hitmap_vec.fill(0);
 
         let root_ctx = taffy.get_node_context(taffy_root);
-        let parent_fg = root_ctx.map_or(DEFAULT_FG, |c| c.style.fg);
-        let parent_bg = root_ctx.map_or(DEFAULT_BG, |c| c.style.bg);
+        let parent_fg = root_ctx.map_or(RESET_COLOR, |c| c.style.fg);
+        let parent_bg = root_ctx.map_or(RESET_COLOR, |c| c.style.bg);
 
         let mut cb = CURRENT_BUFFER.lock().unwrap();
         if let Some(ref mut buf) = *cb {

@@ -88,13 +88,13 @@ Button(input: ButtonProps, children?: Node[]): Node
 
 ## Colors
 
-Use `COLORS` from the library.
+Bring your own palette. letui only accepts numeric RGB values; it does not ship a theme.
 
 ```ts
-import { COLORS } from "../index.ts";
-
-const fg = COLORS.default.fg;
-const bg = COLORS.default.bg;
+const palette = {
+  fg: 0xf5f7fa,
+  surface: 0x16181a,
+} as const;
 ```
 
 Rule: pass numeric hex colors (`0xRRGGBB`), not CSS strings.

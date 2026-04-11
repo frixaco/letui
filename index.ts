@@ -2,7 +2,6 @@
 
 // --- Public API ---
 export * from "./src/components";
-export * from "./src/colors";
 export * from "./src/signals";
 export * from "./src/runtime";
 export * from "./src/text";

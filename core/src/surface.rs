@@ -3,7 +3,7 @@ use unicode_width::UnicodeWidthChar;
 use unicode_width::UnicodeWidthStr;
 
 use crate::shared::{
-    CONTINUATION_CELL, DEFAULT_FG, FIELDS_PER_CELL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC,
+    CONTINUATION_CELL, FIELDS_PER_CELL, RESET_COLOR, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC,
     TEXT_ATTR_UNDERLINE,
 };
 use crate::tree::{BorderStyle, ResolvedBorder, TextOverflow, TextSpanData, TextWrap};
@@ -843,7 +843,7 @@ mod tests {
             },
             "界a",
             CellStyle {
-                fg: DEFAULT_FG,
+                fg: RESET_COLOR,
                 bg: 0,
                 attrs: 0,
             },
@@ -880,7 +880,7 @@ mod tests {
             },
             "a界",
             CellStyle {
-                fg: DEFAULT_FG,
+                fg: RESET_COLOR,
                 bg: 0,
                 attrs: 0,
             },
@@ -891,6 +891,22 @@ mod tests {
         assert_eq!(read_cell_char(&buf, 4, 1, 0), '\0');
         assert_eq!(read_cell_char(&buf, 4, 2, 0), '\0');
         assert_eq!(read_cell_char(&buf, 4, 3, 0), '\0');
+    }
+
+    #[test]
+    fn inherited_style_uses_parent_colors_for_reset_local_values() {
+        let style = inherited_style(RESET_COLOR, RESET_COLOR, 0xabcdef, 0x123456);
+
+        assert_eq!(style.fg, 0xabcdef);
+        assert_eq!(style.bg, 0x123456);
+    }
+
+    #[test]
+    fn inherited_style_preserves_explicit_black_colors() {
+        let style = inherited_style(0x000000, 0x000000, 0xabcdef, 0x123456);
+
+        assert_eq!(style.fg, 0x000000);
+        assert_eq!(style.bg, 0x000000);
     }
 }
 
@@ -936,7 +952,7 @@ impl Surface<'_> {
                     row,
                     ' ',
                     CellStyle {
-                        fg: DEFAULT_FG,
+                        fg: RESET_COLOR,
                         bg: color,
                         attrs: 0,
                     },
@@ -1355,8 +1371,16 @@ pub struct CellStyle {
 
 pub fn inherited_style(local_fg: u32, local_bg: u32, parent_fg: u32, parent_bg: u32) -> CellStyle {
     CellStyle {
-        fg: if local_fg != 0 { local_fg } else { parent_fg },
-        bg: if local_bg != 0 { local_bg } else { parent_bg },
+        fg: if local_fg != RESET_COLOR {
+            local_fg
+        } else {
+            parent_fg
+        },
+        bg: if local_bg != RESET_COLOR {
+            local_bg
+        } else {
+            parent_bg
+        },
         attrs: 0,
     }
 }

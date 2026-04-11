@@ -1,7 +1,7 @@
 //! Persistent node state and binary op decoding for the Rust backend.
 
 use crate::shared::{
-    DEFAULT_BG, DEFAULT_FG, TEXT_ATTR_ALL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
+    RESET_COLOR, TEXT_ATTR_ALL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
 };
 use std::{cell::RefCell, collections::HashMap, os::raw::c_int, slice};
 use taffy::{Overflow, Point, prelude::*};
@@ -671,17 +671,19 @@ fn apply_style(node: &mut NodeContext, prop: StyleProp, value: StyleValue<'_>) -
         StyleProp::BorderRightWidth => apply_f32(&mut node.style.border.right.width, 0.0, value),
         StyleProp::BorderBottomWidth => apply_f32(&mut node.style.border.bottom.width, 0.0, value),
         StyleProp::BorderLeftWidth => apply_f32(&mut node.style.border.left.width, 0.0, value),
-        StyleProp::Background => apply_u32(&mut node.style.bg, DEFAULT_BG, value),
-        StyleProp::Foreground => apply_u32(&mut node.style.fg, DEFAULT_FG, value),
-        StyleProp::BorderTopColor => apply_u32(&mut node.style.border.top.color, DEFAULT_BG, value),
+        StyleProp::Background => apply_u32(&mut node.style.bg, RESET_COLOR, value),
+        StyleProp::Foreground => apply_u32(&mut node.style.fg, RESET_COLOR, value),
+        StyleProp::BorderTopColor => {
+            apply_u32(&mut node.style.border.top.color, RESET_COLOR, value)
+        }
         StyleProp::BorderRightColor => {
-            apply_u32(&mut node.style.border.right.color, DEFAULT_BG, value)
+            apply_u32(&mut node.style.border.right.color, RESET_COLOR, value)
         }
         StyleProp::BorderBottomColor => {
-            apply_u32(&mut node.style.border.bottom.color, DEFAULT_BG, value)
+            apply_u32(&mut node.style.border.bottom.color, RESET_COLOR, value)
         }
         StyleProp::BorderLeftColor => {
-            apply_u32(&mut node.style.border.left.color, DEFAULT_BG, value)
+            apply_u32(&mut node.style.border.left.color, RESET_COLOR, value)
         }
         StyleProp::BorderStyle => apply_border_style_value(&mut node.style.border.style, value),
         StyleProp::FlexGrow => apply_f32(&mut node.style.flex_grow, 0.0, value),
@@ -918,7 +920,7 @@ impl BorderSide {
     pub const fn none() -> Self {
         Self {
             width: 0.0,
-            color: DEFAULT_BG,
+            color: RESET_COLOR,
         }
     }
 
@@ -1015,8 +1017,8 @@ impl NodeStyle {
             padding_x: 0.0,
             padding_y: 0.0,
             border: ResolvedBorder::none(),
-            bg: DEFAULT_BG,
-            fg: DEFAULT_FG,
+            bg: RESET_COLOR,
+            fg: RESET_COLOR,
             flex_grow: 0.0,
             direction: Direction::from_node_type(kind),
             width: StyleDimension::Auto,

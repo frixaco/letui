@@ -8,7 +8,6 @@ import { existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
-  COLORS,
   Button,
   Column,
   Input,
@@ -23,6 +22,7 @@ import {
 } from "@";
 import { saveMetrics } from "@/metrics";
 import type { StyledText, TextSpan } from "@";
+import { COLORS } from "./colors.ts";
 import { LoadingBar } from "./progress-bar";
 
 function startAniTrackDemo(): ReturnType<typeof run> {
@@ -179,8 +179,8 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     accent: COLORS.default.cyan,
     active: COLORS.default.green,
     warn: COLORS.default.yellow,
-    border: COLORS.default.bg_highlight,
-    badgeFg: COLORS.default.bg,
+    border: COLORS.default.surfaceHighlight,
+    badgeFg: COLORS.default.surface,
   } as const;
 
   const idleBorder = { color: T.border, style: "rounded" as const };

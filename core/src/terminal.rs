@@ -2,7 +2,8 @@
 
 use crate::shared::{
     CONTINUATION_CELL, CURRENT_BUFFER, FIELDS_PER_CELL, FIRST_DIFF, HITMAP, LAST_BUFFER,
-    TERMINAL_SIZE, TEXT_ATTR_ALL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC, TEXT_ATTR_UNDERLINE,
+    RESET_COLOR, TERMINAL_SIZE, TEXT_ATTR_ALL, TEXT_ATTR_BOLD, TEXT_ATTR_ITALIC,
+    TEXT_ATTR_UNDERLINE,
 };
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
@@ -201,8 +202,8 @@ fn first_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64]) {
             stdout,
             MoveTo(0, y),
             SetAttribute(Attribute::Reset),
-            SetForegroundColor(hex_to_color(prev_fg)),
-            SetBackgroundColor(hex_to_color(prev_bg))
+            SetForegroundColor(terminal_color(prev_fg)),
+            SetBackgroundColor(terminal_color(prev_bg))
         )
         .unwrap();
 
@@ -307,11 +308,19 @@ fn next_flush(w: u16, h: u16, stdout: &mut Stdout, buf: &[u64], last_buf: &[u64]
     }
 }
 
-fn hex_to_color(hex: u64) -> Color {
+fn rgb_to_color(hex: u64) -> Color {
     Color::Rgb {
         r: ((hex >> 16) & 0xFF) as u8,
         g: ((hex >> 8) & 0xFF) as u8,
         b: (hex & 0xFF) as u8,
+    }
+}
+
+fn terminal_color(hex: u64) -> Color {
+    if hex == u64::from(RESET_COLOR) {
+        Color::Reset
+    } else {
+        rgb_to_color(hex)
     }
 }
 
@@ -327,16 +336,16 @@ fn queue_color_update(
         (true, true) => {
             queue!(
                 stdout,
-                SetForegroundColor(hex_to_color(current_fg)),
-                SetBackgroundColor(hex_to_color(current_bg))
+                SetForegroundColor(terminal_color(current_fg)),
+                SetBackgroundColor(terminal_color(current_bg))
             )
             .unwrap();
         }
         (true, false) => {
-            queue!(stdout, SetForegroundColor(hex_to_color(current_fg))).unwrap();
+            queue!(stdout, SetForegroundColor(terminal_color(current_fg))).unwrap();
         }
         (false, true) => {
-            queue!(stdout, SetBackgroundColor(hex_to_color(current_bg))).unwrap();
+            queue!(stdout, SetBackgroundColor(terminal_color(current_bg))).unwrap();
         }
         (false, false) => {}
     }
@@ -376,5 +385,20 @@ fn queue_text_attr_update(stdout: &mut Stdout, previous: u8, current: u8) {
 fn push_render_char(char_seq: &mut String, ch: char) {
     if ch != CONTINUATION_CELL {
         char_seq.push(ch);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reset_color_maps_to_terminal_reset() {
+        assert_eq!(terminal_color(u64::from(RESET_COLOR)), Color::Reset);
+    }
+
+    #[test]
+    fn explicit_black_color_stays_rgb_black() {
+        assert_eq!(terminal_color(0), Color::Rgb { r: 0, g: 0, b: 0 });
     }
 }

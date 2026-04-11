@@ -1,11 +1,10 @@
-/** Shared color palettes for letui defaults and demos. */
+/** Demo-only palettes kept outside the published letui package surface. */
 
-// --- Public API ---
 export const COLORS = {
   default: {
-    bg: 0x16181a,
-    bg_alt: 0x1e2124,
-    bg_highlight: 0x3c4048,
+    surface: 0x16181a,
+    surfaceAlt: 0x1e2124,
+    surfaceHighlight: 0x3c4048,
     fg: 0xffffff,
     grey: 0x7b8496,
     blue: 0x5ea1ff,
@@ -19,9 +18,9 @@ export const COLORS = {
     purple: 0xbd5eff,
   },
   light: {
-    bg: 0xffffff,
-    bg_alt: 0xeaeaea,
-    bg_highlight: 0xacacac,
+    surface: 0xffffff,
+    surfaceAlt: 0xeaeaea,
+    surfaceHighlight: 0xacacac,
     fg: 0x16181a,
     grey: 0x7b8496,
     blue: 0x0057d1,

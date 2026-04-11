@@ -20,12 +20,20 @@ What this does: compiles `core/` with `cargo build --release`.
 Create a demo file under `examples/`:
 
 ```ts
-import { COLORS, Column, Text, $, ff, onKey, run } from "../index.ts";
+import { Column, Text, $, ff, onKey, run } from "../index.ts";
+
+const THEME = {
+  fg: 0xf5f7fa,
+  muted: 0x94a0b2,
+  positive: 0x5eff6c,
+  surface: 0x16181a,
+  border: 0x3c4048,
+} as const;
 
 const count = $(0);
 const countText = Text({
   text: "count: 0",
-  foreground: COLORS.default.green,
+  foreground: THEME.positive,
 });
 
 ff(() => {
@@ -37,19 +45,19 @@ const root = Column(
     flexGrow: 1,
     padding: "1 1",
     gap: 1,
-    background: COLORS.default.bg,
-    border: { color: COLORS.default.bg_highlight, style: "rounded" },
+    background: THEME.surface,
+    border: { color: THEME.border, style: "rounded" },
   },
   [
-    Text({ text: "letui demo", foreground: COLORS.default.fg }),
+    Text({ text: "letui demo", foreground: THEME.fg }),
     countText,
     Text({
       text: "+/- update, r reset, q quit",
-      foreground: COLORS.default.grey,
+      foreground: THEME.muted,
     }),
     Text({
       text: "starter uses gap/padding/flexGrow; wider layout API lives in StyleProps + BoxProps",
-      foreground: COLORS.default.grey,
+      foreground: THEME.muted,
     }),
   ],
 );

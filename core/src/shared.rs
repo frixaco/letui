@@ -9,8 +9,9 @@ pub(crate) static TERMINAL_SIZE: Mutex<(u16, u16)> = Mutex::new((0, 0));
 pub(crate) static FRAMES: Mutex<Option<Vec<f32>>> = Mutex::new(None);
 pub(crate) static HITMAP: Mutex<Option<Vec<u32>>> = Mutex::new(None);
 pub(crate) static FIRST_DIFF: Mutex<bool> = Mutex::new(true);
-pub(crate) const DEFAULT_BG: u32 = 0x16181a;
-pub(crate) const DEFAULT_FG: u32 = 0xffffff;
+// Valid RGB colors fit in 24 bits, so this out-of-band value can represent
+// "inherit/reset terminal color" without stealing pure black from the API.
+pub(crate) const RESET_COLOR: u32 = u32::MAX;
 
 // --- Shared constants ---
 pub(crate) const CONTINUATION_CELL: char = '\0';
