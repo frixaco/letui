@@ -8,6 +8,10 @@ const OSC_STRING_TERMINATOR = "\x1b\\";
 const OSC_BACKGROUND_QUERY = "\x1b]11;?\x07";
 const OSC_BACKGROUND_RESPONSE_PREFIX = "\x1b]11;";
 const APPEARANCE_QUERY_TIMEOUT_MS = 200;
+const ENABLE_FOCUS_IN_OUT_REPORTING = "\x1b[?1004h";
+const DISABLE_FOCUS_IN_OUT_REPORTING = "\x1b[?1004l";
+const TERMINAL_FOCUS_IN = "\x1b[I";
+const TERMINAL_FOCUS_OUT = "\x1b[O";
 
 type AppearanceRequest = {
   resolve: (appearance: Appearance) => void;
@@ -51,11 +55,12 @@ export function refreshAppearance(): Promise<Appearance> {
 export function configureAppearanceSession(mode: AppearanceMode): void {
   sessionActive = true;
   appearanceOverride = mode;
-  appearanceInputBuffer = "";
+  disableFocusReporting();
   cancelAppearanceRequest();
 
   if (mode === "auto") {
     setAppearance("unknown");
+    enableFocusReporting();
     return;
   }
 
@@ -64,10 +69,14 @@ export function configureAppearanceSession(mode: AppearanceMode): void {
 
 export function cleanupAppearanceSession(): void {
   sessionActive = false;
+  disableFocusReporting();
   cancelAppearanceRequest();
 }
 
 export function stripAppearanceResponses(data: string): string {
+  data = stripTerminalFocusEvents(data);
+  if (data.length === 0) return data;
+
   const chunk = appearanceInputBuffer + data;
   appearanceInputBuffer = "";
 
@@ -127,6 +136,51 @@ function cancelAppearanceRequest(): void {
     finishAppearanceRequest(appearanceState());
   }
   appearanceInputBuffer = "";
+}
+
+function enableFocusReporting(): void {
+  if (focusReportingEnabled || !process.stdout.isTTY) return;
+  process.stdout.write(ENABLE_FOCUS_IN_OUT_REPORTING);
+  focusReportingEnabled = true;
+}
+
+function disableFocusReporting(): void {
+  if (!focusReportingEnabled || !process.stdout.isTTY) return;
+  process.stdout.write(DISABLE_FOCUS_IN_OUT_REPORTING);
+  focusReportingEnabled = false;
+}
+
+function stripTerminalFocusEvents(data: string): string {
+  let cursor = 0;
+  let passthrough = "";
+
+  while (cursor < data.length) {
+    const focusInIndex = data.indexOf(TERMINAL_FOCUS_IN, cursor);
+    const focusOutIndex = data.indexOf(TERMINAL_FOCUS_OUT, cursor);
+    const nextIndex =
+      focusInIndex === -1
+        ? focusOutIndex
+        : focusOutIndex === -1
+          ? focusInIndex
+          : Math.min(focusInIndex, focusOutIndex);
+
+    if (nextIndex === -1) {
+      passthrough += data.slice(cursor);
+      break;
+    }
+
+    passthrough += data.slice(cursor, nextIndex);
+
+    if (data.startsWith(TERMINAL_FOCUS_IN, nextIndex) && appearanceOverride === "auto") {
+      void refreshAppearance();
+      cursor = nextIndex + TERMINAL_FOCUS_IN.length;
+      continue;
+    }
+
+    cursor = nextIndex + TERMINAL_FOCUS_OUT.length;
+  }
+
+  return passthrough;
 }
 
 function findOscTerminator(chunk: string, fromIndex: number): number {
@@ -219,4 +273,5 @@ let appearanceState = $<Appearance>("unknown");
 let appearanceOverride: AppearanceMode = "auto";
 let appearanceRequest: AppearanceRequest | null = null;
 let appearanceInputBuffer = "";
+let focusReportingEnabled = false;
 let sessionActive = false;

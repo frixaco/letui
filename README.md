@@ -141,7 +141,7 @@ const viewport = ScrollView(
 
 Debug metrics split the frame into `js`, `render`, `sync`, and `flush`, plus a worst-frame breakdown. Enable with `run(root, { debug: true })`; output writes to `dump/metrics.txt`.
 
-Appearance detection uses the terminal background query (`OSC 11`). `appearance()` returns `"light"`, `"dark"`, or `"unknown"`, and `refreshAppearance()` lets apps re-query later if needed.
+Appearance detection uses the terminal background query (`OSC 11`) and refreshes again when the terminal regains focus. `appearance()` returns `"light"`, `"dark"`, or `"unknown"`, and `refreshAppearance()` lets apps force a re-query later if needed.
 
 ## Performance
 

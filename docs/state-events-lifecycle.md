@@ -38,7 +38,7 @@ run(root: Node, options?: {
 
 - `run(root)` starts stdin handling, resize handling, render loop
 - `run(root, { debug: true })` enables metrics output (`dump/metrics.txt`)
-- `run(root, { appearance: "auto" })` queries the terminal background and updates runtime appearance state
+- `run(root, { appearance: "auto" })` queries the terminal background and refreshes it again when the terminal regains focus
 - `run(root, { appearance: "light" | "dark" })` forces an appearance without terminal detection
 - returned `quit()` tears everything down and exits process
 
@@ -50,7 +50,7 @@ refreshAppearance(): Promise<"light" | "dark" | "unknown">
 ```
 
 - `appearance()` is reactive: call it inside `ff(...)` to restyle nodes when the terminal theme is detected
-- auto detection uses terminal background query (`OSC 11`), so it tracks terminal appearance rather than guessing from the OS
+- auto detection uses terminal background query (`OSC 11`) and terminal focus-in reporting, so it refreshes when you return to the terminal instead of polling continuously
 - unsupported terminals stay on `"unknown"`; most apps should treat that as "use your default theme"
 
 ## Render pipeline
