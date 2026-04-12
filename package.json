@@ -1,6 +1,6 @@
 {
   "name": "@frixaco/letui",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "files": [
     "index.ts",
@@ -25,8 +25,8 @@
     "typescript": "^5.9.3"
   },
   "optionalDependencies": {
-    "@frixaco/letui-darwin-arm64": "0.2.0",
-    "@frixaco/letui-linux-x64": "0.2.0",
-    "@frixaco/letui-win32-x64": "0.2.0"
+    "@frixaco/letui-darwin-arm64": "0.3.0",
+    "@frixaco/letui-linux-x64": "0.3.0",
+    "@frixaco/letui-win32-x64": "0.3.0"
   }
 }
