@@ -20,7 +20,6 @@ import {
   onKey,
   run,
 } from "@";
-import { saveMetrics } from "@/metrics";
 import type { Appearance, StyledText, TextSpan } from "@";
 import { COLORS } from "./colors.ts";
 import { LoadingBar } from "./progress-bar";
@@ -611,7 +610,6 @@ function startAniTrackDemo(): ReturnType<typeof run> {
   const app = run(root, { debug: true });
 
   onKey("q", () => {
-    saveMetrics();
     app.quit();
   });
 

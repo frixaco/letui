@@ -1,6 +1,5 @@
 /** Public package surface for letui. */
 
-// --- Public API ---
 export * from "./src/components";
 export * from "./src/signals";
 export * from "./src/runtime";

@@ -1,6 +1,5 @@
 // Legacy v0 terminal prototype: manual buffer handling, mouse hit maps, and input routing.
 
-// --- Runtime bootstrap ---
 
 init_buffer();
 
@@ -11,7 +10,6 @@ const getBuffer = () => {
   return new BigUint64Array(toArrayBuffer(bufPtr as Pointer, 0, bufLen * 8));
 };
 
-// --- Internal state ---
 
 let buffer = getBuffer();
 
@@ -38,7 +36,6 @@ const getHitComponent = (x: number, y: number): Button | Input => {
   return component!;
 };
 
-// --- Event handlers ---
 
 const handleMouseEvent = async (d: string) => {
   const i = d.indexOf("<") + 1;

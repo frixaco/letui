@@ -139,7 +139,7 @@ const viewport = ScrollView(
 
 `ScrollView` always scrolls vertically. `scrollY` is a row offset; Rust clamps oversized values, floors fractional values to whole rows, and owns the final hit-testing for the visible scrolled region.
 
-Debug metrics split the frame into `js`, `render`, `sync`, and `flush`, plus a worst-frame breakdown. Enable with `run(root, { debug: true })`; output writes to `dump/metrics.txt`.
+Debug metrics split the frame into `js`, `render`, `sync`, and `flush`, plus a worst-frame breakdown. Enable with `run(root, { debug: true })` to print the summary on quit. If you also want a file, pass `run(root, { debug: true, metricsPath: "dump/metrics.txt" })` or call `saveMetrics(...)` yourself.
 
 Appearance detection uses the terminal background query (`OSC 11`) and refreshes again when the terminal regains focus. `appearance()` returns `"light"`, `"dark"`, or `"unknown"`, and `refreshAppearance()` lets apps force a re-query later if needed.
 

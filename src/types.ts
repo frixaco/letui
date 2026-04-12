@@ -2,8 +2,6 @@
 
 import type { Signal } from "./signals";
 
-// --- Public API ---
-
 export type Frame = {
   x: number;
   y: number;
@@ -77,7 +75,6 @@ export type NormalizedStyledText = {
   byteLength: number;
 };
 
-// --- Internal state ---
 
 export type _StyleProps = {
   border: Signal<BorderProps | undefined>;
@@ -137,7 +134,6 @@ export type _ButtonProps = _StyleProps & {
   text: Signal<string>;
 };
 
-// --- Request/Result types ---
 
 export type StyleProps = {
   border?: BorderProps;
@@ -204,7 +200,6 @@ export type ButtonProps = StyleProps & {
   onBlur?: (self: Node) => void;
 };
 
-// --- Public node kinds ---
 
 export const NODE_TYPE = {
   Row: "Row",
@@ -230,7 +225,6 @@ export const NODE_KIND_ID: Record<NodeKind, number> = {
 
 export type NodeKindNum = (typeof NODE_KIND_ID)[NodeKind];
 
-// --- Supporting types ---
 
 export type BoxHandlers = {};
 
@@ -254,7 +248,6 @@ export type ButtonHandlers = {
   onBlur?: (self: Node) => void;
 };
 
-// --- Node shapes ---
 
 type CommonFields = {
   id: number;

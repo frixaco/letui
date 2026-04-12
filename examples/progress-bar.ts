@@ -9,7 +9,6 @@ import { $, ff } from "@/signals";
 import type { Node } from "@/types";
 import { log } from "@/debug";
 
-// --- Domain vocabulary ---
 
 export type LoadingBarProps = {
   dotColor: number;
@@ -25,19 +24,16 @@ export type LoadingBarController = {
   setColors: (colors: { dotColor: number; trackColor: number }) => void;
 };
 
-// --- Primary abstraction ---
 
 export function LoadingBar(props: LoadingBarProps): LoadingBarController {
   const { dotColor, trackColor, flexGrow = 1, interval = 80 } = props;
 
-  // --- Internal state ---
 
   const position = $(0);
   const direction = $(1);
   const active = $(false);
   let timer: Timer | null = null;
 
-  // --- Core algorithm ---
 
   const leftTrack = Text({
     text: "",
@@ -68,7 +64,6 @@ export function LoadingBar(props: LoadingBarProps): LoadingBarController {
     rightTrack.setText?.(" ".repeat(maxPos - clampedPos));
   });
 
-  // --- Helpers ---
 
   function clearTimer() {
     if (timer) {

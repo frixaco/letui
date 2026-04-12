@@ -6,14 +6,12 @@
 import { Column, Row, Text, $, ff, onKey, run } from "@";
 import type { StyledText, TextSpan } from "@";
 
-// --- Domain vocabulary ---
 
 type KeyCell = {
   value: string;
   node: ReturnType<typeof Text>;
 };
 
-// --- Binary layout ---
 
 const KEY_WIDTH = 3;
 const KEY_GAP = 1;
@@ -28,7 +26,6 @@ const HAND_BOX_HEIGHT = HAND_ROWS * 2 + HAND_PADDING_Y * 2 + 3;
 const KEYBOARD_WIDTH = HAND_BOX_WIDTH * 2 + HAND_GAP;
 const CLOCK_TICK_MS = 100;
 
-// --- Supporting types ---
 
 const THEME = {
   border: 0x2d4a60,
@@ -63,7 +60,6 @@ const PROMPTS = [
 const DEFAULT_HINT = "type letters + space   backspace edit   enter next   esc quit";
 const FINISHED_HINT = "enter next prompt   backspace revise   esc quit";
 
-// --- Internal state ---
 
 const promptIndex = $(0);
 const typed = $("");
@@ -71,7 +67,6 @@ const startedAt = $<number | null>(null);
 const finishedAt = $<number | null>(null);
 const now = $(Date.now());
 
-// --- Core algorithm ---
 
 function currentPrompt(): string {
   return PROMPTS[promptIndex()] ?? PROMPTS[0]!;
@@ -197,7 +192,6 @@ function buildPromptText(prompt: string, value: string): StyledText {
   return { text: prompt, spans };
 }
 
-// --- View state ---
 
 const title = Text({
   text: "typing speed // colemak mod dh",
@@ -269,7 +263,6 @@ const root = Column(
   ],
 );
 
-// --- Reactive sync ---
 
 ff(() => {
   const prompt = currentPrompt();
@@ -316,7 +309,6 @@ ff(() => {
   });
 });
 
-// --- Runtime ---
 
 const clock = setInterval(() => {
   if (startedAt() === null || finishedAt() !== null) return;

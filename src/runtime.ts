@@ -3,8 +3,6 @@
  */
 
 import { toArrayBuffer, type Pointer } from "bun:ffi";
-import { mkdirSync, writeFileSync } from "fs";
-import { dirname } from "path";
 import {
   cleanupAppearanceSession,
   configureAppearanceSession,
@@ -41,11 +39,13 @@ import {
   endFlush,
   formatMetrics,
   resolveMetricsPath,
+  saveMetrics,
 } from "./metrics";
 import { logWriter } from "./debug";
 
 export type RunOptions = {
   debug?: boolean;
+  metricsPath?: string | false;
   appearance?: AppearanceMode;
 };
 
@@ -79,10 +79,11 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   const stdinHandler = (data: Buffer) => handleInput(data.toString());
   const writeDebugMetrics = () => {
     if (!options?.debug) return;
-    const metricsPath = resolveMetricsPath();
-    ensureParentDir(metricsPath);
     const stats = formatMetrics();
-    writeFileSync(metricsPath, stats + "\n", "utf8");
+    const metricsPath = resolveMetricsPath(options?.metricsPath);
+    if (metricsPath) {
+      saveMetrics(metricsPath);
+    }
     console.log(stats);
     logWriter.flush();
   };
@@ -878,11 +879,4 @@ function dispatchScrollEvent(event: ScrollEvent, scrollTarget: Node | undefined)
 function sameStyleValue(left: StylePropValue, right: StylePropValue): boolean {
   if (left === right) return true;
   return typeof left === "number" && typeof right === "number" && Number.isNaN(left) && Number.isNaN(right);
-}
-
-function ensureParentDir(path: string): void {
-  const parent = dirname(path);
-  if (parent !== "." && parent.length > 0) {
-    mkdirSync(parent, { recursive: true });
-  }
 }

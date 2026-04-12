@@ -2,7 +2,6 @@
 
 use std::sync::Mutex;
 
-// --- Shared state ---
 pub(crate) static LAST_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
 pub(crate) static CURRENT_BUFFER: Mutex<Option<Vec<u64>>> = Mutex::new(None);
 pub(crate) static TERMINAL_SIZE: Mutex<(u16, u16)> = Mutex::new((0, 0));
@@ -14,7 +13,6 @@ pub(crate) static FIRST_DIFF: Mutex<bool> = Mutex::new(true);
 // "inherit/reset terminal color" without stealing pure black from the API.
 pub(crate) const RESET_COLOR: u32 = u32::MAX;
 
-// --- Shared constants ---
 pub(crate) const CONTINUATION_CELL: char = '\0';
 // Each terminal cell stores: <char><fg><bg><attrs>.
 pub(crate) const FIELDS_PER_CELL: usize = 4;

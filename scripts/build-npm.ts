@@ -4,7 +4,6 @@ import { write } from "bun";
 import { mkdir } from "node:fs/promises";
 import { join } from "path";
 
-// --- Internal state ---
 
 const args = process.argv.slice(2);
 if (args.length < 3) {
@@ -20,7 +19,6 @@ const fullPkgName = `${scope}/${pkgName}`;
 
 console.log(`Preparing ${fullPkgName} v${version}...`);
 
-// --- Internal algorithm ---
 
 const manifest = {
   name: fullPkgName,

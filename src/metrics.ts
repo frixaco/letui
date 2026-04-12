@@ -1,8 +1,8 @@
 /** Lightweight frame metrics collector for smoke tests and perf debugging. */
 
-import { writeFileSync } from "fs";
+import { mkdirSync, writeFileSync } from "fs";
+import { dirname } from "path";
 
-// --- Primary abstraction ---
 export type FrameReason = "input" | "fetch" | "focus" | "resize" | "other";
 
 type FrameSample = {
@@ -24,7 +24,6 @@ export type FrameCounters = {
   ffiBytes: number;
 };
 
-// --- Domain vocabulary ---
 interface Stats {
   avg: number;
   p95: number;
@@ -46,7 +45,6 @@ interface MetricsSummary {
   worstFrame: FrameSample | null;
 }
 
-// --- Internal state ---
 const MAX_SAMPLES = 200;
 
 let frameSamples: FrameSample[] = [];
@@ -55,7 +53,6 @@ let nextFrameId = 1;
 let currentFrame: FrameSample | null = null;
 let worstFrame: FrameSample | null = null;
 
-// --- Public API ---
 export function startFrame(reason: FrameReason = "other"): number {
   currentFrame = {
     id: nextFrameId++,
@@ -164,15 +161,19 @@ export function resetMetrics(): void {
 
 export const DEFAULT_METRICS_PATH = "dump/metrics.txt";
 
-export function resolveMetricsPath(): string {
-  return process.env.LETUI_METRICS_PATH || DEFAULT_METRICS_PATH;
+export function resolveMetricsPath(explicitPath?: string | false): string | null {
+  if (explicitPath === false) {
+    return null;
+  }
+
+  return explicitPath ?? process.env.LETUI_METRICS_PATH ?? null;
 }
 
 export function saveMetrics(filename: string = DEFAULT_METRICS_PATH): void {
+  ensureParentDir(filename);
   writeFileSync(filename, formatMetrics() + "\n", "utf8");
 }
 
-// --- Internal algorithm ---
 function elapsedMs(startTime: number): number {
   return (Bun.nanoseconds() - startTime) / 1_000_000;
 }
@@ -207,6 +208,13 @@ function calculateStats(values: number[]): Stats {
 
 function fmt(n: number): string {
   return (Math.round(n * 10) / 10).toString();
+}
+
+function ensureParentDir(path: string): void {
+  const parent = dirname(path);
+  if (parent !== "." && parent.length > 0) {
+    mkdirSync(parent, { recursive: true });
+  }
 }
 
 function formatWorstFrame(sample: FrameSample | null): string {

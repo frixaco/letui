@@ -32,12 +32,14 @@ Available exports include: `$`, `dd`, `ff`, `af`, `wait`, `whenSettled`.
 ```ts
 run(root: Node, options?: {
   debug?: boolean;
+  metricsPath?: string | false;
   appearance?: "auto" | "light" | "dark";
 }): { quit: () => void }
 ```
 
 - `run(root)` starts stdin handling, resize handling, render loop
-- `run(root, { debug: true })` enables metrics output (`dump/metrics.txt`)
+- `run(root, { debug: true })` enables in-memory metrics collection and prints the summary on quit
+- `run(root, { debug: true, metricsPath: "dump/metrics.txt" })` also writes the summary to a file
 - `run(root, { appearance: "auto" })` queries the terminal background and refreshes it again when the terminal regains focus
 - `run(root, { appearance: "light" | "dark" })` forces an appearance without terminal detection
 - returned `quit()` tears everything down and exits process
@@ -62,7 +64,7 @@ refreshAppearance(): Promise<"light" | "dark" | "unknown">
 5. JS reads frame rectangles back into each node for measurement, while interaction uses the Rust-owned hitmap from the final painted frame
 6. Rust flushes only changed terminal cells
 
-Debug phase names in `dump/metrics.txt` match that pipeline:
+Debug phase names in the quit summary and optional metrics file match that pipeline:
 
 - `js`: JS-side snapshot, diff, op drain, and FFI op submit
 - `render`: Rust layout + paint
