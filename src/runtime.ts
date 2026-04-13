@@ -11,7 +11,11 @@ import {
 } from "./appearance";
 import api from "./ffi";
 import { $, ff, type Signal } from "./signals";
-import { getFocusedNode, getFocusVersion } from "./components";
+import {
+  getFocusedNode,
+  getFocusVersion,
+  syncScrollViewMetrics,
+} from "./components";
 import { dispatchInputChunk } from "./input";
 import {
   NODE_TYPE,
@@ -683,9 +687,22 @@ function updateNodeFrames(root: Node): void {
     node.frame.y = framesArray[idx++]!;
     node.frame.width = framesArray[idx++]!;
     node.frame.height = framesArray[idx++]!;
+    node.contentFrame.x = framesArray[idx++]!;
+    node.contentFrame.y = framesArray[idx++]!;
+    node.contentFrame.width = framesArray[idx++]!;
+    node.contentFrame.height = framesArray[idx++]!;
+    idx++;
+    const maxScrollY = framesArray[idx++]!;
 
     node.frameWidth(node.frame.width);
     node.frameHeight(node.frame.height);
+
+    if ("scrollTo" in node) {
+      syncScrollViewMetrics(node, {
+        viewportHeight: node.contentFrame.height,
+        maxScrollY,
+      });
+    }
 
     const children = node.children?.() ?? [];
     for (const child of children) {

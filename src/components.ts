@@ -48,6 +48,7 @@ export function Box(input: BoxProps, children: Node[]): BoxNode {
     props,
     handlers: {},
     frame: getInitialFrame(),
+    contentFrame: getInitialFrame(),
     frameWidth,
     frameHeight,
     children: childrenSignal,
@@ -72,7 +73,9 @@ export function ScrollView(input: ScrollViewProps, children: Node[]): ScrollView
   const childrenSignal = $(children);
   const frameWidth = $(0);
   const frameHeight = $(0);
-  const setStyleSignals = makeSetStyle(props);
+  const viewportHeight = $(0);
+  const contentHeight = $(0);
+  const maxScrollY = $(0);
 
   const node: ScrollViewNode = {
     type: NODE_TYPE.Column,
@@ -80,14 +83,33 @@ export function ScrollView(input: ScrollViewProps, children: Node[]): ScrollView
     props,
     handlers: { onScroll },
     frame: getInitialFrame(),
+    contentFrame: getInitialFrame(),
     frameWidth,
     frameHeight,
     children: childrenSignal,
     setChildren: (nodes) => childrenSignal(nodes),
-    setStyle: (newProps) => setStyleSignals(newProps),
+    setStyle: (newProps) => {
+      const { scrollY, ...nextStyle } = newProps;
+      if (scrollY !== undefined) {
+        setScrollPosition(node, scrollY);
+      }
+      for (const [key, value] of Object.entries(nextStyle)) {
+        if (key in props) {
+          (props as any)[key](value);
+        }
+      }
+    },
     focus: () => focusNode(node),
     blur: () => blurNode(node),
     isFocused: () => focusedNode === node,
+    scrollTo: (y) => setScrollPosition(node, y),
+    scrollBy: (deltaY) => setScrollPosition(node, node.scrollY() + deltaY),
+    scrollToStart: () => setScrollPosition(node, 0),
+    scrollToEnd: () => setScrollPosition(node, node.maxScrollY()),
+    scrollY: props.scrollY,
+    viewportHeight,
+    contentHeight,
+    maxScrollY,
   };
 
   return node;
@@ -114,6 +136,7 @@ export function Text(input: TextProps): TextNode {
     props,
     handlers: {},
     frame: getInitialFrame(),
+    contentFrame: getInitialFrame(),
     frameWidth,
     frameHeight,
     children: undefined,
@@ -140,6 +163,7 @@ export function Input(input: InputProps): InputNode {
     props,
     handlers: { onChange, onSubmit, onFocus, onBlur },
     frame: getInitialFrame(),
+    contentFrame: getInitialFrame(),
     frameWidth,
     frameHeight,
     children: undefined,
@@ -167,6 +191,7 @@ export function Button(input: ButtonProps, children: Node[] = []): ButtonNode {
     props,
     handlers: { onClick, onKeyDown, onFocus, onBlur },
     frame: getInitialFrame(),
+    contentFrame: getInitialFrame(),
     frameWidth,
     frameHeight,
     children: childrenSignal,
@@ -250,7 +275,7 @@ function createScrollViewSignals(input: Omit<ScrollViewProps, "onScroll">): _Scr
   return {
     ...createBoxSignals({ ...input, direction: "column" }),
     overflow: $("scroll" as Overflow | undefined),
-    scrollY: $(input.scrollY),
+    scrollY: $(normalizeScrollValue(input.scrollY)),
   };
 }
 
@@ -349,6 +374,47 @@ function makeSetStyle<T extends Record<string, Signal<any>>>(
 
 function directionToBoxKind(direction: Direction | undefined): BoxKind {
   return direction?.startsWith("row") ? NODE_TYPE.Row : NODE_TYPE.Column;
+}
+
+type ScrollViewInternal = ScrollViewNode & {
+  _hasMeasuredScrollBounds?: boolean;
+};
+
+export function syncScrollViewMetrics(
+  node: ScrollViewNode,
+  metrics: {
+    viewportHeight: number;
+    maxScrollY: number;
+  },
+): void {
+  const internal = node as ScrollViewInternal;
+  const viewportHeight = Math.max(0, Math.floor(metrics.viewportHeight));
+  const maxScrollY = Math.max(0, Math.floor(metrics.maxScrollY));
+  node.viewportHeight(viewportHeight);
+  node.contentHeight(viewportHeight + maxScrollY);
+  node.maxScrollY(maxScrollY);
+  internal._hasMeasuredScrollBounds = true;
+  setScrollPosition(node, node.scrollY());
+}
+
+function setScrollPosition(node: ScrollViewNode, nextScrollY: number): void {
+  const internal = node as ScrollViewInternal;
+  const normalized = normalizeScrollValue(nextScrollY);
+  const clamped =
+    internal._hasMeasuredScrollBounds === true
+      ? clamp(0, normalized, node.maxScrollY())
+      : Math.max(0, normalized);
+  if (node.scrollY() !== clamped) {
+    node.scrollY(clamped);
+  }
+}
+
+function normalizeScrollValue(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.floor(Math.max(0, value)) : 0;
+}
+
+function clamp(min: number, value: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }
 
 function blurNode(node: Node): void {

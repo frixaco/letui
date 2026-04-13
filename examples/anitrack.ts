@@ -2,7 +2,7 @@
 //
 // Data flow:
 // Search input → fetchResults() → scrape API → toScrapeResults() → results signal → ff() effect → result row tree render
-// Keyboard / wheel → pane + scroll signals → ScrollView viewport → Rust paint-time clipping / hit-testing
+// Keyboard / wheel → pane focus → ScrollView methods → Rust layout metrics → clamped viewport state
 
 import { existsSync } from "fs";
 import { tmpdir } from "os";
@@ -166,19 +166,6 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     ]);
   }
 
-  function isPointInside(
-    node: { frame: { x: number; y: number; width: number; height: number } },
-    x: number,
-    y: number,
-  ): boolean {
-    return (
-      x >= node.frame.x &&
-      y >= node.frame.y &&
-      x < node.frame.x + node.frame.width &&
-      y < node.frame.y + node.frame.height
-    );
-  }
-
   const MPV_SOCKET_WAIT_MS = 5000;
 
   function themeForAppearance(mode: Appearance): DemoTheme {
@@ -214,7 +201,6 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 
   const results = $<ScrapeResultItem[]>([]);
   const loading = $(false);
-  const resultsScrollY = $(0);
   const focusTarget = $<Pane>("input");
   const loadingBar = LoadingBar({
     dotColor: initialTheme.accent,
@@ -365,7 +351,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 
   function clearResults(): void {
     results([]);
-    resultsScrollY(0);
+    resultsViewport.scrollToStart();
     setPane("input");
   }
 
@@ -385,7 +371,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
       const payload = await response.json();
       const parsedResults = toScrapeResults(payload);
       results(parsedResults);
-      resultsScrollY(0);
+      resultsViewport.scrollToStart();
       setPane(parsedResults.length > 0 ? "results" : "input");
     } catch {
       clearResults();
@@ -469,24 +455,23 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 
   function scrollResults(offset: number): void {
     if (focusTarget() !== "results") return;
-    resultsScrollY(Math.max(0, resultsScrollY() + offset));
+    resultsViewport.scrollBy(offset);
   }
 
   function scrollResultsFromPointer(
     deltaY: number,
-    x: number,
-    y: number,
+    _x: number,
+    _y: number,
   ): void {
     if (deltaY === 0 || results().length === 0) return;
-    if (!isPointInside(resultsViewport, x, y)) return;
 
     setPane("results");
-    scrollResults(deltaY);
+    resultsViewport.scrollBy(deltaY);
   }
 
   function resetScroll(): void {
     if (focusTarget() !== "results") return;
-    resultsScrollY(0);
+    resultsViewport.scrollToStart();
   }
 
   function togglePane(): void {
@@ -497,7 +482,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     const all = results();
     const isLoading = loading();
     const activePane = focusTarget();
-    const scrollY = resultsScrollY();
+    const scrollY = resultsViewport.scrollY();
     const appearanceMode = appearance();
     const theme = themeForAppearance(appearanceMode);
     const themeChanged = appearanceMode !== lastAppearanceMode;
@@ -564,7 +549,6 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     resultsSummary.setStyle({
       foreground: all.length === 0 ? theme.muted : theme.accent,
     });
-    resultsViewport.setStyle({ scrollY });
 
     if (all.length === 0) {
       lastResultsSnapshot = [];

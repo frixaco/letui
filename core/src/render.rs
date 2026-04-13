@@ -163,12 +163,20 @@ fn build_frames_array(
 
     let absolute_x = offset_x + layout.location.x;
     let absolute_y = offset_y + layout.location.y;
+    let content_absolute_x = offset_x + layout.content_box_x();
+    let content_absolute_y = offset_y + layout.content_box_y();
 
     out.extend([
         absolute_x,
         absolute_y,
         layout.size.width,
         layout.size.height,
+        content_absolute_x,
+        content_absolute_y,
+        layout.content_box_width(),
+        layout.content_box_height(),
+        layout.scroll_width(),
+        layout.scroll_height(),
     ]);
 
     let children = taffy.children(node).unwrap();

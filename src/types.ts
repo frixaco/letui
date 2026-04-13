@@ -113,7 +113,7 @@ export type _BoxProps = _StyleProps & {
 
 export type _ScrollViewProps = _BoxProps & {
   overflow: Signal<Overflow | undefined>;
-  scrollY: Signal<number | undefined>;
+  scrollY: Signal<number>;
 };
 
 export type _TextProps = _StyleProps & {
@@ -252,6 +252,7 @@ export type ButtonHandlers = {
 type CommonFields = {
   id: number;
   frame: Frame;
+  contentFrame: Frame;
   frameWidth: Signal<number>;
   frameHeight: Signal<number>;
   focus: () => void;
@@ -319,6 +320,14 @@ export type ScrollViewNode = NodeBase<typeof NODE_TYPE.Column> &
     props: _ScrollViewProps;
     handlers: ScrollViewHandlers;
     setStyle: (p: Partial<Omit<ScrollViewProps, "onScroll">>) => void;
+    scrollTo: (y: number) => void;
+    scrollBy: (deltaY: number) => void;
+    scrollToStart: () => void;
+    scrollToEnd: () => void;
+    scrollY: Signal<number>;
+    viewportHeight: Signal<number>;
+    contentHeight: Signal<number>;
+    maxScrollY: Signal<number>;
   };
 
 export type RowNode = Omit<BoxNode, "type" | "setStyle"> & {
