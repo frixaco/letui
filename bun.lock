@@ -9,9 +9,9 @@
         "@types/node": "^25.5.0",
       },
       "optionalDependencies": {
-        "@frixaco/letui-darwin-arm64": "0.3.5",
-        "@frixaco/letui-linux-x64": "0.3.5",
-        "@frixaco/letui-win32-x64": "0.3.5",
+        "@frixaco/letui-darwin-arm64": "0.3.9",
+        "@frixaco/letui-linux-x64": "0.3.9",
+        "@frixaco/letui-win32-x64": "0.3.9",
       },
       "peerDependencies": {
         "typescript": "^5.9.3",
