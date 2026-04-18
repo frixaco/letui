@@ -3,16 +3,16 @@
 This is a TUI library written in Rust and TypeScript.
 The core backend for the library is written in Rust for maximum performance.
 The API/wrapper for the library is written in TypeScript for acccess to a wide ecosystem.
-Communication with Rust backend is achieved thanks to Bun's FFI support.
+Communication with Rust backend is achieved thanks to Deno's FFI support.
 TypeScript wrapper exposes component API to build UI elements.
 
 **Performance goal**: Keep <1ms average response time for each render.
 
 ## Runtime and environment
 
-Default to using Bun instead of Node.js.
+Default to using Deno instead of Node.js.
 
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.md`.
+For more information, read the official Deno docs, especially FFI and package-management references.
 
 ## Status
 
@@ -46,7 +46,7 @@ Structure each source file for **learning flow** — a stranger should be able t
 
 Manual TUI testing:
 
-- Start app: `bun run dev`
+- Start app: `deno task anitrack`
 - Validate behavior interactively in terminal
 - Quit with `q` or `Ctrl+Q`
 

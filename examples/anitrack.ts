@@ -4,9 +4,10 @@
 // Search input → fetchResults() → scrape API → toScrapeResults() → results signal → ff() effect → result row tree render
 // Keyboard / wheel → pane focus → ScrollView methods → Rust layout metrics → clamped viewport state
 
-import { existsSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import process from "node:process";
 import {
   Button,
   Column,
@@ -22,7 +23,7 @@ import {
 } from "@";
 import type { Appearance, StyledText, TextSpan } from "@";
 import { COLORS } from "./colors.ts";
-import { LoadingBar } from "./progress-bar";
+import { LoadingBar } from "./progress-bar.ts";
 
 function startAniTrackDemo(): ReturnType<typeof run> {
   type Pane = "input" | "results";
@@ -64,13 +65,13 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 
   async function waitForMpvIpc(path: string, timeoutMs: number): Promise<void> {
     if (process.platform === "win32") {
-      await Bun.sleep(Math.min(timeoutMs, 150));
+      await sleep(Math.min(timeoutMs, 150));
       return;
     }
 
     const deadline = Date.now() + timeoutMs;
     while (!existsSync(path) && Date.now() < deadline) {
-      await Bun.sleep(50);
+      await sleep(50);
     }
   }
 
@@ -403,11 +404,11 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 
       const streamUrl = `https://rqbit.anitrack.frixaco.com/torrents/${target.infoHash}/stream/${target.fileIndex}`;
       const ipcPath = createMpvIpcPath();
-      Bun.spawn({
-        cmd: ["mpv", `--input-ipc-server=${ipcPath}`, streamUrl],
-        stdout: "ignore",
-        stderr: "ignore",
-      });
+      new Deno.Command("mpv", {
+        args: [`--input-ipc-server=${ipcPath}`, streamUrl],
+        stdout: "null",
+        stderr: "null",
+      }).spawn();
 
       await waitForMpvIpc(ipcPath, MPV_SOCKET_WAIT_MS);
     } catch {
@@ -602,3 +603,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 }
 
 startAniTrackDemo();
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

@@ -2,7 +2,7 @@
  * Keyboard input parser that normalizes terminal chunks into text mutations.
  */
 
-import { prepareTextInput } from "./text";
+import { prepareTextInput } from "./text.ts";
 
 export function parseInputChunk(data: string): InputChunkOp[] {
   const normalized = prepareTextInput(data).text;

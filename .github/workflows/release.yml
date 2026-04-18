@@ -30,8 +30,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v1
+      - name: Install Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+          cache: true
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -50,7 +53,7 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
 
           # Run generation script
-          bun scripts/build-npm.ts $VERSION ${{ matrix.platform }} ${{ matrix.arch }}
+          deno run -A scripts/build-npm.ts $VERSION ${{ matrix.platform }} ${{ matrix.arch }}
 
           # Determine binary name and extension based on OS
           if [ "${{ matrix.platform }}" = "win32" ]; then
@@ -87,8 +90,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v1
+      - name: Install Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+          cache: true
 
       - name: Publish Main Package
         run: |

@@ -1,7 +1,8 @@
 /** Terminal appearance detection and runtime state for light/dark theming. */
 
-import { $ } from "./signals";
-import type { Appearance, AppearanceMode } from "./types";
+import process from "node:process";
+import { $ } from "./signals.ts";
+import type { Appearance, AppearanceMode } from "./types.ts";
 
 const OSC_QUERY_TERMINATOR = "\x07";
 const OSC_STRING_TERMINATOR = "\x1b\\";
@@ -15,7 +16,7 @@ const TERMINAL_FOCUS_OUT = "\x1b[O";
 
 type AppearanceRequest = {
   resolve: (appearance: Appearance) => void;
-  timer: Timer;
+  timer: ReturnType<typeof setTimeout>;
   promise: Promise<Appearance>;
 };
 

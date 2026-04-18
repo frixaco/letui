@@ -8,9 +8,9 @@ Symptom:
 
 Checks:
 
-1. run `bun run build-ffi`
+1. run `deno task build-ffi`
 2. confirm release artifact exists under `core/target/release`
-3. rerun demo: `bun run examples/<file>.ts`
+3. rerun demo: `deno run -A examples/<file>.ts`
 
 ## App exits but terminal looks broken
 

@@ -1,0 +1,22 @@
+{
+  "lock": {
+    "path": "./deno.lock",
+    "frozen": true
+  },
+  "nodeModulesDir": "manual",
+  "compilerOptions": {
+    "lib": ["deno.ns", "dom", "dom.iterable", "esnext"],
+    "types": ["node"]
+  },
+  "imports": {
+    "@": "./index.ts",
+    "@/": "./src/"
+  },
+  "tasks": {
+    "build-ffi": "cargo build --release --manifest-path core/Cargo.toml",
+    "anitrack": "deno task build-ffi && deno run -A examples/anitrack.ts",
+    "typecheck": "deno check index.ts scripts/build-npm.ts examples/anitrack.ts examples/colors.ts examples/progress-bar.ts examples/text.ts examples/typing-speed.ts",
+    "check:rust": "cargo check --manifest-path core/Cargo.toml",
+    "check": "deno task typecheck && deno task check:rust"
+  }
+}

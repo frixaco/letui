@@ -2,9 +2,9 @@
  * Component constructors, focus state, and focus management for the TS wrapper.
  */
 
-import { $, type Signal } from "./signals";
-import { normalizeStyledText, prepareTextInput } from "./text";
-import { NODE_TYPE } from "./types";
+import { $, type Signal } from "./signals.ts";
+import { normalizeStyledText, prepareTextInput } from "./text.ts";
+import { NODE_TYPE } from "./types.ts";
 import type {
   Frame,
   Node,
@@ -32,7 +32,7 @@ import type {
   _TextProps,
   _InputProps,
   _ButtonProps,
-} from "./types";
+} from "./types.ts";
 
 export function Box(input: BoxProps, children: Node[]): BoxNode {
   const props = createBoxSignals(input);

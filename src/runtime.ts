@@ -2,21 +2,22 @@
  * Runtime bridge that diffs the TS tree, syncs Rust ops, and drives terminal I/O.
  */
 
-import { toArrayBuffer, type Pointer } from "bun:ffi";
+import { Buffer } from "node:buffer";
+import process from "node:process";
 import {
   cleanupAppearanceSession,
   configureAppearanceSession,
   refreshAppearance as refreshRuntimeAppearance,
   stripAppearanceResponses,
-} from "./appearance";
-import api from "./ffi";
-import { $, ff, type Signal } from "./signals";
+} from "./appearance.ts";
+import api from "./ffi.ts";
+import { $, ff, type Signal } from "./signals.ts";
 import {
   getFocusedNode,
   getFocusVersion,
   syncScrollViewMetrics,
-} from "./components";
-import { dispatchInputChunk } from "./input";
+} from "./components.ts";
+import { dispatchInputChunk } from "./input.ts";
 import {
   NODE_TYPE,
   type AppearanceMode,
@@ -24,7 +25,7 @@ import {
   type NodeKind,
   type NormalizedStyledText,
   type ScrollEvent,
-} from "./types";
+} from "./types.ts";
 import {
   EMITTED_STYLE_PROPS,
   OpQueue,
@@ -32,7 +33,7 @@ import {
   getSetTextOpSize,
   type StylePropName,
   type StylePropValue,
-} from "./ops";
+} from "./ops.ts";
 import {
   startFrame,
   endFrame,
@@ -44,8 +45,8 @@ import {
   formatMetrics,
   resolveMetricsPath,
   saveMetrics,
-} from "./metrics";
-import { logWriter } from "./debug";
+} from "./metrics.ts";
+import { logWriter } from "./debug.ts";
 
 export type RunOptions = {
   debug?: boolean;
@@ -53,8 +54,8 @@ export type RunOptions = {
   appearance?: AppearanceMode;
 };
 
-export { appearance, refreshAppearance } from "./appearance";
-export type { ScrollEvent } from "./types";
+export { appearance, refreshAppearance } from "./appearance.ts";
+export type { ScrollEvent } from "./types.ts";
 
 export function run(root: Node, options?: RunOptions): { quit: () => void } {
   configureAppearanceSession(options?.appearance ?? "auto");
@@ -160,7 +161,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     } else {
       syncRenderTree(previousSentTree, sentTree, textStats);
     }
-    const opBuffer = ops.drain();
+    const opBuffer = new Uint8Array(ops.drain());
     if (opBuffer.length > 0) {
       api.apply_ops(opBuffer, opBuffer.length);
     }
@@ -662,20 +663,20 @@ function syncRenderTree(
 
 function updateNodeFrames(root: Node): void {
   const framesPtr = api.get_frames_ptr()!;
-  const framesLen = Number(api.get_frames_len()!);
-  const framesArray = new Float32Array(toArrayBuffer(framesPtr as Pointer, 0, framesLen * 4));
+  const framesLen = Number(api.get_frames_len());
+  const framesArray = new Float32Array(readPointerBuffer(framesPtr, framesLen * 4));
   const hitmapPtr = api.get_hitmap_ptr?.();
-  const hitmapLen = Number(api.get_hitmap_len?.() ?? 0);
+  const hitmapLen = Number(api.get_hitmap_len?.() ?? 0n);
   const scrollHitmapPtr = api.get_scroll_hitmap_ptr?.();
-  const scrollHitmapLen = Number(api.get_scroll_hitmap_len?.() ?? 0);
+  const scrollHitmapLen = Number(api.get_scroll_hitmap_len?.() ?? 0n);
 
   spatialLookup =
     hitmapPtr && hitmapLen > 0
-      ? new Uint32Array(toArrayBuffer(hitmapPtr as Pointer, 0, hitmapLen * 4))
+      ? new Uint32Array(readPointerBuffer(hitmapPtr, hitmapLen * 4))
       : new Uint32Array(terminalWidth() * terminalHeight());
   scrollSpatialLookup =
     scrollHitmapPtr && scrollHitmapLen > 0
-      ? new Uint32Array(toArrayBuffer(scrollHitmapPtr as Pointer, 0, scrollHitmapLen * 4))
+      ? new Uint32Array(readPointerBuffer(scrollHitmapPtr, scrollHitmapLen * 4))
       : new Uint32Array(terminalWidth() * terminalHeight());
 
   let idx = 0;
@@ -867,6 +868,10 @@ let ops: OpQueue;
 let previousSentTree: SentNodeState | null = null;
 
 const textEncoder = new TextEncoder();
+
+function readPointerBuffer(pointer: Deno.PointerObject<unknown>, byteLength: number): ArrayBuffer {
+  return Deno.UnsafePointerView.getArrayBuffer(pointer, byteLength);
+}
 
 function getNodeAt(x: number, y: number): Node | undefined {
   if (x < 0 || y < 0 || x >= terminalWidth() || y >= terminalHeight()) {

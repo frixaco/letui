@@ -1,7 +1,8 @@
 /** Lightweight frame metrics collector for smoke tests and perf debugging. */
 
-import { mkdirSync, writeFileSync } from "fs";
-import { dirname } from "path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import process from "node:process";
 
 export type FrameReason = "input" | "fetch" | "focus" | "resize" | "other";
 
@@ -66,11 +67,11 @@ export function startFrame(reason: FrameReason = "other"): number {
     textBytes: 0,
     ffiBytes: 0,
   };
-  return Bun.nanoseconds();
+  return performance.now();
 }
 
 export function startPhase(): number {
-  return Bun.nanoseconds();
+  return performance.now();
 }
 
 export function endJs(startTime: number, counters: FrameCounters): void {
@@ -175,7 +176,7 @@ export function saveMetrics(filename: string = DEFAULT_METRICS_PATH): void {
 }
 
 function elapsedMs(startTime: number): number {
-  return (Bun.nanoseconds() - startTime) / 1_000_000;
+  return performance.now() - startTime;
 }
 
 function percentile(sorted: number[], p: number): number {

@@ -1,10 +1,10 @@
 /** Public package surface for letui. */
 
-export * from "./src/components";
-export * from "./src/signals";
-export * from "./src/runtime";
-export * from "./src/text";
-export { NODE_TYPE, NODE_KIND_ID } from "./src/types";
+export * from "./src/components.ts";
+export * from "./src/signals.ts";
+export * from "./src/runtime.ts";
+export * from "./src/text.ts";
+export { NODE_TYPE, NODE_KIND_ID } from "./src/types.ts";
 export type {
   Frame,
   Node,
@@ -33,6 +33,6 @@ export type {
   NormalizedTextSpan,
   NormalizedStyledText,
   ScrollEvent,
-} from "./src/types";
+} from "./src/types.ts";
 
 // TODO: expose the raw FFI surface for low-level use cases?

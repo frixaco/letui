@@ -4,10 +4,10 @@
 // start() → timer interval → position/direction signals → ff() effect → Text node updates
 // stop() → clear timer → reset signals → UI clear
 
-import { Row, Text } from "@/components";
-import { $, ff } from "@/signals";
-import type { Node } from "@/types";
-import { log } from "@/debug";
+import { Row, Text } from "@/components.ts";
+import { $, ff } from "@/signals.ts";
+import type { Node } from "@/types.ts";
+import { log } from "@/debug.ts";
 
 
 export type LoadingBarProps = {
@@ -32,7 +32,7 @@ export function LoadingBar(props: LoadingBarProps): LoadingBarController {
   const position = $(0);
   const direction = $(1);
   const active = $(false);
-  let timer: Timer | null = null;
+  let timer: ReturnType<typeof setInterval> | null = null;
 
 
   const leftTrack = Text({

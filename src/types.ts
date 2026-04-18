@@ -1,6 +1,6 @@
 /** Public component, style, and node types shared by the TypeScript wrapper. */
 
-import type { Signal } from "./signals";
+import type { Signal } from "./signals.ts";
 
 export type Frame = {
   x: number;

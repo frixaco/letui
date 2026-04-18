@@ -1,9 +1,13 @@
 /** Native FFI loader that resolves the Rust shared library for letui. */
 
-import { dlopen, suffix } from "bun:ffi";
-import { fileURLToPath } from "url";
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
 
+const require = createRequire(import.meta.url);
 const prefix = process.platform === "win32" ? "" : "lib";
+const suffix = process.platform === "win32" ? "dll" : process.platform === "darwin" ? "dylib" : "so";
 const filename = `${prefix}letui_core.${suffix}`;
 
 function debugLog(...args: unknown[]): void {
@@ -18,7 +22,7 @@ function getLibraryPath(): string {
   const localPath = fileURLToPath(new URL(`../core/target/release/${filename}`, import.meta.url));
 
   try {
-    if (Bun.file(localPath).size > 0) {
+    if (existsSync(localPath)) {
       debugLog("using local build", localPath);
       return localPath;
     }
@@ -29,99 +33,99 @@ function getLibraryPath(): string {
   const pkgName = `@frixaco/letui-${platform}-${arch}`;
 
   try {
-    const resolved = Bun.resolveSync(`${pkgName}/${filename}`, import.meta.dir);
+    const resolved = require.resolve(`${pkgName}/${filename}`);
     debugLog("using packaged binary", resolved);
     return resolved;
   } catch {
     throw new Error(
-      `Failed to load letui native library. Tried local build at ${localPath} and optional package ${pkgName}. Run bun run build-ffi or install the matching optional package.`,
+      `Failed to load letui native library. Tried local build at ${localPath} and optional package ${pkgName}. Run deno task build-ffi or install the matching optional package.`,
     );
   }
 }
 
 const path = getLibraryPath();
 
-const { symbols: api } = dlopen(path, {
+const library = Deno.dlopen(path, {
   init_letui: {
-    args: [],
-    returns: "i32",
+    parameters: [],
+    result: "i32",
   },
   deinit_letui: {
-    args: [],
-    returns: "i32",
+    parameters: [],
+    result: "i32",
   },
   init_buffer: {
-    args: [],
-    returns: "i32",
+    parameters: [],
+    result: "i32",
   },
   get_buffer_ptr: {
-    args: [],
-    returns: "pointer",
+    parameters: [],
+    result: "pointer",
   },
   get_buffer_len: {
-    args: [],
-    returns: "u64",
+    parameters: [],
+    result: "u64",
   },
   apply_ops: {
-    args: ["buffer", "u32"],
-    returns: "i32",
+    parameters: ["buffer", "u32"],
+    result: "i32",
   },
   render: {
-    args: [],
-    returns: "i32",
+    parameters: [],
+    result: "i32",
   },
   clear_tree_state: {
-    args: [],
-    returns: "i32",
+    parameters: [],
+    result: "i32",
   },
   get_frames_ptr: {
-    args: [],
-    returns: "pointer",
+    parameters: [],
+    result: "pointer",
   },
   get_frames_len: {
-    args: [],
-    returns: "u64",
+    parameters: [],
+    result: "u64",
   },
   get_hitmap_ptr: {
-    args: [],
-    returns: "pointer",
+    parameters: [],
+    result: "pointer",
   },
   get_hitmap_len: {
-    args: [],
-    returns: "u64",
+    parameters: [],
+    result: "u64",
   },
   get_scroll_hitmap_ptr: {
-    args: [],
-    returns: "pointer",
+    parameters: [],
+    result: "pointer",
   },
   get_scroll_hitmap_len: {
-    args: [],
-    returns: "u64",
+    parameters: [],
+    result: "u64",
   },
   get_width: {
-    args: [],
-    returns: "u16",
+    parameters: [],
+    result: "u16",
   },
   get_height: {
-    args: [],
-    returns: "u16",
+    parameters: [],
+    result: "u16",
   },
   free_buffer: {
-    args: [],
-    returns: "i32",
+    parameters: [],
+    result: "i32",
   },
   debug_buffer: {
-    args: ["u64"],
-    returns: "u64",
+    parameters: ["u64"],
+    result: "u64",
   },
   flush: {
-    args: [],
-    returns: "i32",
+    parameters: [],
+    result: "i32",
   },
   update_terminal_size: {
-    args: [],
-    returns: "i32",
+    parameters: [],
+    result: "i32",
   },
-});
+} as const);
 
-export default api;
+export default library.symbols;

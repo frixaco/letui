@@ -1,24 +1,35 @@
 /** Debug log sink used by runtime instrumentation and smoke tooling. */
 
-import { mkdirSync } from "fs";
-import { dirname } from "path";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import process from "node:process";
 
-function createLogWriter() {
+type LogWriter = {
+  write: (...args: unknown[]) => void;
+  flush: () => void;
+};
+
+function createLogWriter(): LogWriter {
   const logPath = process.env.LETUI_DEBUG_LOG_PATH;
   if (!logPath) {
     return {
       write(..._args: unknown[]) {},
-      flush(..._args: unknown[]) {},
+      flush() {},
     };
   }
 
   try {
     ensureParentDir(logPath);
-    return Bun.file(logPath).writer();
+    return {
+      write(...args: unknown[]) {
+        appendFileSync(logPath, args.join(""), "utf8");
+      },
+      flush() {},
+    };
   } catch {
     return {
       write(..._args: unknown[]) {},
-      flush(..._args: unknown[]) {},
+      flush() {},
     };
   }
 }

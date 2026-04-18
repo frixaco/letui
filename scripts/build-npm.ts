@@ -1,13 +1,8 @@
 // Build npm package metadata for a platform-specific prebuilt binary.
 
-import { write } from "bun";
-import { mkdir } from "node:fs/promises";
-import { join } from "path";
-
-
-const args = process.argv.slice(2);
+const args = Deno.args;
 if (args.length < 3) {
-  console.error("Usage: bun scripts/build-npm.ts <version> <platform> <arch>");
+  console.error("Usage: deno run scripts/build-npm.ts <version> <platform> <arch>");
   process.exit(1);
 }
 
@@ -19,7 +14,6 @@ const fullPkgName = `${scope}/${pkgName}`;
 
 console.log(`Preparing ${fullPkgName} v${version}...`);
 
-
 const manifest = {
   name: fullPkgName,
   version,
@@ -29,11 +23,11 @@ const manifest = {
   files: ["*.dylib", "*.so", "*.dll", "*.node"],
 };
 
-const outDir = join("npm", pkgName);
+const outDir = `npm/${pkgName}`;
 
 // Ensure directory exists before writing the package manifest.
-await mkdir(outDir, { recursive: true });
+await Deno.mkdir(outDir, { recursive: true });
 
-await write(join(outDir, "package.json"), JSON.stringify(manifest, null, 2));
+await Deno.writeTextFile(`${outDir}/package.json`, JSON.stringify(manifest, null, 2));
 
 console.log(`Created package manifest in ${outDir}`);

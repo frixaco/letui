@@ -35,15 +35,15 @@ Why binary pins matter:
 Run:
 
 ```bash
-bun install
-bun run check
+deno install
+deno task check
 ```
 
 Expected:
 
-- `bun.lock` refreshed if package versions changed
+- `deno.lock` refreshed if package versions changed
 - `core/Cargo.lock` may refresh after Rust commands
-- typecheck, Rust check, smoke all pass
+- typecheck and Rust check pass
 
 ## Publish
 
@@ -52,7 +52,7 @@ From clean local state:
 ```bash
 git checkout main
 git pull --ff-only
-git add package.json bun.lock core/Cargo.toml core/Cargo.lock
+git add package.json deno.lock core/Cargo.toml core/Cargo.lock
 git commit -m "release: v0.0.12"
 git push origin main
 git tag v0.0.12

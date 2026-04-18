@@ -11,7 +11,7 @@ https://github.com/user-attachments/assets/a84f8b6c-86fd-4f42-9ec8-84edd24c7abd
 
 ## Prerequisites
 
-- Runtime: [Bun](https://bun.sh/) 1.3+ (Node.js not supported — native bridge uses Bun FFI)
+- Runtime: [Deno](https://deno.com/) 2.7+ (Node.js not supported)
 - Prebuilt binaries: `darwin-arm64`, `linux-x64`, `win32-x64`
 - Rust toolchain if building locally
 
@@ -20,32 +20,33 @@ https://github.com/user-attachments/assets/a84f8b6c-86fd-4f42-9ec8-84edd24c7abd
 ```bash
 git clone https://github.com/frixaco/letui.git
 cd letui
-bun install
-bun run build-ffi
+deno install
+deno task build-ffi
 ```
 
 More examples:
 
 ```bash
-bun run examples/typing-speed.ts
+deno run -A examples/typing-speed.ts
 ```
 
-(`bun run anitrack` is for personal testing and requires `mpv` player configured with `Anime4K` shaders)
+(`deno task anitrack` is for personal testing and requires `mpv` player configured with `Anime4K` shaders)
 
 Checks:
 
 ```bash
-bun run typecheck
-bun run check:rust
+deno task typecheck
+deno task check:rust
 ```
 
 ## Install as a library
 
 ```bash
-bun add @frixaco/letui typescript
+deno add npm:@frixaco/letui
+deno install
 ```
 
-On supported targets, install pulls the matching native binary automatically.
+On supported targets, `deno install` pulls the matching native binary automatically.
 
 Minimal reactive app:
 
@@ -102,7 +103,7 @@ onKey("q", () => app.quit());
 ```
 
 ```bash
-bun run app.ts
+deno run -A app.ts
 ```
 
 ## How it works
@@ -118,7 +119,7 @@ bun run app.ts
 
 - **TypeScript** — component API, signals, input routing, sent-tree diffing, op encoding
 - **Rust** — persistent tree state, style/text op application, layout, paint, incremental flush
-- **Bun FFI** — bridge for op buffers, frame buffers, and lifecycle hooks
+- **Deno FFI** — bridge for op buffers, frame buffers, and lifecycle hooks
 - Packaged native binaries for `darwin-arm64`, `linux-x64`, `win32-x64`
 - Only deps: `crossterm` and `taffy` Rust crates, everything written from scratch.
 
@@ -178,7 +179,7 @@ Benchmark snapshot (`2026-02-20`, `terminal-rerender`, `full` profile, PTY mode)
 - [ ] Minimal theming support
 - [ ] Safer quit/cleanup when used as a library
 - [ ] Responsive examples for smaller terminal sizes
-- [ ] Experiment: Neovim as text input via [Bun PTY](https://bun.com/docs/runtime/child-process#terminal-pty-support)
+- [ ] Experiment: Neovim as text input via a Deno-compatible PTY workflow
 - [ ] Refactor `flush` with `BatchWriter` pattern
 - [ ] Performance stats overlay
 

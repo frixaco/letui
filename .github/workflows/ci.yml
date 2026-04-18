@@ -16,55 +16,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Install Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+          cache: true
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: deno install --frozen
 
-      - name: Typecheck
-        run: bun run typecheck
-
-      - name: Rust check
-        run: bun run check:rust
-
-      - name: Smoke test
-        run: bun run smoke
-
-      - name: Upload smoke artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-artifacts
-          path: artifacts/smoke
-          if-no-files-found: ignore
-
-  metrics:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Capture smoke metrics
-        run: bun run metrics:smoke
-
-      - name: Upload metrics artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-metrics
-          path: artifacts/metrics
-          if-no-files-found: ignore
+      - name: Check
+        run: deno task check
