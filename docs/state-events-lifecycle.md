@@ -135,7 +135,7 @@ For focused `Input` node:
 For focused `Button` node:
 
 - Enter or Space triggers `onClick()`
-- mouse press + release on same button triggers `onClick()`
+- mouse left press focuses the button and triggers `onClick()`
 - non-activation keys call optional `onKeyDown(rawKey)`
 
 ## Cleanup template

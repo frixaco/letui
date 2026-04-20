@@ -737,8 +737,7 @@ function dispatchToNode(node: Node, data: string): boolean {
     }
 
     if (handlers.onKeyDown) {
-      handlers.onKeyDown(data);
-      return true;
+      return handlers.onKeyDown(data) === true;
     }
 
     return false;

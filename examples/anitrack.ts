@@ -203,6 +203,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
   const results = $<ScrapeResultItem[]>([]);
   const loading = $(false);
   const focusTarget = $<Pane>("input");
+  const activeResultIndex = $(0);
   const loadingBar = LoadingBar({
     dotColor: initialTheme.accent,
     trackColor: initialTheme.surfaceHighlight,
@@ -210,6 +211,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 
   let lastResultsSnapshot: ScrapeResultItem[] | null = null;
   let lastAppearanceMode: Appearance | null = null;
+  let resultButtons: ReturnType<typeof Button>[] = [];
 
   const headerTitle = Text({
     text: "ANITRACK // TORRENT SEARCH",
@@ -319,7 +321,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
   );
 
   const helpLine = Text({
-    text: "/ search   Tab pane   j/k or wheel scroll   h top   l +10   Enter/click stream   q quit",
+    text: "/ search   Tab pane   arrows move   j/k or wheel scroll   h top   l +10   Enter/click stream   q quit",
     foreground: initialTheme.muted,
   });
 
@@ -339,10 +341,15 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     resultsPanel,
   ]);
 
+  const nextResultKeys = new Set(["j", "\x1b[B", "\x1bOB"]);
+  const prevResultKeys = new Set(["k", "\x1b[A", "\x1bOA"]);
+  const togglePaneKeys = new Set(["\t", "\x1b[Z"]);
+
   function setPane(target: Pane): void {
     if (target === "results" && results().length > 0) {
       focusTarget("results");
       if (searchInput.isFocused()) searchInput.blur();
+      focusResult(activeResultIndex());
       return;
     }
 
@@ -353,6 +360,8 @@ function startAniTrackDemo(): ReturnType<typeof run> {
   function clearResults(): void {
     results([]);
     resultsViewport.scrollToStart();
+    activeResultIndex(0);
+    resultButtons = [];
     setPane("input");
   }
 
@@ -418,7 +427,10 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     }
   }
 
-  function createResultRow(item: ScrapeResultItem): ReturnType<typeof Button> {
+  function createResultRow(
+    item: ScrapeResultItem,
+    index: number,
+  ): ReturnType<typeof Button> {
     const title = Text({
       text: resultTitleText(item),
       wrap: "word",
@@ -434,12 +446,16 @@ function startAniTrackDemo(): ReturnType<typeof run> {
         text: "",
         border: undefined,
         paddingX: 1,
+        paddingY: 1,
         foreground: currentTheme().fg,
+        onKeyDown: (key) => handleResultKey(key),
         onFocus: () => {
-          setPane("results");
+          focusTarget("results");
+          activeResultIndex(index);
+          resultsViewport.scrollNodeIntoView(button);
         },
         onClick: () => {
-          setPane("results");
+          focusResult(index);
           if (item.magnet.length > 0) streamResult(item.magnet);
         },
       },
@@ -451,7 +467,8 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 
   function rebuildResultRows(items: readonly ScrapeResultItem[]): void {
     lastResultsSnapshot = [...items];
-    resultsViewport.setChildren?.(items.map(createResultRow));
+    resultButtons = items.map(createResultRow);
+    resultsViewport.setChildren?.(resultButtons);
   }
 
   function scrollResults(offset: number): void {
@@ -475,6 +492,49 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     resultsViewport.scrollToStart();
   }
 
+  function clampResultIndex(index: number): number {
+    return Math.max(0, Math.min(index, resultButtons.length - 1));
+  }
+
+  function focusResult(index: number): void {
+    if (resultButtons.length === 0) return;
+
+    const nextIndex = clampResultIndex(index);
+    const button = resultButtons[nextIndex];
+    if (!button) return;
+
+    activeResultIndex(nextIndex);
+    focusTarget("results");
+    button.focus();
+    resultsViewport.scrollNodeIntoView(button);
+  }
+
+  function moveResultFocus(delta: number): void {
+    if (focusTarget() !== "results" || resultButtons.length === 0) return;
+    focusResult(activeResultIndex() + delta);
+  }
+
+  function handleResultKey(key: string): boolean {
+    if (focusTarget() !== "results" || resultButtons.length === 0) return false;
+
+    if (nextResultKeys.has(key)) {
+      moveResultFocus(1);
+      return true;
+    }
+
+    if (prevResultKeys.has(key)) {
+      moveResultFocus(-1);
+      return true;
+    }
+
+    if (togglePaneKeys.has(key)) {
+      togglePane();
+      return true;
+    }
+
+    return false;
+  }
+
   function togglePane(): void {
     setPane(focusTarget() === "input" ? "results" : "input");
   }
@@ -483,6 +543,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     const all = results();
     const isLoading = loading();
     const activePane = focusTarget();
+    const activeIndex = activeResultIndex();
     const scrollY = resultsViewport.scrollY();
     const appearanceMode = appearance();
     const theme = themeForAppearance(appearanceMode);
@@ -554,6 +615,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     if (all.length === 0) {
       lastResultsSnapshot = [];
       lastAppearanceMode = appearanceMode;
+      resultButtons = [];
       resultsViewport.setChildren?.([]);
       if (activePane === "results") setPane("input");
       return;
@@ -565,6 +627,26 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 
     if (resultsChanged || themeChanged) {
       rebuildResultRows(all);
+
+      if (resultsChanged) {
+        activeResultIndex(0);
+        focusResult(0);
+      } else {
+        activeResultIndex(clampResultIndex(activeIndex));
+        if (activePane === "results") {
+          focusResult(activeResultIndex());
+        }
+      }
+    }
+
+    const selectedIndex = clampResultIndex(activeResultIndex());
+    for (const [index, button] of resultButtons.entries()) {
+      const isActive = index === selectedIndex;
+      button.setStyle({
+        foreground: theme.fg,
+        background: isActive ? theme.surfaceHighlight : theme.surface,
+        border: isActive ? focusBorder() : idleBorder(),
+      });
     }
 
     lastAppearanceMode = appearanceMode;
@@ -572,16 +654,16 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 
   onKey("/", () => setPane("input"));
 
-  for (const key of ["\t", "\x1b[Z"]) {
+  for (const key of togglePaneKeys) {
     onKey(key, () => togglePane());
   }
 
-  for (const key of ["j", "\x1b[B"]) {
-    onKey(key, () => scrollResults(1));
+  for (const key of nextResultKeys) {
+    onKey(key, () => moveResultFocus(1));
   }
 
-  for (const key of ["k", "\x1b[A"]) {
-    onKey(key, () => scrollResults(-1));
+  for (const key of prevResultKeys) {
+    onKey(key, () => moveResultFocus(-1));
   }
 
   for (const key of ["h"]) {

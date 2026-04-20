@@ -34,6 +34,10 @@ export function parseInputChunk(data: string): InputChunkOp[] {
 }
 
 export function dispatchInputChunk(target: InputDispatchTarget, data: string): boolean {
+  if (data === "\t") {
+    return false;
+  }
+
   if (data.includes("\x1b")) {
     return false;
   }

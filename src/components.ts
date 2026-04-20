@@ -106,6 +106,7 @@ export function ScrollView(input: ScrollViewProps, children: Node[]): ScrollView
     scrollBy: (deltaY) => setScrollPosition(node, node.scrollY() + deltaY),
     scrollToStart: () => setScrollPosition(node, 0),
     scrollToEnd: () => setScrollPosition(node, node.maxScrollY()),
+    scrollNodeIntoView: (target) => scrollNodeIntoView(node, target),
     scrollY: props.scrollY,
     viewportHeight,
     contentHeight,
@@ -377,7 +378,7 @@ function directionToBoxKind(direction: Direction | undefined): BoxKind {
 }
 
 type ScrollViewInternal = ScrollViewNode & {
-  _hasMeasuredScrollBounds?: boolean;
+  scrollMeasured?: boolean;
 };
 
 export function syncScrollViewMetrics(
@@ -393,7 +394,7 @@ export function syncScrollViewMetrics(
   node.viewportHeight(viewportHeight);
   node.contentHeight(viewportHeight + maxScrollY);
   node.maxScrollY(maxScrollY);
-  internal._hasMeasuredScrollBounds = true;
+  internal.scrollMeasured = true;
   setScrollPosition(node, node.scrollY());
 }
 
@@ -401,11 +402,31 @@ function setScrollPosition(node: ScrollViewNode, nextScrollY: number): void {
   const internal = node as ScrollViewInternal;
   const normalized = normalizeScrollValue(nextScrollY);
   const clamped =
-    internal._hasMeasuredScrollBounds === true
+    internal.scrollMeasured === true
       ? clamp(0, normalized, node.maxScrollY())
       : Math.max(0, normalized);
   if (node.scrollY() !== clamped) {
     node.scrollY(clamped);
+  }
+}
+
+function scrollNodeIntoView(viewport: ScrollViewNode, target: Node): void {
+  const viewportHeight = Math.max(0, Math.floor(viewport.contentFrame.height));
+  const targetHeight = Math.max(0, Math.ceil(target.frame.height));
+  if (viewportHeight === 0 || targetHeight === 0) return;
+
+  const targetTop = Math.floor(target.frame.y - viewport.contentFrame.y);
+  const targetBottom = targetTop + targetHeight;
+  const currentTop = viewport.scrollY();
+  const currentBottom = currentTop + viewportHeight;
+
+  if (targetTop < currentTop) {
+    setScrollPosition(viewport, targetTop);
+    return;
+  }
+
+  if (targetBottom > currentBottom) {
+    setScrollPosition(viewport, targetBottom - viewportHeight);
   }
 }
 

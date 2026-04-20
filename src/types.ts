@@ -195,7 +195,7 @@ export type InputProps = StyleProps & {
 export type ButtonProps = StyleProps & {
   text: string;
   onClick: () => void | Promise<void>;
-  onKeyDown?: (key: string) => void;
+  onKeyDown?: (key: string) => boolean | void;
   onFocus?: (self: Node) => void;
   onBlur?: (self: Node) => void;
 };
@@ -243,7 +243,7 @@ export type InputHandlers = {
 
 export type ButtonHandlers = {
   onClick: () => void | Promise<void>;
-  onKeyDown?: (key: string) => void;
+  onKeyDown?: (key: string) => boolean | void;
   onFocus?: (self: Node) => void;
   onBlur?: (self: Node) => void;
 };
@@ -324,6 +324,7 @@ export type ScrollViewNode = NodeBase<typeof NODE_TYPE.Column> &
     scrollBy: (deltaY: number) => void;
     scrollToStart: () => void;
     scrollToEnd: () => void;
+    scrollNodeIntoView: (node: Node) => void;
     scrollY: Signal<number>;
     viewportHeight: Signal<number>;
     contentHeight: Signal<number>;
