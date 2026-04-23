@@ -15,6 +15,7 @@
     "fmt": "oxfmt .",
     "fmt-check": "oxfmt --check .",
     "lint": "oxlint --ignore-pattern 'legacy/**' .",
+    "smoke": "bun run build-ffi && bun run scripts/smoke.ts",
     "snake": "bun run build-ffi && bun run examples/snake.ts",
     "typecheck": "bun x tsc -p tsconfig.check.json",
     "visualizer": "bun run build-ffi && bun run examples/visualizer.ts",
