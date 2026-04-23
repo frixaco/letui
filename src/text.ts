@@ -5,7 +5,7 @@ import type { NormalizedStyledText, NormalizedTextSpan, StyledText, TextSpan } f
 export function prepareTextInput(text: string): PreparedTextInput {
   const chars = Array.from(text);
   const normalizedChars: string[] = [];
-  const boundaryMap = new Array<number | null>(chars.length + 1).fill(null);
+  const boundaryMap: (number | null)[] = Array.from({ length: chars.length + 1 }, () => null);
 
   let oldIndex = 0;
   let newIndex = 0;
@@ -103,13 +103,12 @@ function getCodePointMetadata(text: string): {
   byteOffsets: number[];
 } {
   const chars = Array.from(text);
-  const byteOffsets = new Array<number>(chars.length + 1);
-  byteOffsets[0] = 0;
+  const byteOffsets: number[] = [0];
 
   let byteLength = 0;
   for (let i = 0; i < chars.length; i++) {
     byteLength += textEncoder.encode(chars[i]!).length;
-    byteOffsets[i + 1] = byteLength;
+    byteOffsets.push(byteLength);
   }
 
   return {

@@ -172,12 +172,11 @@ Benchmark snapshot (`2026-02-20`, `terminal-rerender`, `full` profile, PTY mode)
 - [x] Text styling: markdown and syntax highlighting API
 - [x] Text wrap, overflow, clipping, and explicit newline layout in the renderer
 - [x] Persistent Taffy tree
-- [ ] Vertical and horizontal scrolling
+- [x] Vertical and horizontal scrolling
+- [x] Minimal theming support
 - [ ] Full grapheme rendering support: store/render whole grapheme strings per lead cell instead of a single codepoint
 - [ ] Better Input experience: multiline editing, shortcuts, cursor movement, scrolling, placeholder rendering, etc.
-- [ ] Minimal theming support
 - [ ] Safer quit/cleanup when used as a library
-- [ ] Responsive examples for smaller terminal sizes
 - [ ] Experiment: Neovim as text input via a Bun-compatible PTY workflow
 - [ ] Refactor `flush` with `BatchWriter` pattern
 - [ ] Performance stats overlay

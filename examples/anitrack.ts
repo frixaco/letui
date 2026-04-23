@@ -419,7 +419,6 @@ function startAniTrackDemo(): ReturnType<typeof run> {
         text: "",
         border: undefined,
         paddingX: 1,
-        paddingY: 1,
         foreground: currentTheme().fg,
         onKeyDown: (key) => handleResultKey(key),
         onFocus: () => {
@@ -611,7 +610,6 @@ function startAniTrackDemo(): ReturnType<typeof run> {
       const isActive = index === selectedIndex;
       button.setStyle({
         foreground: theme.fg,
-        background: isActive ? theme.surfaceHighlight : theme.surface,
         border: isActive ? focusBorder() : idleBorder(),
       });
     }

@@ -1,4 +1,4 @@
-import { Column, Input, Text, onKey, run, $ } from "../index.ts";
+import { Column, Input, Text, onKey, run } from "../index.ts";
 import { COLORS } from "./colors.ts";
 
 const p1 = Text({

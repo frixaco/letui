@@ -3,6 +3,7 @@
  */
 
 import { prepareTextInput } from "./text.ts";
+import { isIgnoredInputControlChar } from "./helpers.ts";
 
 export function parseInputChunk(data: string): InputChunkOp[] {
   const normalized = prepareTextInput(data).text;
@@ -22,7 +23,7 @@ export function parseInputChunk(data: string): InputChunkOp[] {
       continue;
     }
 
-    if (IGNORED_INPUT_CONTROL_PATTERN.test(ch)) {
+    if (isIgnoredInputControlChar(ch)) {
       continue;
     }
 
@@ -97,8 +98,6 @@ export function dispatchInputChunk(target: InputDispatchTarget, data: string): b
 }
 
 type InputChunkOp = { type: "insert"; text: string } | { type: "backspace" } | { type: "newline" };
-
-const IGNORED_INPUT_CONTROL_PATTERN = /[\x00-\x09\x0B\x0C\x0E-\x1F]/;
 
 export type InputDispatchTarget = {
   getText: () => string;

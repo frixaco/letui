@@ -13,7 +13,7 @@
     "anitrack": "bun run build-ffi && bun run examples/anitrack.ts",
     "fmt": "oxfmt .",
     "fmt-check": "oxfmt --check .",
-    "lint": "oxlint .",
+    "lint": "oxlint --ignore-pattern 'legacy/**' .",
     "typecheck": "bun x tsc -p tsconfig.check.json",
     "check:rust": "cargo check --manifest-path core/Cargo.toml",
     "check": "bun run typecheck && bun run check:rust"
