@@ -12,19 +12,13 @@
         "oxlint": "^1.61.0",
       },
       "optionalDependencies": {
-        "@frixaco/letui-darwin-arm64": "0.3.9",
-        "@frixaco/letui-linux-x64": "0.3.9",
-        "@frixaco/letui-win32-x64": "0.3.9",
+        "@frixaco/letui-darwin-arm64": "0.4.0",
+        "@frixaco/letui-linux-x64": "0.4.0",
+        "@frixaco/letui-win32-x64": "0.4.0",
       },
     },
   },
   "packages": {
-    "@frixaco/letui-darwin-arm64": ["@frixaco/letui-darwin-arm64@0.3.9", "", { "os": "darwin", "cpu": "arm64" }, "sha512-//GojdSJL5UI6Xyfbt4sxGDSZDq/1d/8GV9Mih0fkTuuGZKalzqE1M7uXSaEkPumKpjr9hfywSZe9kJ3AKwUJQ=="],
-
-    "@frixaco/letui-linux-x64": ["@frixaco/letui-linux-x64@0.3.9", "", { "os": "linux", "cpu": "x64" }, "sha512-A8QD7Bhmba0P0BuJb/IXhQMTIoE+YX4TMnHs329z4/OYkTs5RQSCXTdZXmb8aYMcIPfk0adWg2LieNHmh4b3sg=="],
-
-    "@frixaco/letui-win32-x64": ["@frixaco/letui-win32-x64@0.3.9", "", { "os": "win32", "cpu": "x64" }, "sha512-GaGk84sZhk+t+gQqBdHl/iTU2yWzIFHIZoI6F47+TTukLcTKSS9IXfMSdjDIva5PAZOyV914jNImBkZmvv2B3Q=="],
-
     "@oxfmt/binding-android-arm-eabi": ["@oxfmt/binding-android-arm-eabi@0.46.0", "", { "os": "android", "cpu": "arm" }, "sha512-b1doV4WRcJU+BESSlCvCjV+5CEr/T6h0frArAdV26Nir+gGNFNaylvDiiMPfF1pxeV0txZEs38ojzJaxBYg+ng=="],
 
     "@oxfmt/binding-android-arm64": ["@oxfmt/binding-android-arm64@0.46.0", "", { "os": "android", "cpu": "arm64" }, "sha512-v6+HhjsoV3GO0u2u9jLSAZrvWfTraDxKofUIQ7/ktS7tzS+epVsxdHmeM+XxuNcAY/nWxxU1Sg4JcGTNRXraBA=="],
