@@ -296,7 +296,11 @@ const clock = setInterval(() => {
   now(Date.now());
 }, CLOCK_TICK_MS);
 
-const app = run(root, { debug: true, metricsPath: "dump/metrics.txt" });
+const app = run(root, {
+  debug: true,
+  metricsPath: "dump/metrics.txt",
+  appearance: "dark",
+});
 
 let stopped = false;
 function quit(): void {

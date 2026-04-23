@@ -12,7 +12,6 @@ import { Button, Column, Input, Row, ScrollView, Text, $, appearance, ff, onKey,
 import type { Appearance, StyledText } from "@";
 import { COLORS } from "./colors.ts";
 import { styled, NAV_NEXT_KEYS, NAV_PREV_KEYS, NAV_TOGGLE_KEYS } from "./helpers.ts";
-import type { StyledSegment } from "./helpers.ts";
 import { LoadingBar } from "./progress-bar.ts";
 
 function startAniTrackDemo(): ReturnType<typeof run> {
@@ -610,7 +609,11 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     onKey(key, () => scrollResults(10));
   }
 
-  const app = run(root, { debug: true, metricsPath: "dump/metrics.txt" });
+  const app = run(root, {
+    debug: true,
+    metricsPath: "dump/metrics.txt",
+    appearance: "auto",
+  });
 
   onKey("q", () => {
     app.quit();

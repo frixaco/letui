@@ -59,7 +59,11 @@ const i1 = Input({
 
 const root = Column({ background: COLORS.light.surface }, [p1, p2, p3, i1]);
 
-const app = run(root, { debug: true, metricsPath: "dump/metrics.txt" });
+const app = run(root, {
+  debug: true,
+  metricsPath: "dump/metrics.txt",
+  appearance: "light",
+});
 
 onKey("q", () => {
   app.quit();

@@ -117,16 +117,22 @@ const THREADS: readonly ThreadData[] = [
         label: "IMPLEMENTATION DETAIL (1)",
         accent: THEME.pink,
         body: [
-          { text: "  This filler paragraph is here to guarantee the transcript pane overflows the visible viewport so wheel scrolling can be tested end to end. " },
+          {
+            text: "  This filler paragraph is here to guarantee the transcript pane overflows the visible viewport so wheel scrolling can be tested end to end. ",
+          },
           { text: "Section 1", foreground: THEME.green, bold: true },
-          { text: " keeps enough narrative density to validate paging and wrapping across narrower terminal widths." },
+          {
+            text: " keeps enough narrative density to validate paging and wrapping across narrower terminal widths.",
+          },
         ],
       },
       {
         label: "IMPLEMENTATION DETAIL (2)",
         accent: THEME.pink,
         body: [
-          { text: "  Keep node identity stable under theme changes and thread switches so the Rust tree can stay hot while only text and style deltas move through the bridge." },
+          {
+            text: "  Keep node identity stable under theme changes and thread switches so the Rust tree can stay hot while only text and style deltas move through the bridge.",
+          },
         ],
       },
       {
@@ -152,7 +158,9 @@ const THREADS: readonly ThreadData[] = [
     payload: "latency trace",
     draft:
       "Write a triage note for tonight's incident.\nCall out the first metric to open and who owns the rollback.",
-    prompt: [{ text: "Frame time spikes every few seconds during idle view. Give a fast triage path." }],
+    prompt: [
+      { text: "Frame time spikes every few seconds during idle view. Give a fast triage path." },
+    ],
     sections: [
       {
         label: "OBSERVATION",
@@ -160,7 +168,9 @@ const THREADS: readonly ThreadData[] = [
         body: [
           { text: "  Worst frames cluster around " },
           { text: "flush", foreground: THEME.magenta, bold: true },
-          { text: ", which suggests the renderer is still cheap while terminal writes occasionally burst above the guardrail." },
+          {
+            text: ", which suggests the renderer is still cheap while terminal writes occasionally burst above the guardrail.",
+          },
         ],
       },
       {
@@ -169,7 +179,9 @@ const THREADS: readonly ThreadData[] = [
         body: [
           { text: "  Open the " },
           { text: "worst-frame bucket", foreground: THEME.cyan, underline: true },
-          { text: " and compare it with PTY byte counts so we can separate layout churn from terminal churn before anyone rewrites a hot path." },
+          {
+            text: " and compare it with PTY byte counts so we can separate layout churn from terminal churn before anyone rewrites a hot path.",
+          },
         ],
       },
       {
@@ -187,7 +199,9 @@ const THREADS: readonly ThreadData[] = [
         label: "FOLLOW-THROUGH",
         accent: THEME.amber,
         body: [
-          { text: "  Ship a tiny reproduction, keep the transcript dense, and always leave an obvious " },
+          {
+            text: "  Ship a tiny reproduction, keep the transcript dense, and always leave an obvious ",
+          },
           { text: "rollback command", foreground: THEME.magenta, bold: true },
           { text: " in the handoff so the demo feels operational instead of theatrical." },
         ],
@@ -196,14 +210,18 @@ const THREADS: readonly ThreadData[] = [
         label: "DEEPER NOTE",
         accent: THEME.pink,
         body: [
-          { text: "  Longer paragraphs here intentionally overflow the viewport. They make it easier to verify scrolling, badge updates, and focus shifts without relying on network data or terminal resize gymnastics." },
+          {
+            text: "  Longer paragraphs here intentionally overflow the viewport. They make it easier to verify scrolling, badge updates, and focus shifts without relying on network data or terminal resize gymnastics.",
+          },
         ],
       },
       {
         label: "COMPOSER",
         accent: THEME.cyan,
         body: [
-          { text: "  Drafts are stored per thread, so switching incidents keeps every multiline note parked in place until you come back." },
+          {
+            text: "  Drafts are stored per thread, so switching incidents keeps every multiline note parked in place until you come back.",
+          },
         ],
       },
     ],
@@ -228,7 +246,9 @@ const THREADS: readonly ThreadData[] = [
         body: [
           { text: "  Preserve " },
           { text: "continuity", foreground: THEME.magenta, bold: true },
-          { text: " by showing the latest question, the working draft, and the last accepted answer without making the user open a secondary mode." },
+          {
+            text: " by showing the latest question, the working draft, and the last accepted answer without making the user open a secondary mode.",
+          },
         ],
       },
       {
@@ -237,7 +257,9 @@ const THREADS: readonly ThreadData[] = [
         body: [
           { text: "  A wrapped label is fine if the interaction remains " },
           { text: "predictable", foreground: THEME.cyan, underline: true },
-          { text: ". Keep traversal on one axis and let the transcript pane carry the verbose detail." },
+          {
+            text: ". Keep traversal on one axis and let the transcript pane carry the verbose detail.",
+          },
         ],
       },
       {
@@ -253,7 +275,9 @@ const THREADS: readonly ThreadData[] = [
         label: "TRADEOFF",
         accent: THEME.amber,
         body: [
-          { text: "  Accept that the transcript will sometimes be longer than the viewport. The point of this demo is to prove " },
+          {
+            text: "  Accept that the transcript will sometimes be longer than the viewport. The point of this demo is to prove ",
+          },
           { text: "overflow discipline", foreground: THEME.amber, bold: true },
           { text: ", not pretend it never happens." },
         ],
@@ -262,14 +286,17 @@ const THREADS: readonly ThreadData[] = [
         label: "IMPLEMENTATION DETAIL",
         accent: THEME.pink,
         body: [
-          { text: "  Wrapped text plus button focus states make a better stress test for the renderer than a perfectly clipped, one-line-only navigation rail." },
+          {
+            text: "  Wrapped text plus button focus states make a better stress test for the renderer than a perfectly clipped, one-line-only navigation rail.",
+          },
         ],
       },
     ],
   },
   {
     title: "Degradation Strategy",
-    brief: "Model endpoint throws intermittent 502 and timeout bursts. Define graceful degradation.",
+    brief:
+      "Model endpoint throws intermittent 502 and timeout bursts. Define graceful degradation.",
     subtitle:
       "operational transcript with explicit fallback language, long-form reasoning, and a composer seeded with rollback-oriented prompts",
     payload: "failure map",
@@ -296,7 +323,9 @@ const THREADS: readonly ThreadData[] = [
         body: [
           { text: "  Be " },
           { text: "calm", foreground: THEME.green, bold: true },
-          { text: ", admit the failure quickly, and explain the exact reduced mode so the UI still feels deliberate." },
+          {
+            text: ", admit the failure quickly, and explain the exact reduced mode so the UI still feels deliberate.",
+          },
         ],
       },
       {
@@ -321,7 +350,9 @@ const THREADS: readonly ThreadData[] = [
         label: "LONG NOTE",
         accent: THEME.pink,
         body: [
-          { text: "  This section exists mostly to keep the transcript tall and readable while showing that dense explanatory copy can wrap without turning the layout into soup." },
+          {
+            text: "  This section exists mostly to keep the transcript tall and readable while showing that dense explanatory copy can wrap without turning the layout into soup.",
+          },
         ],
       },
     ],
@@ -334,9 +365,7 @@ const THREADS: readonly ThreadData[] = [
     payload: "ship list",
     draft:
       "Write the final release gate note.\nInclude lint, typecheck, and one manual smoke test in plain language.",
-    prompt: [
-      { text: "Provide final pre-merge checklist for this TUI demo before sharing it." },
-    ],
+    prompt: [{ text: "Provide final pre-merge checklist for this TUI demo before sharing it." }],
     sections: [
       {
         label: "CHECKLIST",
@@ -355,7 +384,9 @@ const THREADS: readonly ThreadData[] = [
         label: "VISUAL PASS",
         accent: THEME.cyan,
         body: [
-          { text: "  Verify wrapped cards, transcript scrolling, and composer focus jumps so the demo still reads as " },
+          {
+            text: "  Verify wrapped cards, transcript scrolling, and composer focus jumps so the demo still reads as ",
+          },
           { text: "intentional", foreground: THEME.cyan, underline: true },
           { text: " under smaller panes." },
         ],
@@ -364,14 +395,18 @@ const THREADS: readonly ThreadData[] = [
         label: "RISK",
         accent: THEME.green,
         body: [
-          { text: "  Screenshot-heavy demos hide interaction bugs. Force yourself to use the keyboard path before declaring anything done." },
+          {
+            text: "  Screenshot-heavy demos hide interaction bugs. Force yourself to use the keyboard path before declaring anything done.",
+          },
         ],
       },
       {
         label: "HANDOFF",
         accent: THEME.amber,
         body: [
-          { text: "  Leave the exact command in the transcript so whoever picks this up next has a " },
+          {
+            text: "  Leave the exact command in the transcript so whoever picks this up next has a ",
+          },
           { text: "copyable", foreground: THEME.amber, italic: true },
           { text: " starting point." },
         ],
@@ -398,7 +433,9 @@ const THREADS: readonly ThreadData[] = [
         body: [
           { text: "  Compress only after the current task has a " },
           { text: "stable summary anchor", foreground: THEME.magenta, bold: true },
-          { text: " so the next completion is handed clean, recent intent instead of a lossy scramble." },
+          {
+            text: " so the next completion is handed clean, recent intent instead of a lossy scramble.",
+          },
         ],
       },
       {
@@ -407,14 +444,18 @@ const THREADS: readonly ThreadData[] = [
         body: [
           { text: "  Preserve " },
           { text: "constraints", foreground: THEME.cyan, underline: true },
-          { text: ", latest edits, and unresolved risks. Throw away conversational throat-clearing first." },
+          {
+            text: ", latest edits, and unresolved risks. Throw away conversational throat-clearing first.",
+          },
         ],
       },
       {
         label: "DROP",
         accent: THEME.green,
         body: [
-          { text: "  Do not carry stale speculative branches longer than one turn if reality has already replaced them." },
+          {
+            text: "  Do not carry stale speculative branches longer than one turn if reality has already replaced them.",
+          },
         ],
       },
       {
@@ -423,14 +464,18 @@ const THREADS: readonly ThreadData[] = [
         body: [
           { text: "  Long sessions degrade because history becomes " },
           { text: "wide", foreground: THEME.amber, italic: true },
-          { text: " instead of useful. Compression is successful when the next call still feels like a continuation, not a reset." },
+          {
+            text: " instead of useful. Compression is successful when the next call still feels like a continuation, not a reset.",
+          },
         ],
       },
       {
         label: "LONG NOTE",
         accent: THEME.pink,
         body: [
-          { text: "  This final block adds extra wrapped copy so the thread remains tall enough to demonstrate scroll position, max-scroll reporting, and pane chrome updates." },
+          {
+            text: "  This final block adds extra wrapped copy so the thread remains tall enough to demonstrate scroll position, max-scroll reporting, and pane chrome updates.",
+          },
         ],
       },
     ],
@@ -448,13 +493,19 @@ function sectionText(section: ThreadSection): StyledText {
   ]);
 }
 
-function makeSupplementResponse(threadTitle: string, prompt: string, revision: number): readonly StyledSegment[] {
+function makeSupplementResponse(
+  threadTitle: string,
+  prompt: string,
+  revision: number,
+): readonly StyledSegment[] {
   return [
     { text: "  Thread " },
     { text: threadTitle, foreground: THEME.magenta, bold: true },
     { text: " can answer this with a " },
     { text: "tight operational summary", foreground: THEME.green, bold: true },
-    { text: ": start with the risk, name the owner, then end on the one command or decision that unblocks the next move. " },
+    {
+      text: ": start with the risk, name the owner, then end on the one command or decision that unblocks the next move. ",
+    },
     { text: `Revision ${revision + 1}`, foreground: THEME.cyan, underline: true },
     { text: " keeps the wording short while reacting to: " },
     { text: `"${prompt.trim()}"`, foreground: THEME.amber, italic: true },
@@ -808,7 +859,11 @@ function startAIAgentDemo(): ReturnType<typeof run> {
       appendSupplement({
         label: "AGENT RESPONSE",
         accent: THEME.green,
-        body: makeSupplementResponse(THREADS[index]!.title, drafts[index] ?? THREADS[index]!.brief, 0),
+        body: makeSupplementResponse(
+          THREADS[index]!.title,
+          drafts[index] ?? THREADS[index]!.brief,
+          0,
+        ),
       });
       pendingScroll = "end";
       return;
@@ -865,7 +920,9 @@ function startAIAgentDemo(): ReturnType<typeof run> {
       pendingScroll = null;
     }
 
-    meta.setText(`active thread ${index + 1}/${THREADS.length}   scroll ${scrollY}/${maxScrollY} lines`);
+    meta.setText(
+      `active thread ${index + 1}/${THREADS.length}   scroll ${scrollY}/${maxScrollY} lines`,
+    );
     threadBadge.setText(` thread ${index + 1}/${THREADS.length} `);
     payloadBadge.setText(` ${thread.payload} `);
     transcriptTitle.setText(`THREAD // ${thread.title.toUpperCase()}`);

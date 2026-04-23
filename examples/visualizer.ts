@@ -18,9 +18,30 @@ type SpeedPreset = {
 };
 
 const SPEEDS: Record<SpeedKey, SpeedPreset> = {
-  "1": { label: "slow", interval: 120, spring: 0.14, damping: 0.78, drift: 0.04, retargetChance: 0.06 },
-  "2": { label: "cruise", interval: 68, spring: 0.21, damping: 0.8, drift: 0.06, retargetChance: 0.08 },
-  "3": { label: "warp", interval: 36, spring: 0.28, damping: 0.82, drift: 0.08, retargetChance: 0.1 },
+  "1": {
+    label: "slow",
+    interval: 120,
+    spring: 0.14,
+    damping: 0.78,
+    drift: 0.04,
+    retargetChance: 0.06,
+  },
+  "2": {
+    label: "cruise",
+    interval: 68,
+    spring: 0.21,
+    damping: 0.8,
+    drift: 0.06,
+    retargetChance: 0.08,
+  },
+  "3": {
+    label: "warp",
+    interval: 36,
+    spring: 0.28,
+    damping: 0.82,
+    drift: 0.08,
+    retargetChance: 0.1,
+  },
 };
 
 const THEME = {
@@ -240,7 +261,8 @@ function restartTicker(): void {
         Math.sin(frameNumber * preset.drift * 0.6 + index * 0.07) * ceiling * 0.12;
       const target = Math.max(2, Math.min(ceiling, (targets[index] ?? 0) + drift));
 
-      velocities[index] = (velocities[index] ?? 0) + (target - (heights[index] ?? 0)) * preset.spring;
+      velocities[index] =
+        (velocities[index] ?? 0) + (target - (heights[index] ?? 0)) * preset.spring;
       velocities[index] = (velocities[index] ?? 0) * preset.damping;
       heights[index] = Math.max(1, Math.min(ceiling, (heights[index] ?? 0) + velocities[index]!));
     }
