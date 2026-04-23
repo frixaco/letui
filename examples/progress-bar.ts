@@ -4,9 +4,8 @@
 // start() → timer interval → position/direction signals → ff() effect → Text node updates
 // stop() → clear timer → reset signals → UI clear
 
-import { Row, Text } from "@/components.ts";
-import { $, ff } from "@/signals.ts";
-import type { Node } from "@/types.ts";
+import { Row, Text, $, ff } from "@";
+import type { Node } from "@";
 import { log } from "@/debug.ts";
 
 export type LoadingBarProps = {

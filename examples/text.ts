@@ -1,4 +1,4 @@
-import { Column, Input, Text, onKey, run } from "../index.ts";
+import { Column, Input, Text, onKey, run } from "@";
 import { COLORS } from "./colors.ts";
 
 const p1 = Text({
@@ -59,7 +59,7 @@ const i1 = Input({
 
 const root = Column({ background: COLORS.light.surface }, [p1, p2, p3, i1]);
 
-const app = run(root, { debug: true });
+const app = run(root, { debug: true, metricsPath: "dump/metrics.txt" });
 
 onKey("q", () => {
   app.quit();

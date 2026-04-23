@@ -9,8 +9,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { Button, Column, Input, Row, ScrollView, Text, $, appearance, ff, onKey, run } from "@";
-import type { Appearance, StyledText, TextSpan } from "@";
+import type { Appearance, StyledText } from "@";
 import { COLORS } from "./colors.ts";
+import { styled, NAV_NEXT_KEYS, NAV_PREV_KEYS, NAV_TOGGLE_KEYS } from "./helpers.ts";
+import type { StyledSegment } from "./helpers.ts";
 import { LoadingBar } from "./progress-bar.ts";
 
 function startAniTrackDemo(): ReturnType<typeof run> {
@@ -27,8 +29,6 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     infoHash: string;
     fileIndex: number;
   };
-
-  type StyledSegment = Omit<TextSpan, "start" | "end"> & { text: string };
 
   type DemoTheme = {
     surface: number;
@@ -61,38 +61,6 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     while (!existsSync(path) && Date.now() < deadline) {
       await sleep(50);
     }
-  }
-
-  function styled(segments: readonly StyledSegment[]): StyledText {
-    let text = "";
-    let cursor = 0;
-    const spans: TextSpan[] = [];
-
-    for (const seg of segments) {
-      const start = cursor;
-      text += seg.text;
-      cursor += Array.from(seg.text).length;
-
-      if (
-        seg.foreground !== undefined ||
-        seg.background !== undefined ||
-        seg.bold !== undefined ||
-        seg.italic !== undefined ||
-        seg.underline !== undefined
-      ) {
-        spans.push({
-          start,
-          end: cursor,
-          foreground: seg.foreground,
-          background: seg.background,
-          bold: seg.bold,
-          italic: seg.italic,
-          underline: seg.underline,
-        });
-      }
-    }
-
-    return { text, spans };
   }
 
   function toScrapeResults(payload: unknown): ScrapeResultItem[] {
@@ -320,9 +288,9 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     resultsPanel,
   ]);
 
-  const nextResultKeys = new Set(["j", "\x1b[B", "\x1bOB"]);
-  const prevResultKeys = new Set(["k", "\x1b[A", "\x1bOA"]);
-  const togglePaneKeys = new Set(["\t", "\x1b[Z"]);
+  const nextResultKeys = NAV_NEXT_KEYS;
+  const prevResultKeys = NAV_PREV_KEYS;
+  const togglePaneKeys = NAV_TOGGLE_KEYS;
 
   function setPane(target: Pane): void {
     if (target === "results" && results().length > 0) {
@@ -451,7 +419,10 @@ function startAniTrackDemo(): ReturnType<typeof run> {
   function scrollResultsFromPointer(deltaY: number, _x: number, _y: number): void {
     if (deltaY === 0 || results().length === 0) return;
 
-    setPane("results");
+    if (focusTarget() !== "results") {
+      focusTarget("results");
+      if (searchInput.isFocused()) searchInput.blur();
+    }
     resultsViewport.scrollBy(deltaY);
   }
 
@@ -639,7 +610,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     onKey(key, () => scrollResults(10));
   }
 
-  const app = run(root, { debug: true });
+  const app = run(root, { debug: true, metricsPath: "dump/metrics.txt" });
 
   onKey("q", () => {
     app.quit();

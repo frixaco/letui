@@ -11,10 +11,13 @@
   "scripts": {
     "build-ffi": "cargo build --release --manifest-path core/Cargo.toml",
     "anitrack": "bun run build-ffi && bun run examples/anitrack.ts",
+    "ai-agent": "bun run build-ffi && bun run examples/ai-agent.ts",
     "fmt": "oxfmt .",
     "fmt-check": "oxfmt --check .",
     "lint": "oxlint --ignore-pattern 'legacy/**' .",
+    "snake": "bun run build-ffi && bun run examples/snake.ts",
     "typecheck": "bun x tsc -p tsconfig.check.json",
+    "visualizer": "bun run build-ffi && bun run examples/visualizer.ts",
     "check:rust": "cargo check --manifest-path core/Cargo.toml",
     "check": "bun run typecheck && bun run check:rust"
   },
