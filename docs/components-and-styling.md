@@ -4,7 +4,8 @@
 
 ```ts
 Box(input: BoxProps, children: Node[]): Node
-Column(input: ColumnProps, children: Node[]): Node
+ScrollView(input: ScrollViewProps, children: Node[]): Node
+Column(input: Omit<BoxProps, "direction">, children: Node[]): Node
 Row(input: Omit<BoxProps, "direction">, children: Node[]): Node
 Text(input: TextProps): Node
 Input(input: InputProps): Node
@@ -23,7 +24,7 @@ Button(input: ButtonProps, children?: Node[]): Node
 - `InputProps`
   - optional: `placeholder` (`string`)
   - optional: `multiline` (`boolean`)
-  - optional: `wrap` (`"word" | "char"`) — note: `"none"` not allowed for inputs
+  - optional: `wrap` (`"none" | "word" | "char"`)
   - optional: `onChange`, `onSubmit`, `onFocus`, `onBlur`
   - optional: all `StyleProps`
   - current behavior note: `multiline` lets Enter insert `\n`, but `Input` is still append-only today
@@ -42,6 +43,7 @@ Button(input: ButtonProps, children?: Node[]): Node
 - `ScrollViewProps`
   - optional: all `Omit<BoxProps, "direction">`
   - optional: `scrollY` (`number`)
+  - optional: `onScroll` (`(event: ScrollEvent) => void`)
   - behavior note: `ScrollView` always uses vertical scrolling
   - behavior note: `scrollY` is vertical-only and interpreted in row units
 
@@ -49,14 +51,14 @@ Button(input: ButtonProps, children?: Node[]): Node
 
 - `border`: `{ color: number; style: "square" | "rounded" }`
 - `borderTop`, `borderRight`, `borderBottom`, `borderLeft`: `{ color: number }`
-- `padding`: number or string pair (`"horizontal vertical"`)
+- `padding`: number or string pair (`"vertical horizontal"`)
 - `paddingX`, `paddingY`
 - `background`, `foreground` (number colors)
 - `flexGrow`
 - `width`, `height`
 - `minWidth`, `minHeight`
 - `maxWidth`, `maxHeight`
-- `margin`: number or string pair (`"horizontal vertical"`)
+- `margin`: number or string pair (`"vertical horizontal"`)
 - `marginX`, `marginY`
 - `alignItems`
 - `justifyContent`
@@ -64,6 +66,7 @@ Button(input: ButtonProps, children?: Node[]): Node
 - `flexShrink`
 - `flexBasis`
 - `flexWrap`
+- `boxSizing`: `"borderBox" | "contentBox"`
 
 ## Box layout fields (`BoxProps`)
 
@@ -81,7 +84,7 @@ Button(input: ButtonProps, children?: Node[]): Node
 ## Current scope
 
 - Public styling/layout surface is the exported `StyleProps` + `BoxProps` above.
-- `ScrollViewProps` adds the only public scrolling surface in v1: `scrollY`.
+- `ScrollViewProps` adds the only public scrolling surface in v1: `scrollY`, `onScroll`, and scroll methods on the returned node.
 - Prefer `Row` / `Column` for common cases; use `Box` when you need explicit `direction`, including reverse directions.
 - `Text` wrapping and overflow are renderer-owned behaviors; do not expect JS-side wrapping helpers to be the source of truth.
 - `Input` supports wrapped rendering for its current text, but full editor behavior is still out of scope.
@@ -105,8 +108,10 @@ If you want the app palette to follow the terminal theme, use the runtime `appea
 
 - `setStyle(partialStyle)` on all nodes
 - `setText(nextText)` on `Text`, `Input`, `Button`
-- `setChildren(nextChildren)` on `Box`, `Button`
+- `setChildren(nextChildren)` on `Box`, `ScrollView`, `Button`
 - `focus()`, `blur()`, `isFocused()` on all nodes
+- `scrollTo(y)`, `scrollBy(deltaY)`, `scrollToStart()`, `scrollToEnd()`, and `scrollNodeIntoView(node)` on `ScrollView`
+- `scrollY`, `viewportHeight`, `contentHeight`, and `maxScrollY` signals on `ScrollView`
 
 ## Text styling with `StyledText`
 
@@ -128,12 +133,14 @@ const node = Text({ text: styled });
 
 Each `TextSpan` supports:
 
-- `start`, `end`: character positions in the text
+- `start`, `end`: code point offsets in the source text
 - `foreground?: number` — text color (hex)
 - `background?: number` — background color (hex)
 - `bold?: boolean`
 - `italic?: boolean`
 - `underline?: boolean`
+
+Spans must be non-overlapping. Line separators are normalized before rendering; a span boundary cannot split a CRLF pair.
 
 ## Practical pattern
 

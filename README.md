@@ -127,7 +127,7 @@ bun run app.ts
 - **Rust** — persistent tree state, style/text op application, layout, paint, incremental flush
 - **Bun FFI** — bridge for op buffers, frame buffers, and lifecycle hooks
 - Packaged native binaries for `darwin-arm64`, `linux-x64`, `win32-x64`
-- Only deps: `crossterm`, `taffy`, `unicode-width` and `unicode-segmentation` Rust crates, everything else is written from scratch.
+- TypeScript runtime deps: none. Rust deps: `crossterm`, `taffy`, `unicode-width`, and `unicode-segmentation`.
 
 Text wrapping, clipping, and overflow are resolved in the Rust renderer. Explicit newlines are treated as hard row boundaries after text normalization.
 
@@ -146,9 +146,9 @@ const viewport = ScrollView(
 
 `ScrollView` always scrolls vertically. `scrollY` is a row offset; Rust clamps oversized values, floors fractional values to whole rows, and owns the final hit-testing for the visible scrolled region.
 
-Debug metrics split the frame into `js`, `render`, `sync`, and `flush`, plus a worst-frame breakdown. Enable with `run(root, { debug: true })` to print the summary on quit. If you also want a file, pass `run(root, { debug: true, metricsPath: "dump/metrics.txt" })` or call `saveMetrics(...)` yourself.
+Debug metrics split the frame into `js`, `render`, `sync`, and `flush`, plus a worst-frame breakdown. Enable with `run(root, { debug: true })` to print the summary on quit. If you also want a file, pass `run(root, { debug: true, metricsPath: "dump/metrics.txt" })`.
 
-Appearance detection requests the current terminal color scheme at startup and listens for live theme updates on terminals that support DEC 2031. `appearance()` returns `"light"`, `"dark"`, or `"unknown"`.
+Appearance detection requests the current terminal color scheme at startup and listens for live theme updates on terminals that support DEC 2031. Startup detection asks for DEC color-scheme status first and also sends an OSC 11 background-color query as a fallback. `appearance()` returns `"light"`, `"dark"`, or `"unknown"`.
 
 ```ts
 import { Column, Text, appearance, ff, onKey, run } from "@frixaco/letui";
@@ -171,21 +171,11 @@ const app = run(root, { appearance: "auto" });
 onKey("q", () => app.quit());
 ```
 
-Pass `appearance: "light"` or `"dark"` to `run()` to override detection.
+Pass `appearance: "light"`, `"dark"`, or `"unknown"` to `run()` to override detection.
 
-## Performance (TODO)
+## Performance
 
-Frame latency is <1ms for practical workloads.
-
-Benchmark snapshot (`2026-02-20`, `terminal-rerender`, `full` profile, PTY mode):
-
-| Metric       |       letui |       Rezi |               Delta |
-| ------------ | ----------: | ---------: | ------------------: |
-| Mean latency |       20 µs |     259 µs | letui 12.69× faster |
-| p95 latency  |       21 µs |     260 µs |         letui lower |
-| Throughput   | 48.6K ops/s | 3.9K ops/s | letui 12.46× higher |
-| Peak RSS     |     60.4 MB |   128.2 MB |   letui 2.12× lower |
-| PTY bytes    |     43.2 KB |    30.1 KB |  letui 1.43× higher |
+The project target is <1ms average response time for each render. Use `run(root, { debug: true })` while developing to inspect frame timings, and pass `metricsPath` when you want to persist the summary.
 
 ## Docs
 
@@ -199,11 +189,11 @@ Benchmark snapshot (`2026-02-20`, `terminal-rerender`, `full` profile, PTY mode)
 ## TODO
 
 - [x] All essential features except ones below
-- [x] Text styling: markdown and syntax highlighting API
+- [x] Text styling with `StyledText` spans
 - [x] Text wrap, overflow, clipping, and explicit newline layout in the renderer
 - [x] Persistent Taffy tree
-- [x] Vertical and horizontal scrolling
-- [x] Minimal theming support
+- [x] Vertical scrolling with `ScrollView`
+- [x] Minimal theming support with startup detection and DEC 2031 live updates
 - [ ] Full grapheme rendering support: store/render whole grapheme strings per lead cell instead of a single codepoint
 - [ ] Better Input experience: multiline editing, shortcuts, cursor movement, scrolling, placeholder rendering, etc.
 - [ ] Safer quit/cleanup when used as a library

@@ -67,7 +67,8 @@ Checks:
 1. keep updates signal-driven; avoid rebuilding whole subtrees each tick
 2. keep node identity stable so runtime can reuse Rust tree state
 3. enable debug metrics: `run(root, { debug: true })`
-4. inspect `dump/metrics.txt` for phase bottlenecks
+4. to persist metrics, pass `run(root, { debug: true, metricsPath: "dump/metrics.txt" })`
+5. inspect the quit summary or metrics file for phase bottlenecks
 
 Interpretation:
 

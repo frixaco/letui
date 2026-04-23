@@ -4,7 +4,7 @@
 
 1. Read `docs/getting-started.md`
 2. Run `bun install && bun run build-ffi`
-3. Use `docs/components-and-styling.md` for current public props
+3. Use `docs/components-and-styling.md` for current public components and props
 4. Use `docs/state-events-lifecycle.md` for signals, focus, input, and cleanup
 5. Use `docs/releasing.md` when cutting a new npm release
 
@@ -12,7 +12,8 @@
 
 - layout primitives: `Box`, `Row`, `Column`
 - leaf nodes: `Text`, `Input`, `Button`
-- shared style props live in `StyleProps`: borders, padding, colors, flex, sizing, min/max, margins, alignment, wrapping
+- scrolling container: `ScrollView`
+- shared style props live in `StyleProps`: borders, padding, colors, flex, sizing, min/max, margins, alignment, wrapping, box sizing
 - box-only props live in `BoxProps`: `gap`, `direction`
 - direction supports `row`, `column`, `rowReverse`, `columnReverse`
 - current docs treat code as source of truth; anything outside exported prop types is not public API
@@ -25,6 +26,7 @@
 - Rust owns persistent tree state, layout, paint, terminal buffers, and incremental flush
 - Rust text layout treats explicit newlines as hard row boundaries; wrap and overflow happen there, not in JS
 - debug metrics phases: `js`, `render`, `sync`, `flush`
+- auto appearance starts with a terminal color-scheme request plus OSC 11 fallback, then listens for DEC 2031 live updates when supported
 
 ## Current input scope
 
@@ -36,7 +38,13 @@
 ## Example map
 
 - `examples/anitrack.ts`: interactive torrent-search demo
+- `examples/ai-agent.ts`: chat-style agent UI demo
+- `examples/snake.ts`: keyboard-driven game demo
 - `examples/typing-speed.ts`: centered Colemak Mod-DH typing tester
+- `examples/text.ts`: wrap, overflow, box sizing, and input layout demo
+- `examples/visualizer.ts`: animated styled-text visualization
+- `examples/progress-bar.ts`: reusable loading bar helper used by demos
+- `examples/colors.ts`: demo-only palettes
 
 ## Agent skills
 

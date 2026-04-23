@@ -33,15 +33,15 @@ Available exports include: `$`, `dd`, `ff`, `af`, `wait`, `whenSettled`.
 run(root: Node, options?: {
   debug?: boolean;
   metricsPath?: string | false;
-  appearance?: "auto" | "light" | "dark";
+  appearance?: "auto" | "light" | "dark" | "unknown";
 }): { quit: () => void }
 ```
 
 - `run(root)` starts stdin handling, resize handling, render loop
 - `run(root, { debug: true })` enables in-memory metrics collection and prints the summary on quit
 - `run(root, { debug: true, metricsPath: "dump/metrics.txt" })` also writes the summary to a file
-- `run(root, { appearance: "auto" })` queries the terminal background and refreshes it again when the terminal regains focus
-- `run(root, { appearance: "light" | "dark" })` forces an appearance without terminal detection
+- `run(root, { appearance: "auto" })` requests the current terminal color scheme at startup and listens for DEC 2031 live theme updates when supported
+- `run(root, { appearance: "light" | "dark" | "unknown" })` forces an appearance without terminal detection
 - returned `quit()` tears everything down and exits process
 
 ## Appearance detection
@@ -52,8 +52,10 @@ refreshAppearance(): Promise<"light" | "dark" | "unknown">
 ```
 
 - `appearance()` is reactive: call it inside `ff(...)` to restyle nodes when the terminal theme is detected
-- auto detection uses terminal background query (`OSC 11`) and terminal focus-in reporting, so it refreshes when you return to the terminal instead of polling continuously
-- unsupported terminals stay on `"unknown"`; most apps should treat that as "use your default theme"
+- auto mode enables DEC 2031 updates, sends a startup/current color-scheme request, and also sends an OSC 11 background-color query as a startup fallback
+- live theme changes come from DEC 2031 terminal events; there is no polling and no focus-based refresh
+- `refreshAppearance()` sends the same startup/current queries and resolves `"unknown"` if no supported response arrives before the timeout
+- unsupported terminals stay on `"unknown"` unless the OSC 11 fallback response is available; most apps should treat `"unknown"` as "use your default theme"
 
 ## Render pipeline
 
@@ -101,14 +103,6 @@ const viewport = ScrollView(
 - handlers fire for any visible cell inside that scroll view's viewport, including empty background or text-only regions
 - `event.target` is still the regular hit-tested node under the pointer, so it may be `undefined` over non-interactive content
 - scroll input does not synthesize clicks or focus changes on its own
-
-Global fallback still exists:
-
-```ts
-onScroll((event) => {
-  // event.deltaY is -1 for wheel up, +1 for wheel down
-}): void
-```
 
 ## Focus and interaction model
 
