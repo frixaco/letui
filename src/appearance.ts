@@ -4,15 +4,16 @@ import process from "node:process";
 import { $ } from "./signals.ts";
 import type { Appearance, AppearanceMode } from "./types.ts";
 
+const ENABLE_COLOR_SCHEME_UPDATES = "\x1b[?2031h";
+const DISABLE_COLOR_SCHEME_UPDATES = "\x1b[?2031l";
+const REQUEST_COLOR_SCHEME = "\x1b[?996n";
+const COLOR_SCHEME_DARK = "\x1b[?997;1n";
+const COLOR_SCHEME_LIGHT = "\x1b[?997;2n";
 const OSC_QUERY_TERMINATOR = "\x07";
 const OSC_STRING_TERMINATOR = "\x1b\\";
 const OSC_BACKGROUND_QUERY = "\x1b]11;?\x07";
 const OSC_BACKGROUND_RESPONSE_PREFIX = "\x1b]11;";
 const APPEARANCE_QUERY_TIMEOUT_MS = 200;
-const ENABLE_FOCUS_IN_OUT_REPORTING = "\x1b[?1004h";
-const DISABLE_FOCUS_IN_OUT_REPORTING = "\x1b[?1004l";
-const TERMINAL_FOCUS_IN = "\x1b[I";
-const TERMINAL_FOCUS_OUT = "\x1b[O";
 
 type AppearanceRequest = {
   resolve: (appearance: Appearance) => void;
@@ -48,7 +49,7 @@ export function refreshAppearance(): Promise<Appearance> {
 
   appearanceRequest = { resolve: resolveRequest, timer, promise };
   appearanceInputBuffer = "";
-  process.stdout.write(OSC_BACKGROUND_QUERY);
+  process.stdout.write(REQUEST_COLOR_SCHEME + OSC_BACKGROUND_QUERY);
 
   return promise;
 }
@@ -56,12 +57,12 @@ export function refreshAppearance(): Promise<Appearance> {
 export function configureAppearanceSession(mode: AppearanceMode): void {
   sessionActive = true;
   appearanceOverride = mode;
-  disableFocusReporting();
+  disableColorSchemeUpdates();
   cancelAppearanceRequest();
 
   if (mode === "auto") {
     setAppearance("unknown");
-    enableFocusReporting();
+    enableColorSchemeUpdates();
     return;
   }
 
@@ -70,12 +71,11 @@ export function configureAppearanceSession(mode: AppearanceMode): void {
 
 export function cleanupAppearanceSession(): void {
   sessionActive = false;
-  disableFocusReporting();
+  disableColorSchemeUpdates();
   cancelAppearanceRequest();
 }
 
 export function stripAppearanceResponses(data: string): string {
-  data = stripTerminalFocusEvents(data);
   if (data.length === 0) return data;
 
   const chunk = appearanceInputBuffer + data;
@@ -85,34 +85,56 @@ export function stripAppearanceResponses(data: string): string {
   let passthrough = "";
 
   while (cursor < chunk.length) {
-    const responseStart = chunk.indexOf(OSC_BACKGROUND_RESPONSE_PREFIX, cursor);
-    if (responseStart === -1) {
+    const escapeIndex = chunk.indexOf("\x1b", cursor);
+    if (escapeIndex === -1) {
       passthrough += chunk.slice(cursor);
       break;
     }
 
-    passthrough += chunk.slice(cursor, responseStart);
+    passthrough += chunk.slice(cursor, escapeIndex);
+    const remainder = chunk.slice(escapeIndex);
 
-    const responseEnd = findOscTerminator(
-      chunk,
-      responseStart + OSC_BACKGROUND_RESPONSE_PREFIX.length,
-    );
-    if (responseEnd === -1) {
-      appearanceInputBuffer = chunk.slice(responseStart);
+    if (remainder.startsWith(COLOR_SCHEME_DARK)) {
+      handleDetectedAppearance("dark");
+      cursor = escapeIndex + COLOR_SCHEME_DARK.length;
+      continue;
+    }
+
+    if (remainder.startsWith(COLOR_SCHEME_LIGHT)) {
+      handleDetectedAppearance("light");
+      cursor = escapeIndex + COLOR_SCHEME_LIGHT.length;
+      continue;
+    }
+
+    if (remainder.startsWith(OSC_BACKGROUND_RESPONSE_PREFIX)) {
+      const responseEnd = findOscTerminator(
+        chunk,
+        escapeIndex + OSC_BACKGROUND_RESPONSE_PREFIX.length,
+      );
+      if (responseEnd === -1) {
+        appearanceInputBuffer = remainder;
+        return passthrough;
+      }
+
+      const detected = parseAppearanceResponse(chunk.slice(escapeIndex, responseEnd));
+      if (detected) {
+        handleStartupFallbackAppearance(detected);
+      }
+      cursor = responseEnd;
+      continue;
+    }
+
+    if (
+      COLOR_SCHEME_DARK.startsWith(remainder) ||
+      COLOR_SCHEME_LIGHT.startsWith(remainder) ||
+      OSC_BACKGROUND_RESPONSE_PREFIX.startsWith(remainder)
+    ) {
+      appearanceInputBuffer = remainder;
       return passthrough;
     }
 
-    const response = chunk.slice(responseStart, responseEnd);
-    const detected = parseAppearanceResponse(response);
-    if (detected) {
-      if (appearanceRequest) {
-        finishAppearanceRequest(detected);
-      } else if (appearanceOverride === "auto") {
-        setAppearance(detected);
-      }
-    }
-
-    cursor = responseEnd;
+    passthrough += chunk[escapeIndex];
+    cursor = escapeIndex + 1;
   }
 
   return passthrough;
@@ -142,49 +164,32 @@ function cancelAppearanceRequest(): void {
   appearanceInputBuffer = "";
 }
 
-function enableFocusReporting(): void {
-  if (focusReportingEnabled || !process.stdout.isTTY) return;
-  process.stdout.write(ENABLE_FOCUS_IN_OUT_REPORTING);
-  focusReportingEnabled = true;
+function enableColorSchemeUpdates(): void {
+  if (!process.stdout.isTTY || colorSchemeUpdatesEnabled) return;
+  process.stdout.write(ENABLE_COLOR_SCHEME_UPDATES);
+  colorSchemeUpdatesEnabled = true;
 }
 
-function disableFocusReporting(): void {
-  if (!focusReportingEnabled || !process.stdout.isTTY) return;
-  process.stdout.write(DISABLE_FOCUS_IN_OUT_REPORTING);
-  focusReportingEnabled = false;
+function disableColorSchemeUpdates(): void {
+  if (!process.stdout.isTTY || !colorSchemeUpdatesEnabled) return;
+  process.stdout.write(DISABLE_COLOR_SCHEME_UPDATES);
+  colorSchemeUpdatesEnabled = false;
 }
 
-function stripTerminalFocusEvents(data: string): string {
-  let cursor = 0;
-  let passthrough = "";
-
-  while (cursor < data.length) {
-    const focusInIndex = data.indexOf(TERMINAL_FOCUS_IN, cursor);
-    const focusOutIndex = data.indexOf(TERMINAL_FOCUS_OUT, cursor);
-    const nextIndex =
-      focusInIndex === -1
-        ? focusOutIndex
-        : focusOutIndex === -1
-          ? focusInIndex
-          : Math.min(focusInIndex, focusOutIndex);
-
-    if (nextIndex === -1) {
-      passthrough += data.slice(cursor);
-      break;
-    }
-
-    passthrough += data.slice(cursor, nextIndex);
-
-    if (data.startsWith(TERMINAL_FOCUS_IN, nextIndex) && appearanceOverride === "auto") {
-      void refreshAppearance();
-      cursor = nextIndex + TERMINAL_FOCUS_IN.length;
-      continue;
-    }
-
-    cursor = nextIndex + TERMINAL_FOCUS_OUT.length;
+function handleDetectedAppearance(next: Extract<Appearance, "dark" | "light">): void {
+  if (appearanceRequest) {
+    finishAppearanceRequest(next);
+    return;
   }
 
-  return passthrough;
+  if (appearanceOverride === "auto") {
+    setAppearance(next);
+  }
+}
+
+function handleStartupFallbackAppearance(next: Extract<Appearance, "dark" | "light">): void {
+  if (!appearanceRequest) return;
+  finishAppearanceRequest(next);
 }
 
 function findOscTerminator(chunk: string, fromIndex: number): number {
@@ -201,7 +206,7 @@ function findOscTerminator(chunk: string, fromIndex: number): number {
   return -1;
 }
 
-function parseAppearanceResponse(response: string): Appearance | null {
+function parseAppearanceResponse(response: string): Extract<Appearance, "dark" | "light"> | null {
   const body = response.slice(OSC_BACKGROUND_RESPONSE_PREFIX.length);
   const terminatorLength = body.endsWith(OSC_STRING_TERMINATOR)
     ? OSC_STRING_TERMINATOR.length
@@ -228,7 +233,6 @@ function parseOscColor(input: string): [number, number, number] | null {
 
     const value = Number.parseInt(hex, 16);
     if (Number.isNaN(value)) return null;
-
     return [(value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff];
   }
 
@@ -255,7 +259,10 @@ function parseOscComponent(component: string): number | null {
   }
 }
 
-function classifyAppearance([red, green, blue]: [number, number, number]): Appearance {
+function classifyAppearance([red, green, blue]: [number, number, number]): Extract<
+  Appearance,
+  "dark" | "light"
+> {
   const luminance = relativeLuminance(red, green, blue);
   return luminance >= 0.5 ? "light" : "dark";
 }
@@ -264,7 +271,6 @@ function relativeLuminance(red: number, green: number, blue: number): number {
   const r = toLinearChannel(red);
   const g = toLinearChannel(green);
   const b = toLinearChannel(blue);
-
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
@@ -277,5 +283,5 @@ let appearanceState = $<Appearance>("unknown");
 let appearanceOverride: AppearanceMode = "auto";
 let appearanceRequest: AppearanceRequest | null = null;
 let appearanceInputBuffer = "";
-let focusReportingEnabled = false;
+let colorSchemeUpdatesEnabled = false;
 let sessionActive = false;

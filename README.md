@@ -148,7 +148,30 @@ const viewport = ScrollView(
 
 Debug metrics split the frame into `js`, `render`, `sync`, and `flush`, plus a worst-frame breakdown. Enable with `run(root, { debug: true })` to print the summary on quit. If you also want a file, pass `run(root, { debug: true, metricsPath: "dump/metrics.txt" })` or call `saveMetrics(...)` yourself.
 
-Appearance detection uses the terminal background query (`OSC 11`) and refreshes again when the terminal regains focus. `appearance()` returns `"light"`, `"dark"`, or `"unknown"`, and `refreshAppearance()` lets apps force a re-query later if needed.
+Appearance detection requests the current terminal color scheme at startup and listens for live theme updates on terminals that support DEC 2031. `appearance()` returns `"light"`, `"dark"`, or `"unknown"`.
+
+```ts
+import { Column, Text, appearance, ff, onKey, run } from "@frixaco/letui";
+
+const label = Text({ text: "theme: unknown" });
+const root = Column({ flexGrow: 1, padding: "1 1" }, [label]);
+
+ff(() => {
+  const mode = appearance();
+  label.setText(`theme: ${mode}`);
+  root.setStyle({
+    background: mode === "light" ? 0xf6f6f6 : 0x101215,
+  });
+  label.setStyle({
+    foreground: mode === "light" ? 0x111111 : 0xf5f7fa,
+  });
+});
+
+const app = run(root, { appearance: "auto" });
+onKey("q", () => app.quit());
+```
+
+Pass `appearance: "light"` or `"dark"` to `run()` to override detection.
 
 ## Performance (TODO)
 
