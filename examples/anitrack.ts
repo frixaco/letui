@@ -8,19 +8,7 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
-import {
-  Button,
-  Column,
-  Input,
-  Row,
-  ScrollView,
-  Text,
-  $,
-  appearance,
-  ff,
-  onKey,
-  run,
-} from "@";
+import { Button, Column, Input, Row, ScrollView, Text, $, appearance, ff, onKey, run } from "@";
 import type { Appearance, StyledText, TextSpan } from "@";
 import { COLORS } from "./colors.ts";
 import { LoadingBar } from "./progress-bar.ts";
@@ -109,9 +97,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 
   function toScrapeResults(payload: unknown): ScrapeResultItem[] {
     const rawResults =
-      payload && typeof payload === "object"
-        ? (payload as any).results
-        : undefined;
+      payload && typeof payload === "object" ? (payload as any).results : undefined;
 
     if (!Array.isArray(rawResults)) return [];
 
@@ -139,11 +125,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     const infoHash = details.info_hash;
     const files = details.files;
 
-    if (
-      typeof infoHash !== "string" ||
-      !Array.isArray(files) ||
-      files.length === 0
-    ) {
+    if (typeof infoHash !== "string" || !Array.isArray(files) || files.length === 0) {
       return null;
     }
 
@@ -293,10 +275,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
       flexShrink: 0,
     },
     [
-      Row({ gap: 1, alignItems: "center", flexWrap: "wrap" }, [
-        searchTitle,
-        searchHint,
-      ]),
+      Row({ gap: 1, alignItems: "center", flexWrap: "wrap" }, [searchTitle, searchHint]),
       Row({ alignItems: "stretch" }, [searchInput]),
       Row({}, [loadingBar.node]),
     ],
@@ -395,13 +374,10 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     loadingBar.start();
 
     try {
-      const response = await fetch(
-        "https://rqbit.anitrack.frixaco.com/torrents",
-        {
-          method: "post",
-          body: magnet,
-        },
-      );
+      const response = await fetch("https://rqbit.anitrack.frixaco.com/torrents", {
+        method: "post",
+        body: magnet,
+      });
 
       if (!response.ok) {
         throw new Error(`Stream failed with status ${response.status}`);
@@ -427,10 +403,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     }
   }
 
-  function createResultRow(
-    item: ScrapeResultItem,
-    index: number,
-  ): ReturnType<typeof Button> {
+  function createResultRow(item: ScrapeResultItem, index: number): ReturnType<typeof Button> {
     const title = Text({
       text: resultTitleText(item),
       wrap: "word",
@@ -476,11 +449,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     resultsViewport.scrollBy(offset);
   }
 
-  function scrollResultsFromPointer(
-    deltaY: number,
-    _x: number,
-    _y: number,
-  ): void {
+  function scrollResultsFromPointer(deltaY: number, _x: number, _y: number): void {
     if (deltaY === 0 || results().length === 0) return;
 
     setPane("results");
@@ -598,9 +567,7 @@ function startAniTrackDemo(): ReturnType<typeof run> {
     });
 
     headerMeta.setText(
-      all.length > 0
-        ? `focus ${activePane}   scrollY ${scrollY}`
-        : `focus ${activePane}`,
+      all.length > 0 ? `focus ${activePane}   scrollY ${scrollY}` : `focus ${activePane}`,
     );
 
     resultsSummary.setText(

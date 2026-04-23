@@ -7,7 +7,6 @@
 
 import { NODE_KIND_ID, type NodeKind, type NodeKindNum, type NormalizedTextSpan } from "./types.ts";
 
-
 /**
  * Accumulates binary-encoded operations into a contiguous buffer for the Rust side.
  */
@@ -125,7 +124,6 @@ export class OpQueue {
   }
 }
 
-
 enum OpEnum {
   SetText = 1,
   DeleteTextRange = 2,
@@ -220,7 +218,6 @@ export const EMITTED_STYLE_PROPS = [
   "cursorVisible",
 ] as const satisfies readonly StylePropName[];
 
-
 function encodeShortString(value: string) {
   const bytes = textEncoder.encode(value);
   if (bytes.length > 255) {
@@ -297,7 +294,6 @@ export function getDeleteTextRangeOpSize(): number {
   return RECORD_HEADER_SIZE + DELETE_TEXT_RANGE_PAYLOAD_SIZE;
 }
 
-
 const OP_SIZE = 1;
 const ID_SIZE = 4;
 const KIND_SIZE = 1;
@@ -320,6 +316,5 @@ const TEXT_SPAN_ATTR_ITALIC = 1 << 1;
 const TEXT_SPAN_ATTR_UNDERLINE = 1 << 2;
 const TEXT_SPAN_COLOR_FOREGROUND = 1 << 0;
 const TEXT_SPAN_COLOR_BACKGROUND = 1 << 1;
-
 
 const textEncoder = new TextEncoder();

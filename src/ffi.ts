@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const prefix = process.platform === "win32" ? "" : "lib";
-const suffix = process.platform === "win32" ? "dll" : process.platform === "darwin" ? "dylib" : "so";
+const suffix =
+  process.platform === "win32" ? "dll" : process.platform === "darwin" ? "dylib" : "so";
 const filename = `${prefix}letui_core.${suffix}`;
 
 function debugLog(...args: unknown[]): void {

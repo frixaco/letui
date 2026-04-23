@@ -93,7 +93,10 @@ export function stripAppearanceResponses(data: string): string {
 
     passthrough += chunk.slice(cursor, responseStart);
 
-    const responseEnd = findOscTerminator(chunk, responseStart + OSC_BACKGROUND_RESPONSE_PREFIX.length);
+    const responseEnd = findOscTerminator(
+      chunk,
+      responseStart + OSC_BACKGROUND_RESPONSE_PREFIX.length,
+    );
     if (responseEnd === -1) {
       appearanceInputBuffer = chunk.slice(responseStart);
       return passthrough;

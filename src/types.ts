@@ -75,7 +75,6 @@ export type NormalizedStyledText = {
   byteLength: number;
 };
 
-
 export type _StyleProps = {
   border: Signal<BorderProps | undefined>;
   borderTop: Signal<BorderSideProps | undefined>;
@@ -133,7 +132,6 @@ export type _InputProps = _StyleProps & {
 export type _ButtonProps = _StyleProps & {
   text: Signal<string>;
 };
-
 
 export type StyleProps = {
   border?: BorderProps;
@@ -200,7 +198,6 @@ export type ButtonProps = StyleProps & {
   onBlur?: (self: Node) => void;
 };
 
-
 export const NODE_TYPE = {
   Row: "Row",
   Column: "Column",
@@ -210,10 +207,7 @@ export const NODE_TYPE = {
 } as const;
 
 export type NodeKind = (typeof NODE_TYPE)[keyof typeof NODE_TYPE];
-export type BoxKind = (typeof NODE_TYPE)[keyof Pick<
-  typeof NODE_TYPE,
-  "Row" | "Column"
->];
+export type BoxKind = (typeof NODE_TYPE)[keyof Pick<typeof NODE_TYPE, "Row" | "Column">];
 
 export const NODE_KIND_ID: Record<NodeKind, number> = {
   [NODE_TYPE.Row]: 1,
@@ -224,7 +218,6 @@ export const NODE_KIND_ID: Record<NodeKind, number> = {
 } as const;
 
 export type NodeKindNum = (typeof NODE_KIND_ID)[NodeKind];
-
 
 export type BoxHandlers = {};
 
@@ -247,7 +240,6 @@ export type ButtonHandlers = {
   onFocus?: (self: Node) => void;
   onBlur?: (self: Node) => void;
 };
-
 
 type CommonFields = {
   id: number;
@@ -278,9 +270,7 @@ export type TextNode = NodeBase<typeof NODE_TYPE.Text> &
   LeafNode & {
     props: _TextProps;
     handlers: TextHandlers;
-    setStyle: (
-      p: Partial<StyleProps & { wrap?: TextWrap; textOverflow?: TextOverflow }>,
-    ) => void;
+    setStyle: (p: Partial<StyleProps & { wrap?: TextWrap; textOverflow?: TextOverflow }>) => void;
     setText: (v: string | StyledText) => void;
   };
 

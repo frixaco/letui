@@ -6,12 +6,10 @@
 import { Column, Row, Text, $, ff, onKey, run } from "@";
 import type { StyledText, TextSpan } from "@";
 
-
 type KeyCell = {
   value: string;
   node: ReturnType<typeof Text>;
 };
-
 
 const KEY_WIDTH = 3;
 const KEY_GAP = 1;
@@ -25,7 +23,6 @@ const HAND_BOX_WIDTH = HAND_INNER_WIDTH + HAND_PADDING_X * 2 + 2;
 const HAND_BOX_HEIGHT = HAND_ROWS * 2 + HAND_PADDING_Y * 2 + 3;
 const KEYBOARD_WIDTH = HAND_BOX_WIDTH * 2 + HAND_GAP;
 const CLOCK_TICK_MS = 100;
-
 
 const THEME = {
   border: 0x2d4a60,
@@ -60,13 +57,11 @@ const PROMPTS = [
 const DEFAULT_HINT = "type letters + space   backspace edit   enter next   esc quit";
 const FINISHED_HINT = "enter next prompt   backspace revise   esc quit";
 
-
 const promptIndex = $(0);
 const typed = $("");
 const startedAt = $<number | null>(null);
 const finishedAt = $<number | null>(null);
 const now = $(Date.now());
-
 
 function currentPrompt(): string {
   return PROMPTS[promptIndex()] ?? PROMPTS[0]!;
@@ -192,7 +187,6 @@ function buildPromptText(prompt: string, value: string): StyledText {
   return { text: prompt, spans };
 }
 
-
 const title = Text({
   text: "typing speed // colemak mod dh",
   foreground: THEME.accent,
@@ -221,29 +215,26 @@ const spacebarLabel = Text({
   foreground: THEME.muted,
 });
 
-const keyboard = Column(
-  { width: KEYBOARD_WIDTH, gap: 1 },
-  [
-    Row(
-      {
-        width: KEYBOARD_WIDTH,
-        gap: HAND_GAP,
-        alignItems: "stretch",
-      },
-      [leftHand.node, rightHand.node],
-    ),
-    Column(
-      {
-        minHeight: 3,
-        padding: "0 1",
-        alignItems: "center",
-        justifyContent: "center",
-        border: { color: THEME.border, style: "rounded" },
-      },
-      [spacebarLabel],
-    ),
-  ],
-);
+const keyboard = Column({ width: KEYBOARD_WIDTH, gap: 1 }, [
+  Row(
+    {
+      width: KEYBOARD_WIDTH,
+      gap: HAND_GAP,
+      alignItems: "stretch",
+    },
+    [leftHand.node, rightHand.node],
+  ),
+  Column(
+    {
+      minHeight: 3,
+      padding: "0 1",
+      alignItems: "center",
+      justifyContent: "center",
+      border: { color: THEME.border, style: "rounded" },
+    },
+    [spacebarLabel],
+  ),
+]);
 
 const root = Column(
   {
@@ -262,7 +253,6 @@ const root = Column(
     ),
   ],
 );
-
 
 ff(() => {
   const prompt = currentPrompt();
@@ -290,25 +280,16 @@ ff(() => {
   promptLine.setText(buildPromptText(prompt, value));
 
   for (const key of keyCells) {
-    setKeyState(
-      key.node,
-      key.value === lastTyped && lastTyped.length > 0,
-      lastWasCorrect,
-    );
+    setKeyState(key.node, key.value === lastTyped && lastTyped.length > 0, lastWasCorrect);
   }
 
   setKeyState(spacebarLabel, lastTyped === " ", lastWasCorrect);
 
   hintLine.setText(finished ? FINISHED_HINT : DEFAULT_HINT);
   hintLine.setStyle({
-    foreground: finished
-      ? errors === 0
-        ? THEME.ok
-        : THEME.warn
-      : THEME.muted,
+    foreground: finished ? (errors === 0 ? THEME.ok : THEME.warn) : THEME.muted,
   });
 });
-
 
 const clock = setInterval(() => {
   if (startedAt() === null || finishedAt() !== null) return;

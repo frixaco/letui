@@ -1,11 +1,6 @@
 /** Text normalization and span preparation shared by text components and ops. */
 
-import type {
-  NormalizedStyledText,
-  NormalizedTextSpan,
-  StyledText,
-  TextSpan,
-} from "./types.ts";
+import type { NormalizedStyledText, NormalizedTextSpan, StyledText, TextSpan } from "./types.ts";
 
 export function prepareTextInput(text: string): PreparedTextInput {
   const chars = Array.from(text);

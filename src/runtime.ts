@@ -13,11 +13,7 @@ import {
 } from "./appearance.ts";
 import api from "./ffi.ts";
 import { $, ff, type Signal } from "./signals.ts";
-import {
-  getFocusedNode,
-  getFocusVersion,
-  syncScrollViewMetrics,
-} from "./components.ts";
+import { getFocusedNode, getFocusVersion, syncScrollViewMetrics } from "./components.ts";
 import { dispatchInputChunk } from "./input.ts";
 import {
   NODE_TYPE,
@@ -886,8 +882,9 @@ function getScrollNodeAt(x: number, y: number): Node | undefined {
 }
 
 function dispatchScrollEvent(event: ScrollEvent, scrollTarget: Node | undefined): void {
-  const handler = (scrollTarget?.handlers as { onScroll?: (event: ScrollEvent) => void } | undefined)
-    ?.onScroll;
+  const handler = (
+    scrollTarget?.handlers as { onScroll?: (event: ScrollEvent) => void } | undefined
+  )?.onScroll;
   if (handler) {
     handler(event);
     return;
@@ -896,5 +893,10 @@ function dispatchScrollEvent(event: ScrollEvent, scrollTarget: Node | undefined)
 
 function sameStyleValue(left: StylePropValue, right: StylePropValue): boolean {
   if (left === right) return true;
-  return typeof left === "number" && typeof right === "number" && Number.isNaN(left) && Number.isNaN(right);
+  return (
+    typeof left === "number" &&
+    typeof right === "number" &&
+    Number.isNaN(left) &&
+    Number.isNaN(right)
+  );
 }

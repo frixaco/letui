@@ -9,7 +9,6 @@ import { $, ff } from "@/signals.ts";
 import type { Node } from "@/types.ts";
 import { log } from "@/debug.ts";
 
-
 export type LoadingBarProps = {
   dotColor: number;
   trackColor: number;
@@ -24,16 +23,13 @@ export type LoadingBarController = {
   setColors: (colors: { dotColor: number; trackColor: number }) => void;
 };
 
-
 export function LoadingBar(props: LoadingBarProps): LoadingBarController {
   const { dotColor, trackColor, flexGrow = 1, interval = 80 } = props;
-
 
   const position = $(0);
   const direction = $(1);
   const active = $(false);
   let timer: ReturnType<typeof setInterval> | null = null;
-
 
   const leftTrack = Text({
     text: "",
@@ -63,7 +59,6 @@ export function LoadingBar(props: LoadingBarProps): LoadingBarController {
     dot.setText?.(" ");
     rightTrack.setText?.(" ".repeat(maxPos - clampedPos));
   });
-
 
   function clearTimer() {
     if (timer) {

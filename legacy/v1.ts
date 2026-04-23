@@ -6,7 +6,6 @@ import api from "./ffi.ts";
 import { $, ff, type Signal } from "./signals";
 import { startFrame, endFrame, startPhase, endLayout, endPaint, formatMetrics } from "./metrics.ts";
 
-
 function log(_txt: string) {
   // Legacy debug hook.
 }
@@ -17,7 +16,6 @@ const generateId = (() => {
     return counter++;
   };
 })();
-
 
 export function run(
   nodeFactory: (tw: number, th: number) => Node,
