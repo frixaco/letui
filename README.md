@@ -1,10 +1,20 @@
 # LeTUI
 
-TUI library with a Rust rendering core, built for interactive full-screen terminal apps. Performance of `ratatui`, ecosystem of TypeScript. No more `Ink`. Written from scratch.
+TUI library with a Rust rendering core and TypeScript wrapper API. Written from scratch.
 
-Demo video:
+## Demos
 
-https://github.com/user-attachments/assets/a84f8b6c-86fd-4f42-9ec8-84edd24c7abd
+### Snake
+
+https://github.com/user-attachments/assets/31f3efcc-0c2b-4b85-8fe1-99129e6b8394
+
+### Typing Speed
+
+https://github.com/user-attachments/assets/7f4f53f5-deb6-4781-bdfa-bf769cabfbb1
+
+### AI agent
+
+https://github.com/user-attachments/assets/1599de82-146d-4a0d-bc66-86a2b51a77c1
 
 ## Prerequisites
 
@@ -117,7 +127,7 @@ bun run app.ts
 - **Rust** — persistent tree state, style/text op application, layout, paint, incremental flush
 - **Bun FFI** — bridge for op buffers, frame buffers, and lifecycle hooks
 - Packaged native binaries for `darwin-arm64`, `linux-x64`, `win32-x64`
-- Only deps: `crossterm` and `taffy` Rust crates, everything written from scratch.
+- Only deps: `crossterm`, `taffy`, `unicode-width` and `unicode-segmentation` Rust crates, everything else is written from scratch.
 
 Text wrapping, clipping, and overflow are resolved in the Rust renderer. Explicit newlines are treated as hard row boundaries after text normalization.
 
@@ -140,7 +150,7 @@ Debug metrics split the frame into `js`, `render`, `sync`, and `flush`, plus a w
 
 Appearance detection uses the terminal background query (`OSC 11`) and refreshes again when the terminal regains focus. `appearance()` returns `"light"`, `"dark"`, or `"unknown"`, and `refreshAppearance()` lets apps force a re-query later if needed.
 
-## Performance
+## Performance (TODO)
 
 Frame latency is <1ms for practical workloads.
 
