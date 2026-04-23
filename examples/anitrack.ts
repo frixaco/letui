@@ -413,11 +413,11 @@ function startAniTrackDemo(): ReturnType<typeof run> {
 
       const streamUrl = `https://rqbit.anitrack.frixaco.com/torrents/${target.infoHash}/stream/${target.fileIndex}`;
       const ipcPath = createMpvIpcPath();
-      new Deno.Command("mpv", {
-        args: [`--input-ipc-server=${ipcPath}`, streamUrl],
-        stdout: "null",
-        stderr: "null",
-      }).spawn();
+      Bun.spawn({
+        cmd: ["mpv", `--input-ipc-server=${ipcPath}`, streamUrl],
+        stdout: "ignore",
+        stderr: "ignore",
+      });
 
       await waitForMpvIpc(ipcPath, MPV_SOCKET_WAIT_MS);
     } catch {

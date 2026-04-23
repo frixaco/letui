@@ -1,5 +1,6 @@
 /** Native FFI loader that resolves the Rust shared library for letui. */
 
+import { dlopen } from "bun:ffi";
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import process from "node:process";
@@ -38,94 +39,94 @@ function getLibraryPath(): string {
     return resolved;
   } catch {
     throw new Error(
-      `Failed to load letui native library. Tried local build at ${localPath} and optional package ${pkgName}. Run deno task build-ffi or install the matching optional package.`,
+      `Failed to load letui native library. Tried local build at ${localPath} and optional package ${pkgName}. Run bun run build-ffi or install the matching optional package.`,
     );
   }
 }
 
 const path = getLibraryPath();
 
-const library = Deno.dlopen(path, {
+const { symbols: api } = dlopen(path, {
   init_letui: {
-    parameters: [],
-    result: "i32",
+    args: [],
+    returns: "i32",
   },
   deinit_letui: {
-    parameters: [],
-    result: "i32",
+    args: [],
+    returns: "i32",
   },
   init_buffer: {
-    parameters: [],
-    result: "i32",
+    args: [],
+    returns: "i32",
   },
   get_buffer_ptr: {
-    parameters: [],
-    result: "pointer",
+    args: [],
+    returns: "pointer",
   },
   get_buffer_len: {
-    parameters: [],
-    result: "u64",
+    args: [],
+    returns: "u64",
   },
   apply_ops: {
-    parameters: ["buffer", "u32"],
-    result: "i32",
+    args: ["buffer", "u32"],
+    returns: "i32",
   },
   render: {
-    parameters: [],
-    result: "i32",
+    args: [],
+    returns: "i32",
   },
   clear_tree_state: {
-    parameters: [],
-    result: "i32",
+    args: [],
+    returns: "i32",
   },
   get_frames_ptr: {
-    parameters: [],
-    result: "pointer",
+    args: [],
+    returns: "pointer",
   },
   get_frames_len: {
-    parameters: [],
-    result: "u64",
+    args: [],
+    returns: "u64",
   },
   get_hitmap_ptr: {
-    parameters: [],
-    result: "pointer",
+    args: [],
+    returns: "pointer",
   },
   get_hitmap_len: {
-    parameters: [],
-    result: "u64",
+    args: [],
+    returns: "u64",
   },
   get_scroll_hitmap_ptr: {
-    parameters: [],
-    result: "pointer",
+    args: [],
+    returns: "pointer",
   },
   get_scroll_hitmap_len: {
-    parameters: [],
-    result: "u64",
+    args: [],
+    returns: "u64",
   },
   get_width: {
-    parameters: [],
-    result: "u16",
+    args: [],
+    returns: "u16",
   },
   get_height: {
-    parameters: [],
-    result: "u16",
+    args: [],
+    returns: "u16",
   },
   free_buffer: {
-    parameters: [],
-    result: "i32",
+    args: [],
+    returns: "i32",
   },
   debug_buffer: {
-    parameters: ["u64"],
-    result: "u64",
+    args: ["u64"],
+    returns: "u64",
   },
   flush: {
-    parameters: [],
-    result: "i32",
+    args: [],
+    returns: "i32",
   },
   update_terminal_size: {
-    parameters: [],
-    result: "i32",
+    args: [],
+    returns: "i32",
   },
 } as const);
 
-export default library.symbols;
+export default api;

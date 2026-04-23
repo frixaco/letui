@@ -3,7 +3,7 @@
 ## Start here
 
 1. Read `docs/getting-started.md`
-2. Run `deno install && deno task build-ffi`
+2. Run `bun install && bun run build-ffi`
 3. Use `docs/components-and-styling.md` for current public props
 4. Use `docs/state-events-lifecycle.md` for signals, focus, input, and cleanup
 5. Use `docs/releasing.md` when cutting a new npm release
@@ -46,7 +46,7 @@ Repo-local agent skills live in `.agents/skills/`.
 
 ## Constraints to remember
 
-- use Deno, not Node, for runtime in this repo
+- use Bun, not Node, for runtime in this repo
 - colors are numeric hex (`0xRRGGBB`), not CSS strings
 - `Ctrl+Q` is always the default quit path
 - keep node identity stable when possible; recreating whole subtrees defeats incremental sync

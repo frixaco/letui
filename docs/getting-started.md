@@ -3,22 +3,15 @@
 ## Assumptions
 
 - You are inside this repo
-- Deno installed
+- Bun installed
 - Rust toolchain installed (`cargo` available)
 - You are building a demo app under `examples/`
 
 ## 1. Build native backend once
 
-Install repo dependencies first:
-
 ```bash
-deno install
-```
-
-Then build the native backend:
-
-```bash
-deno task build-ffi
+bun install
+bun run build-ffi
 ```
 
 What this does: compiles `core/` with `cargo build --release`.
@@ -81,7 +74,7 @@ onKey("q", () => app.quit());
 ## 3. Run it
 
 ```bash
-deno run -A examples/<your-file>.ts
+bun run examples/<your-file>.ts
 ```
 
 ## 4. Interact + quit

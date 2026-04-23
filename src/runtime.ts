@@ -2,6 +2,7 @@
  * Runtime bridge that diffs the TS tree, syncs Rust ops, and drives terminal I/O.
  */
 
+import { toArrayBuffer, type Pointer } from "bun:ffi";
 import { Buffer } from "node:buffer";
 import process from "node:process";
 import {
@@ -161,7 +162,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     } else {
       syncRenderTree(previousSentTree, sentTree, textStats);
     }
-    const opBuffer = new Uint8Array(ops.drain());
+    const opBuffer = ops.drain();
     if (opBuffer.length > 0) {
       api.apply_ops(opBuffer, opBuffer.length);
     }
@@ -663,20 +664,20 @@ function syncRenderTree(
 
 function updateNodeFrames(root: Node): void {
   const framesPtr = api.get_frames_ptr()!;
-  const framesLen = Number(api.get_frames_len());
-  const framesArray = new Float32Array(readPointerBuffer(framesPtr, framesLen * 4));
+  const framesLen = Number(api.get_frames_len()!);
+  const framesArray = new Float32Array(toArrayBuffer(framesPtr as Pointer, 0, framesLen * 4));
   const hitmapPtr = api.get_hitmap_ptr?.();
-  const hitmapLen = Number(api.get_hitmap_len?.() ?? 0n);
+  const hitmapLen = Number(api.get_hitmap_len?.() ?? 0);
   const scrollHitmapPtr = api.get_scroll_hitmap_ptr?.();
-  const scrollHitmapLen = Number(api.get_scroll_hitmap_len?.() ?? 0n);
+  const scrollHitmapLen = Number(api.get_scroll_hitmap_len?.() ?? 0);
 
   spatialLookup =
     hitmapPtr && hitmapLen > 0
-      ? new Uint32Array(readPointerBuffer(hitmapPtr, hitmapLen * 4))
+      ? new Uint32Array(toArrayBuffer(hitmapPtr as Pointer, 0, hitmapLen * 4))
       : new Uint32Array(terminalWidth() * terminalHeight());
   scrollSpatialLookup =
     scrollHitmapPtr && scrollHitmapLen > 0
-      ? new Uint32Array(readPointerBuffer(scrollHitmapPtr, scrollHitmapLen * 4))
+      ? new Uint32Array(toArrayBuffer(scrollHitmapPtr as Pointer, 0, scrollHitmapLen * 4))
       : new Uint32Array(terminalWidth() * terminalHeight());
 
   let idx = 0;
@@ -867,10 +868,6 @@ let ops: OpQueue;
 let previousSentTree: SentNodeState | null = null;
 
 const textEncoder = new TextEncoder();
-
-function readPointerBuffer(pointer: Deno.PointerObject<unknown>, byteLength: number): ArrayBuffer {
-  return Deno.UnsafePointerView.getArrayBuffer(pointer, byteLength);
-}
 
 function getNodeAt(x: number, y: number): Node | undefined {
   if (x < 0 || y < 0 || x >= terminalWidth() || y >= terminalHeight()) {

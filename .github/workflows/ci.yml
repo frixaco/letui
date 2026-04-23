@@ -16,17 +16,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Deno
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-          cache: true
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install dependencies
-        run: deno install --frozen
+        run: bun install --frozen-lockfile
 
       - name: Check
-        run: deno task check
+        run: bun run check
