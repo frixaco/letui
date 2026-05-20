@@ -10,6 +10,7 @@
   "module": "index.ts",
   "scripts": {
     "build-ffi": "cargo build --release --manifest-path core/Cargo.toml",
+    "build:anitrack-binary": "bun run scripts/build-anitrack-binary.ts",
     "anitrack": "bun run build-ffi && bun run examples/anitrack.ts",
     "ai-agent": "bun run build-ffi && bun run examples/ai-agent.ts",
     "file-search": "bun run build-ffi && bun run examples/fuzzy-file-search.ts",

@@ -32,6 +32,12 @@ function getLibraryPath(): string {
     debugLog("local build probe failed", error);
   }
 
+  const embeddedPath = getEmbeddedLibraryPath();
+  if (embeddedPath) {
+    debugLog("using embedded build", embeddedPath);
+    return embeddedPath;
+  }
+
   const pkgName = `@frixaco/letui-${platform}-${arch}`;
 
   try {
@@ -44,6 +50,29 @@ function getLibraryPath(): string {
     );
   }
 }
+
+function getEmbeddedLibraryPath(): string | null {
+  const baseName = filename.slice(0, -`.${suffix}`.length);
+
+  for (const file of Bun.embeddedFiles) {
+    const embeddedFilename = (file as EmbeddedFile).name;
+    if (typeof embeddedFilename !== "string") continue;
+
+    const isMatchingLibrary =
+      embeddedFilename === filename ||
+      (embeddedFilename.startsWith(`${baseName}-`) && embeddedFilename.endsWith(`.${suffix}`));
+
+    if (isMatchingLibrary) {
+      return `/$bunfs/root/${embeddedFilename}`;
+    }
+  }
+
+  return null;
+}
+
+type EmbeddedFile = Blob & {
+  name?: unknown;
+};
 
 const path = getLibraryPath();
 

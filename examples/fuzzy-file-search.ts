@@ -146,10 +146,7 @@ function startFuzzyFileSearch(): ReturnType<typeof run> {
         },
         [processTitle, processBody],
       ),
-      Column(
-        { flexGrow: 1, minWidth: 0, padding: "1 2", gap: 1 },
-        [clipboardTitle, clipboardBody],
-      ),
+      Column({ flexGrow: 1, minWidth: 0, padding: "1 2", gap: 1 }, [clipboardTitle, clipboardBody]),
     ],
   );
 
