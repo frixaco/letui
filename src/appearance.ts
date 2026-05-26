@@ -124,11 +124,7 @@ export function stripAppearanceResponses(data: string): string {
       continue;
     }
 
-    if (
-      COLOR_SCHEME_DARK.startsWith(remainder) ||
-      COLOR_SCHEME_LIGHT.startsWith(remainder) ||
-      OSC_BACKGROUND_RESPONSE_PREFIX.startsWith(remainder)
-    ) {
+    if (isPartialAppearanceResponse(remainder)) {
       appearanceInputBuffer = remainder;
       return passthrough;
     }
@@ -204,6 +200,26 @@ function findOscTerminator(chunk: string, fromIndex: number): number {
   }
 
   return -1;
+}
+
+function isPartialAppearanceResponse(input: string): boolean {
+  // A terminal appearance reply can arrive split across stdin chunks, so prefixes like
+  // ESC[?997;1n and OSC 11 must be buffered until the rest of the response arrives.
+  // Bare Escape is different: users press it for normal keyboard navigation, and if we
+  // always buffer a lone ESC, that key never reaches the app. Only treat a lone ESC as
+  // an appearance-response prefix while a startup/current appearance query is actively
+  // waiting; outside that narrow window it is regular input.
+  if (
+    !COLOR_SCHEME_DARK.startsWith(input) &&
+    !COLOR_SCHEME_LIGHT.startsWith(input) &&
+    !OSC_BACKGROUND_RESPONSE_PREFIX.startsWith(input)
+  ) {
+    return false;
+  }
+
+  if (input.length > 1) return true;
+
+  return appearanceRequest !== null;
 }
 
 function parseAppearanceResponse(response: string): Extract<Appearance, "dark" | "light"> | null {
