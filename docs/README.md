@@ -38,6 +38,7 @@
 ## Example map
 
 - `examples/anitrack.ts`: interactive torrent-search demo
+- `examples/anki.ts`: two-screen Anki-style flashcard UI demo
 - `examples/ai-agent.ts`: chat-style agent UI demo
 - `examples/snake.ts`: keyboard-driven game demo
 - `examples/typing-speed.ts`: centered Colemak Mod-DH typing tester
