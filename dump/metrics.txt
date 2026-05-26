@@ -1,6 +1,6 @@
-915fps | total 1.1ms avg (p95:1.5 max:3.3) | 45MB | 106 frames
-js:     0.6ms avg (p95:1 max:2.4) | text ops:2.3 avg 35 max | text bytes:69 avg 610 max | ffi bytes:164.4 avg 4548 max
-render: 0.3ms avg (p95:0.4 max:0.6)
-sync:   0.1ms avg (p95:0.1 max:0.2)
-flush:  0.1ms avg (p95:0.1 max:0.3)
-worst: frame 2 3.3ms = js 2.4 + render 0.6 + sync 0.2 + flush 0.1 | reason:other
+254fps | total 3.9ms avg (p95:6.3 max:6.6) | 3MB | 2 frames
+js:     3.4ms avg (p95:5.5 max:5.8) | text ops:4 avg 8 max | text bytes:145.5 avg 291 max | ffi bytes:1358 avg 2546 max
+render: 0.2ms avg (p95:0.2 max:0.2)
+sync:   0.3ms avg (p95:0.4 max:0.5)
+flush:  0.1ms avg (p95:0.1 max:0.1)
+worst: frame 1 6.6ms = js 5.8 + render 0.2 + sync 0.5 + flush 0.1 | reason:other
