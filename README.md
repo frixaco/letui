@@ -173,9 +173,10 @@ onKey("q", () => app.quit());
 
 Pass `appearance: "light"`, `"dark"`, or `"unknown"` to `run()` to override detection.
 
-## Performance
+## Benchmarks
 
-The project target is <1ms average response time for each render. Use `run(root, { debug: true })` while developing to inspect frame timings, and pass `metricsPath` when you want to persist the summary.
+Generally speaking it's on par if not faster than OpenTUI, Ink and probably any other popular TUI library at its current state.
+It loses to Ratatui though, as it is pure Rust.
 
 ## Docs
 

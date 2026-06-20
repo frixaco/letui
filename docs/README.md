@@ -40,6 +40,8 @@
 - `examples/anitrack.ts`: interactive torrent-search demo
 - `examples/anki.ts`: two-screen Anki-style flashcard UI demo
 - `examples/ai-agent.ts`: chat-style agent UI demo
+- `examples/fuzzy-file-search.ts`: file finder demo backed by `@ff-labs/fff-node`
+- `examples/smoke.ts`: deterministic smoke-test fixture
 - `examples/snake.ts`: keyboard-driven game demo
 - `examples/typing-speed.ts`: centered Colemak Mod-DH typing tester
 - `examples/text.ts`: wrap, overflow, box sizing, and input layout demo

@@ -25,14 +25,12 @@
     "check:rust": "cargo check --manifest-path core/Cargo.toml",
     "check": "bun run typecheck && bun run check:rust"
   },
-  "dependencies": {
-    "@ff-labs/fff-node": "^0.7.0",
-    "koffi": "^2.16.1"
-  },
   "devDependencies": {
+    "@ff-labs/fff-node": "^0.7.0",
     "@types/bun": "^1.3.13",
     "@types/node": "^24",
     "@typescript/native-preview": "^7.0.0-dev.20260421.2",
+    "koffi": "^2.16.1",
     "oxfmt": "^0.46.0",
     "oxlint": "^1.61.0"
   },

@@ -6,7 +6,7 @@ Workflow source: `.github/workflows/release.yml`
 
 ## Preconditions
 
-- `main` green
+- `master` green
 - GitHub repo secret `NPM_TOKEN` set
 - npm ownership for:
   - `@frixaco/letui`
@@ -50,11 +50,11 @@ Expected:
 From clean local state:
 
 ```bash
-git checkout main
+git checkout master
 git pull --ff-only
 git add package.json bun.lock core/Cargo.toml core/Cargo.lock
 git commit -m "release: v0.0.12"
-git push origin main
+git push origin master
 git tag v0.0.12
 git push origin v0.0.12
 ```
