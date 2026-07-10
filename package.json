@@ -4,39 +4,34 @@
   "license": "MIT",
   "files": [
     "index.ts",
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "taffy-ts/dist/**/*",
+    "LICENSE"
   ],
   "type": "module",
   "module": "index.ts",
   "scripts": {
-    "build-ffi": "cargo build --release --manifest-path core/Cargo.toml",
+    "build:taffy": "bun run --cwd taffy-ts build",
     "build:anitrack-binary": "bun run scripts/build-anitrack-binary.ts",
-    "anki": "bun run build-ffi && bun run examples/anki.ts",
-    "anitrack": "bun run build-ffi && bun run examples/anitrack.ts",
-    "ai-agent": "bun run build-ffi && bun run examples/ai-agent.ts",
-    "file-search": "bun run build-ffi && bun run examples/fuzzy-file-search.ts",
-    "fmt": "oxfmt .",
-    "fmt-check": "oxfmt --check .",
-    "lint": "oxlint --ignore-pattern 'legacy/**' .",
-    "smoke": "bun run build-ffi && bun run scripts/smoke.ts",
-    "snake": "bun run build-ffi && bun run examples/snake.ts",
-    "typecheck": "bun x tsc -p tsconfig.check.json",
-    "visualizer": "bun run build-ffi && bun run examples/visualizer.ts",
-    "check:rust": "cargo check --manifest-path core/Cargo.toml",
-    "check": "bun run typecheck && bun run check:rust"
+    "bench": "bun run bench/render.ts",
+    "anki": "bun run examples/anki.ts",
+    "anitrack": "bun run examples/anitrack.ts",
+    "ai-agent": "bun run examples/ai-agent.ts",
+    "fmt": "oxfmt . '!taffy-ts/**' '!dump/**'",
+    "fmt-check": "oxfmt --check . '!taffy-ts/**' '!dump/**'",
+    "lint": "oxlint --ignore-pattern 'taffy-ts/**' .",
+    "smoke": "bun run scripts/smoke.ts",
+    "snake": "bun run examples/snake.ts",
+    "test": "bun test ./test",
+    "typecheck": "bun x tsgo -p tsconfig.check.json",
+    "visualizer": "bun run examples/visualizer.ts",
+    "check": "bun run --cwd taffy-ts check && bun run typecheck && bun run lint && bun run test && bun run bench && bun run smoke"
   },
   "devDependencies": {
-    "@ff-labs/fff-node": "^0.7.0",
     "@types/bun": "^1.3.13",
     "@types/node": "^24",
     "@typescript/native-preview": "^7.0.0-dev.20260421.2",
-    "koffi": "^2.16.1",
     "oxfmt": "^0.46.0",
     "oxlint": "^1.61.0"
-  },
-  "optionalDependencies": {
-    "@frixaco/letui-darwin-arm64": "0.4.0",
-    "@frixaco/letui-linux-x64": "0.4.0",
-    "@frixaco/letui-win32-x64": "0.4.0"
   }
 }

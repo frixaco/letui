@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AlignContent, AlignItems, AvailableSpace, AvailableSpaceSize, Dimension, Display, LengthPercentageAuto, Point, Rect, Size, Style, TaffyTree, } from "../src/index.js";
 import type { NodeId } from "../src/index.js";
-test("Rust hand-written relayout keeps repeated layout locations stable", () => {
+test("relayout keeps repeated layout locations stable", () => {
     const taffy = TaffyTree.new();
     const node1 = taffy.newLeaf(new Style({ size: new Size(Dimension.length(8), Dimension.length(80)) }));
     const node0 = taffy.newWithChildren(new Style({
@@ -22,7 +22,7 @@ test("Rust hand-written relayout keeps repeated layout locations stable", () => 
         assert.deepEqual(taffy.layout(node1).location, initial1);
     }
 });
-test("Rust hand-written relayout toggles root display none", () => {
+test("relayout toggles root display none", () => {
     const taffy = TaffyTree.new();
     const hiddenStyle = sizedDisplay(Display.None);
     const flexStyle = sizedDisplay(Display.Flex);
@@ -36,7 +36,7 @@ test("Rust hand-written relayout toggles root display none", () => {
     taffy.computeLayout(node, AvailableSpaceSize.maxContent());
     assertLayout(taffy, node, new Point(0, 0), Size.zero());
 });
-test("Rust hand-written relayout toggles root display none with children recursively", () => {
+test("relayout toggles root display none with children recursively", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(new Style({ size: new Size(Dimension.length(800), Dimension.length(100)) }));
     const parent = taffy.newWithChildren(new Style({ size: new Size(Dimension.length(800), Dimension.length(100)) }), [child]);
@@ -51,7 +51,7 @@ test("Rust hand-written relayout toggles root display none with children recursi
     assert.deepEqual(taffy.layout(parent).size, new Size(800, 100));
     assert.deepEqual(taffy.layout(child).size, new Size(800, 100));
 });
-test("Rust hand-written relayout toggles flex display none child and container", () => {
+test("relayout toggles flex display none child and container", () => {
     const childTree = TaffyTree.new();
     const hiddenStyle = sizedDisplay(Display.None);
     const flexStyle = sizedDisplay(Display.Flex);
@@ -77,7 +77,7 @@ test("Rust hand-written relayout toggles flex display none child and container",
     containerTree.computeLayout(containerRoot, AvailableSpaceSize.maxContent());
     assertLayout(containerTree, containerRoot, new Point(0, 0), Size.zero());
 });
-test("Rust hand-written relayout toggles grid display none child and container", () => {
+test("relayout toggles grid display none child and container", () => {
     const childTree = TaffyTree.new();
     const hiddenStyle = sizedDisplay(Display.None);
     const gridStyle = sizedDisplay(Display.Grid);
@@ -103,7 +103,7 @@ test("Rust hand-written relayout toggles grid display none child and container",
     containerTree.computeLayout(containerRoot, AvailableSpaceSize.maxContent());
     assertLayout(containerTree, containerRoot, new Point(0, 0), Size.zero());
 });
-test("Rust hand-written relayout remains stable with cumulative rounding", () => {
+test("relayout remains stable with cumulative rounding", () => {
     const taffy = TaffyTree.new();
     taffy.enableRounding();
     const inner = taffy.newLeaf(new Style({ minSize: new Size(Dimension.length(300), Dimension.auto()) }));

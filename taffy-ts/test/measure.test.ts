@@ -10,13 +10,13 @@ type MeasureContext = FixedMeasureContext | AspectRatioMeasureContext;
 const HUNDRED_HUNDRED: FixedMeasureContext = { type: "fixed", width: 100, height: 100 };
 const HUNDRED_FIFTY: FixedMeasureContext = { type: "fixed", width: 100, height: 50 };
 const FIFTY_FIFTY: FixedMeasureContext = { type: "fixed", width: 50, height: 50 };
-test("Rust hand-written measure root uses node context intrinsic size", () => {
+test("measure root uses node context intrinsic size", () => {
     const taffy = TaffyTree.new();
     const node = taffy.newLeafWithContext(Style.default(), fixed(100, 100));
     taffy.computeLayoutWithMeasure(node, AvailableSpaceSize.maxContent(), testMeasureFunction);
     assert.deepEqual(taffy.layout(node).size, new Size(100, 100));
 });
-test("Rust hand-written measure child sizes parent and child from measured content", () => {
+test("measure child sizes parent and child from measured content", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeafWithContext(Style.default(), fixed(100, 100));
     const node = taffy.newWithChildren(Style.default(), [child]);
@@ -24,7 +24,7 @@ test("Rust hand-written measure child sizes parent and child from measured conte
     assert.deepEqual(taffy.layout(node).size, new Size(100, 100));
     assert.deepEqual(taffy.layout(child).size, new Size(100, 100));
 });
-test("Rust hand-written measure child constraint keeps child intrinsic width", () => {
+test("measure child constraint keeps child intrinsic width", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeafWithContext(Style.default(), fixed(100, 100));
     const node = taffy.newWithChildren(new Style({ size: new Size(Dimension.length(50), Dimension.auto()) }), [child]);
@@ -32,7 +32,7 @@ test("Rust hand-written measure child constraint keeps child intrinsic width", (
     assert.deepEqual(taffy.layout(node).size, new Size(50, 100));
     assert.deepEqual(taffy.layout(child).size, new Size(100, 100));
 });
-test("Rust hand-written measure child constraint includes parent padding", () => {
+test("measure child constraint includes parent padding", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeafWithContext(Style.default(), fixed(100, 100));
     const node = taffy.newWithChildren(new Style({
@@ -45,7 +45,7 @@ test("Rust hand-written measure child constraint includes parent padding", () =>
     assert.deepEqual(taffy.layout(child).location, new Point(10, 10));
     assert.deepEqual(taffy.layout(child).size, new Size(100, 100));
 });
-test("Rust hand-written flex measurement remeasures grow, shrink, and stretch cases", () => {
+test("flex measurement remeasures grow, shrink, and stretch cases", () => {
     const growTree = TaffyTree.new();
     const growFixed = growTree.newLeaf(new Style({ size: new Size(Dimension.length(50), Dimension.length(50)) }));
     const growMeasured = growTree.newLeafWithContext(new Style({ flexGrow: 1 }), FIFTY_FIFTY);
@@ -67,7 +67,7 @@ test("Rust hand-written flex measurement remeasures grow, shrink, and stretch ca
     });
     assert.deepEqual(stretchTree.layout(stretchChild).size, new Size(100, 100));
 });
-test("Rust hand-written flex measurement remeasures aspect-ratio children after flexing", () => {
+test("flex measurement remeasures aspect-ratio children after flexing", () => {
     const growTree = TaffyTree.new();
     const growFixed = growTree.newLeaf(new Style({ size: new Size(Dimension.length(50), Dimension.length(50)) }));
     const growMeasured = growTree.newLeafWithContext(new Style({ flexGrow: 1 }), aspectRatio(10, 2));
@@ -87,7 +87,7 @@ test("Rust hand-written flex measurement remeasures aspect-ratio children after 
     shrinkTree.computeLayoutWithMeasure(shrinkRoot, AvailableSpaceSize.maxContent(), testMeasureFunction);
     assert.deepEqual(shrinkTree.layout(shrinkMeasured).size, new Size(100, 200));
 });
-test("Rust hand-written explicit sizes and flex-basis override measurement", () => {
+test("explicit sizes and flex-basis override measurement", () => {
     const widthTree = TaffyTree.new();
     const widthChild = widthTree.newLeafWithContext(new Style({ size: new Size(Dimension.length(50), Dimension.auto()) }), HUNDRED_HUNDRED);
     const widthRoot = widthTree.newWithChildren(Style.default(), [widthChild]);
@@ -106,7 +106,7 @@ test("Rust hand-written explicit sizes and flex-basis override measurement", () 
     assert.deepEqual(basisTree.layout(basisChild0).size, new Size(100, 100));
     assert.deepEqual(basisTree.layout(basisChild1).size, new Size(100, 100));
 });
-test("Rust hand-written stretch, absolute, and missing-context measure cases match Rust", () => {
+test("stretch, absolute, and missing-context measure cases match reference", () => {
     const stretchTree = TaffyTree.new();
     const stretchChild = stretchTree.newLeafWithContext(Style.default(), FIFTY_FIFTY);
     const stretchRoot = stretchTree.newWithChildren(new Style({ size: new Size(Dimension.length(100), Dimension.length(100)) }), [stretchChild]);

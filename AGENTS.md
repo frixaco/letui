@@ -1,18 +1,13 @@
 # Project information
 
-This is a TUI library written in Rust and TypeScript.
-The core backend for the library is written in Rust for maximum performance.
-The API/wrapper for the library is written in TypeScript for acccess to a wide ecosystem.
-Communication with Rust backend is achieved thanks to Bun's FFI support.
-TypeScript wrapper exposes component API to build UI elements.
+This is a TUI library written in TypeScript for Bun.
+The component API, Taffy layout engine, renderer, terminal surface, and input runtime all run in-process in TypeScript.
 
 **Performance goal**: Keep <1ms average response time for each render.
 
 ## Runtime and environment
 
 Default to using Bun instead of Node.js.
-
-For more information, read the official Bun docs, especially FFI and package-manager references.
 
 ## Status
 

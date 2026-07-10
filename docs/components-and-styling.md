@@ -75,16 +75,16 @@ Button(input: ButtonProps, children?: Node[]): Node
 
 ## ScrollView Scrolling
 
-- `ScrollView` is the only public scrolling container in v1
-- scrolling is vertical-only in v1
+- `ScrollView` is the public scrolling container
+- scrolling is vertical-only
 - `scrollY` is paint-time state, not tree-shape state, so updates stay on the style-diff path
-- Rust clamps `scrollY`, floors fractional values to whole rows, and decides final visible hit-testing
-- `Row`, `Column`, and `Box` do not expose scrolling props in v1
+- the renderer clamps `scrollY`, floors fractional values to whole rows, and decides final visible hit-testing
+- `Row`, `Column`, and `Box` do not expose scrolling props
 
 ## Current scope
 
 - Public styling/layout surface is the exported `StyleProps` + `BoxProps` above.
-- `ScrollViewProps` adds the only public scrolling surface in v1: `scrollY`, `onScroll`, and scroll methods on the returned node.
+- `ScrollViewProps` adds `scrollY`, `onScroll`, and scroll methods on the returned node.
 - Prefer `Row` / `Column` for common cases; use `Box` when you need explicit `direction`, including reverse directions.
 - `Text` wrapping and overflow are renderer-owned behaviors; do not expect JS-side wrapping helpers to be the source of truth.
 - `Input` supports wrapped rendering for its current text, but full editor behavior is still out of scope.

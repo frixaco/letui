@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AbsoluteAxis, AlignContent, AvailableSpace, AvailableSpaceSize, Cache, ClearState, CollapsibleMarginSet, Dimension, Direction, Display, FlexDirection, Layout, LayoutInput, LayoutOutput, LengthPercentage, LengthPercentageAuto, Line, NodeId, Overflow, Point, Rect, RequestedAxis, RunMode, SizingMode, Size, Style, TaffyError, TaffyTree, applyAlignmentFallback, apply_alignment_fallback, computeBlockLayout, computeFlexboxLayout, computeGridLayout, computeLeafLayout, computeCachedLayout, compute_cached_layout, computeAlignmentOffset, compute_alignment_offset, computeContentSizeContribution, compute_content_size_contribution, computeHiddenLayout, compute_hidden_layout, computeRootLayout, compute_root_layout, compute_block_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout, requestedAxisFromAbsoluteAxis, requestedAxisIntoAbsoluteAxis, roundLayout, round_layout, printTree, print_tree, writeTree, write_tree, abs, ceil, f32Max, f32Min, f32_max, f32_min, floor, newVecWithCapacity, new_vec_with_capacity, round, singleValueVec, single_value_vec, } from "../src/index.js";
 import { NodeId as NodeIdFromNodeModule } from "../src/tree/node.js";
-test("low-level compute exports include Rust snake_case names", () => {
+test("low-level compute exports include reference snake_case names", () => {
     assert.equal(compute_cached_layout, computeCachedLayout);
     assert.equal(compute_root_layout, computeRootLayout);
     assert.equal(compute_hidden_layout, computeHiddenLayout);
@@ -15,7 +15,7 @@ test("low-level compute exports include Rust snake_case names", () => {
     assert.equal(compute_alignment_offset, computeAlignmentOffset);
     assert.equal(compute_content_size_contribution, computeContentSizeContribution);
 });
-test("alignment fallback follows Rust shared alignment rules", () => {
+test("alignment fallback follows reference shared alignment rules", () => {
     assert.equal(applyAlignmentFallback(10, 1, AlignContent.Stretch, false), AlignContent.FlexStart);
     assert.equal(applyAlignmentFallback(10, 1, AlignContent.SpaceBetween, false), AlignContent.FlexStart);
     assert.equal(applyAlignmentFallback(10, 1, AlignContent.SpaceAround, false), AlignContent.Center);
@@ -23,7 +23,7 @@ test("alignment fallback follows Rust shared alignment rules", () => {
     assert.equal(applyAlignmentFallback(-1, 3, AlignContent.Center, true), AlignContent.Start);
     assert.equal(applyAlignmentFallback(-1, 3, AlignContent.Center, false), AlignContent.Center);
 });
-test("alignment offsets follow Rust shared alignment rules", () => {
+test("alignment offsets follow reference shared alignment rules", () => {
     assert.equal(computeAlignmentOffset(100, 3, 10, AlignContent.Start, false, true), 0);
     assert.equal(computeAlignmentOffset(100, 3, 10, AlignContent.End, false, true), 100);
     assert.equal(computeAlignmentOffset(100, 3, 10, AlignContent.Center, false, true), 50);
@@ -35,13 +35,13 @@ test("alignment offsets follow Rust shared alignment rules", () => {
     assert.equal(computeAlignmentOffset(-90, 3, 10, AlignContent.SpaceBetween, false, false), 10);
     assert.equal(computeAlignmentOffset(Number.NaN, 3, 10, AlignContent.SpaceBetween, false, false), 10);
 });
-test("content size contribution follows Rust overflow and negative-location rules", () => {
+test("content size contribution follows reference overflow and negative-location rules", () => {
     assert.deepEqual(computeContentSizeContribution(new Point(-10, -20), new Size(50, 60), new Size(100, 30), new Point(Overflow.Visible, Overflow.Hidden)), new Size(100, 60));
     assert.deepEqual(computeContentSizeContribution(new Point(10, 10), new Size(0, 60), new Size(100, 100), new Point(Overflow.Visible, Overflow.Visible)), new Size(110, 110));
     assert.deepEqual(computeContentSizeContribution(new Point(10, 10), Size.zero(), Size.zero(), new Point(Overflow.Visible, Overflow.Visible)), Size.zero());
     assert.deepEqual(computeContentSizeContribution(new Point(0, 0), new Size(20, 30), new Size(Number.NaN, Number.NaN), new Point(Overflow.Visible, Overflow.Visible)), new Size(20, 30));
 });
-test("sys helpers mirror Rust allocation and f32 helpers", () => {
+test("sys helpers mirror reference allocation and f32 helpers", () => {
     assert.deepEqual(newVecWithCapacity(4), []);
     assert.deepEqual(new_vec_with_capacity(2), []);
     assert.deepEqual(singleValueVec("x"), ["x"]);
@@ -59,7 +59,7 @@ test("sys helpers mirror Rust allocation and f32 helpers", () => {
     assert.deepEqual(new Size(Number.NaN, 10).f32Max(new Size(4, Number.NaN)), new Size(4, 10));
     assert.deepEqual(new Size(Number.NaN, 10).f32Min(new Size(4, Number.NaN)), new Size(4, 10));
 });
-test("layout input and output constants mirror Rust constructors", () => {
+test("layout input and output constants mirror reference constructors", () => {
     const hiddenInput = LayoutInput.HIDDEN;
     assert.equal(hiddenInput.runMode, RunMode.PerformHiddenLayout);
     assert.equal(hiddenInput.run_mode, RunMode.PerformHiddenLayout);
@@ -90,7 +90,7 @@ test("layout input and output constants mirror Rust constructors", () => {
     hiddenOutput.size.width = 99;
     assert.deepEqual(LayoutOutput.HIDDEN.size, Size.zero());
 });
-test("tree layout data helpers expose Rust snake_case aliases", () => {
+test("tree layout data helpers expose reference snake_case aliases", () => {
     const input = new LayoutInput({
         run_mode: RunMode.ComputeSize,
         sizing_mode: SizingMode.ContentSize,
@@ -167,7 +167,7 @@ test("tree layout data helpers expose Rust snake_case aliases", () => {
     assert.equal(nanLayout.scroll_width(), 0);
     assert.equal(nanLayout.scroll_height(), 0);
 });
-test("requested axis conversion helpers mirror Rust From and TryFrom implementations", () => {
+test("requested axis conversion helpers mirror From and TryFrom implementations", () => {
     assert.equal(requestedAxisFromAbsoluteAxis(AbsoluteAxis.Horizontal), RequestedAxis.Horizontal);
     assert.equal(requestedAxisFromAbsoluteAxis(AbsoluteAxis.Vertical), RequestedAxis.Vertical);
     assert.equal(requestedAxisIntoAbsoluteAxis(RequestedAxis.Horizontal), AbsoluteAxis.Horizontal);
@@ -191,7 +191,7 @@ test("tree cache prevents repeat measurement for unchanged leaf input and dirty 
     taffy.computeLayoutWithMeasure(node, AvailableSpaceSize.maxContent(), measure);
     assert.equal(calls, 2);
 });
-test("computeCachedLayout mirrors Rust cache wrapper behavior", () => {
+test("computeCachedLayout matches cache wrapper behavior", () => {
     const taffy = TaffyTree.new();
     const node = taffy.newLeaf(Style.default());
     const input = new LayoutInput({
@@ -216,7 +216,7 @@ test("computeCachedLayout mirrors Rust cache wrapper behavior", () => {
     assert.deepEqual(first.size, new Size(12, 34));
     assert.deepEqual(second.size, new Size(12, 34));
 });
-test("roundLayout mirrors Rust cumulative tree rounding", () => {
+test("roundLayout matches cumulative tree rounding", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(Style.default());
     const parent = taffy.newWithChildren(Style.default(), [child]);
@@ -246,7 +246,7 @@ test("roundLayout mirrors Rust cumulative tree rounding", () => {
     assert.deepEqual(taffy.getFinalLayout(child).size, new Size(3, 3));
     assert.deepEqual(taffy.getFinalLayout(child).contentSize, new Size(4, 4));
 });
-test("computeHiddenLayout mirrors Rust recursive hidden layout helper", () => {
+test("computeHiddenLayout matches recursive hidden layout helper", () => {
     const taffy = TaffyTree.new();
     const grandchild = taffy.newLeaf(new Style({ size: new Size(Dimension.length(30), Dimension.length(40)) }));
     const child = taffy.newWithChildren(new Style({ display: Display.Flex }), [grandchild]);
@@ -272,7 +272,7 @@ test("computeHiddenLayout mirrors Rust recursive hidden layout helper", () => {
         assert.equal(taffy.cacheGet(node, input), undefined);
     }
 });
-test("computeRootLayout mirrors Rust root layout helper", () => {
+test("computeRootLayout matches root layout helper", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(new Style({ size: new Size(Dimension.auto(), Dimension.length(10)) }));
     const root = taffy.newWithChildren(new Style({
@@ -286,7 +286,7 @@ test("computeRootLayout mirrors Rust root layout helper", () => {
     assert.deepEqual(taffy.getUnroundedLayout(root).margin, new Rect(10, 15, 0, 0));
     assert.deepEqual(taffy.getUnroundedLayout(child).size, new Size(75, 10));
 });
-test("Rust hand-written root constraints cases match expected root leaf sizes", () => {
+test("root constraints cases match expected root leaf sizes", () => {
     const percentageTree = TaffyTree.new();
     const percentageRoot = percentageTree.newLeaf(new Style({ size: new Size(Dimension.percent(1), Dimension.percent(1)) }));
     percentageTree.computeLayout(percentageRoot, new Size(AvailableSpace.definite(100), AvailableSpace.definite(200)));
@@ -309,7 +309,7 @@ test("Rust hand-written root constraints cases match expected root leaf sizes", 
     paddingBorderTree.computeLayout(paddingBorderRoot, Size.MAX_CONTENT);
     assert.deepEqual(paddingBorderTree.layout(paddingBorderRoot).size, new Size(40, 40));
 });
-test("Rust hand-written min and max overrides size in the documented order", () => {
+test("min and max overrides size in the documented order", () => {
     const minOverridesMaxTree = TaffyTree.new();
     const minOverridesMax = minOverridesMaxTree.newLeaf(new Style({
         size: new Size(Dimension.length(50), Dimension.length(50)),
@@ -339,14 +339,14 @@ test("TaffyTree.withCapacity creates a usable tree", () => {
     assert.equal(taffy.totalNodeCount(), 1);
     assert.equal(taffy.childCount(node), 0);
 });
-test("TaffyTree.default mirrors Rust Default constructor", () => {
+test("TaffyTree.default matches Default constructor", () => {
     const taffy = TaffyTree.default();
     const node = taffy.newLeaf(new Style({ size: new Size(Dimension.length(10.5), Dimension.length(20.5)) }));
     taffy.computeLayout(node, Size.MAX_CONTENT);
     assert.equal(taffy.totalNodeCount(), 1);
     assert.deepEqual(taffy.layout(node).size, new Size(11, 21));
 });
-test("TaffyTree snake_case high-level API aliases mirror Rust method names", () => {
+test("TaffyTree snake_case high-level API aliases mirror reference method names", () => {
     const taffy = TaffyTree.with_capacity(8);
     const measured = taffy.new_leaf_with_context(new Style({ size: new Size(Dimension.auto(), Dimension.auto()) }), { value: 4 });
     const first = taffy.new_leaf(new Style({ size: new Size(Dimension.length(10.5), Dimension.length(20.5)) }));
@@ -404,7 +404,7 @@ test("TaffyTree snake_case high-level API aliases mirror Rust method names", () 
     }
     assert.deepEqual(logs, [writeTree(taffy, parent)]);
 });
-test("NodeId mirrors Rust new and numeric conversions", () => {
+test("NodeId matches new and numeric conversions", () => {
     const node = NodeId.new(42);
     assert.equal(NodeIdFromNodeModule, NodeId);
     assert.deepEqual(node, new NodeId(42));
@@ -433,7 +433,7 @@ test("TaffyTree removeChildrenRange detaches children and dirties the parent", (
     assert.equal(taffy.parent(child2), undefined);
     assert.equal(taffy.dirty(parent), true);
 });
-test("TaffyTree remove detaches removed hierarchy like Rust", () => {
+test("TaffyTree remove detaches removed hierarchy like reference", () => {
     const taffy = TaffyTree.new();
     const grandchild = taffy.newLeaf(Style.default());
     const child = taffy.newWithChildren(Style.default(), [grandchild]);
@@ -460,7 +460,7 @@ test("TaffyTree remove clears child parent references before later mutation", ()
     assert.deepEqual(taffy.children(child), []);
     assert.equal(taffy.parent(child), undefined);
 });
-test("TaffyTree setNodeContext remeasures cached leaves like Rust", () => {
+test("TaffyTree setNodeContext remeasures cached leaves like reference", () => {
     const measure = (knownDimensions: Size, _availableSpace: Size, _nodeId: NodeId<Size>, context: Size | undefined) => knownDimensions.unwrapOr(context ?? Size.zero());
     const taffy = TaffyTree.new();
     const measured = taffy.newLeafWithContext(Style.default(), new Size(200, 200));
@@ -476,7 +476,7 @@ test("TaffyTree setNodeContext remeasures cached leaves like Rust", () => {
     taffy.computeLayoutWithMeasure(unmeasured, AvailableSpaceSize.maxContent(), measure);
     assert.equal(taffy.layout(unmeasured).size.width, 50);
 });
-test("TaffyTree setChildren reparents existing children like Rust", () => {
+test("TaffyTree setChildren reparents existing children like reference", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(Style.default());
     const oldParent = taffy.newWithChildren(Style.default(), [child]);
@@ -486,7 +486,7 @@ test("TaffyTree setChildren reparents existing children like Rust", () => {
     assert.deepEqual(taffy.children(newParent), [child]);
     assert.equal(taffy.parent(child), newParent);
 });
-test("TaffyTree layout locations use top-left coordinates like Rust", () => {
+test("TaffyTree layout locations use top-left coordinates like reference", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(new Style({
         size: new Size(Dimension.percent(1), Dimension.percent(1)),
@@ -499,7 +499,7 @@ test("TaffyTree layout locations use top-left coordinates like Rust", () => {
     assert.equal(taffy.layout(child).location.x, 10);
     assert.equal(taffy.layout(child).location.y, 30);
 });
-test("TaffyTree parent and child operation errors mirror Rust variants", () => {
+test("TaffyTree parent and child operation errors mirror variants", () => {
     const taffy = TaffyTree.new();
     const parent = taffy.newLeaf(Style.default());
     const child = taffy.newLeaf(Style.default());
@@ -511,7 +511,7 @@ test("TaffyTree parent and child operation errors mirror Rust variants", () => {
     assert.throws(() => taffy.newWithChildren(Style.default(), [missing]), /Child Node NodeId\(999\) is not in the TaffyTree instance/);
     assert.throws(() => taffy.setChildren(parent, [missing]), /Child Node NodeId\(999\) is not in the TaffyTree instance/);
 });
-test("TaffyError carries Rust variant data", () => {
+test("TaffyError carries variant data", () => {
     const taffy = TaffyTree.new();
     const parent = taffy.newLeaf(Style.default());
     const child = taffy.newLeaf(Style.default());
@@ -531,7 +531,7 @@ test("TaffyError carries Rust variant data", () => {
     assert.equal(inputError.kind, "InvalidInputNode");
     assert.equal(inputError.node, missing);
 });
-test("TaffyTree context accessors mirror Rust context lookups", () => {
+test("TaffyTree context accessors mirror reference context lookups", () => {
     const taffy = TaffyTree.new();
     const first = taffy.newLeafWithContext(Style.default(), { width: 10 });
     const second = taffy.newLeafWithContext(Style.default(), { width: 20 });
@@ -545,7 +545,7 @@ test("TaffyTree context accessors mirror Rust context lookups", () => {
     assert.equal(taffy.getDisjointNodeContextMut([first, first]), undefined);
     assert.equal(taffy.getDisjointNodeContextMut([first, missing]), undefined);
 });
-test("TaffyTree traversal and style trait hooks mirror Rust aliases", () => {
+test("TaffyTree traversal and style trait hooks mirror reference aliases", () => {
     const taffy = TaffyTree.new();
     const child0Style = Style.default();
     const child0 = taffy.newLeaf(child0Style);
@@ -582,7 +582,7 @@ test("TaffyTree traversal and style trait hooks mirror Rust aliases", () => {
     assert.equal(taffy.getDebugLabel(grid), "GRID");
     assert.equal(taffy.getDebugLabel(hidden), "NONE");
 });
-test("TaffyTree snake_case trait aliases mirror Rust trait names", () => {
+test("TaffyTree snake_case trait aliases mirror reference trait names", () => {
     const taffy = TaffyTree.new();
     const childStyle = Style.default();
     const child = taffy.newLeaf(childStyle);
@@ -648,7 +648,7 @@ test("TaffyTree snake_case trait aliases mirror Rust trait names", () => {
     assert.deepEqual(printTreeTrait.get_final_layout(child).size, new Size(7, 8));
     assert.equal(printTreeTrait.get_debug_label(parent), "FLEX ROW");
 });
-test("writeTree mirrors Rust debug tree output", () => {
+test("writeTree matches debug tree output", () => {
     const taffy = TaffyTree.new();
     const first = taffy.newLeaf(new Style({ size: new Size(Dimension.length(10), Dimension.length(20)) }));
     const second = taffy.newLeaf(new Style({ size: new Size(Dimension.length(30), Dimension.length(40)) }));
@@ -662,7 +662,7 @@ test("writeTree mirrors Rust debug tree output", () => {
     ].join("\n"));
     assert.equal(write_tree(taffy, root), writeTree(taffy, root));
 });
-test("printTree writes the Rust debug tree string", () => {
+test("printTree writes the debug tree string", () => {
     const taffy = TaffyTree.new();
     const root = taffy.newLeaf(new Style({ size: new Size(Dimension.length(10), Dimension.length(20)) }));
     const logs: string[] = [];
@@ -680,7 +680,7 @@ test("printTree writes the Rust debug tree string", () => {
     }
     assert.deepEqual(logs, [writeTree(taffy, root), writeTree(taffy, root)]);
 });
-test("TaffyTree printTree method mirrors the Rust print_tree high-level API", () => {
+test("TaffyTree printTree method mirrors the reference print_tree high-level API", () => {
     const taffy = TaffyTree.new();
     const root = taffy.newLeaf(new Style({ size: new Size(Dimension.length(10), Dimension.length(20)) }));
     const logs: string[] = [];
@@ -698,7 +698,7 @@ test("TaffyTree printTree method mirrors the Rust print_tree high-level API", ()
     }
     assert.deepEqual(logs, [writeTree(taffy, root), writeTree(taffy, root)]);
 });
-test("TaffyTree cache and rounded layout trait hooks mirror Rust behavior", () => {
+test("TaffyTree cache and rounded layout trait hooks mirror reference behavior", () => {
     const taffy = TaffyTree.new();
     const node = taffy.newLeaf(Style.default());
     const input = new LayoutInput({
@@ -775,7 +775,7 @@ test("root leaf rounding uses Taffy's round-half-up behavior", () => {
     assert.equal(taffy.layout(node).padding.top, 1);
     assert.equal(taffy.layout(node).padding.bottom, 2);
 });
-test("Rust hand-written rounding does not leave gaps between adjacent rounded children", () => {
+test("rounding does not leave gaps between adjacent rounded children", () => {
     const taffy = TaffyTree.new();
     const squareSize = new Size(Dimension.length(100.3), Dimension.length(100.3));
     const childA = taffy.newLeaf(new Style({ size: squareSize }));
@@ -789,7 +789,7 @@ test("Rust hand-written rounding does not leave gaps between adjacent rounded ch
     const layoutB = taffy.layout(childB);
     assert.equal(layoutA.location.x + layoutA.size.width, layoutB.location.x);
 });
-test("Cache stores ComputeSize entries in Rust-compatible slots", () => {
+test("Cache stores ComputeSize entries in slots", () => {
     const cache = Cache.new();
     const input = new LayoutInput({
         runMode: RunMode.ComputeSize,

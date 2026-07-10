@@ -23,7 +23,7 @@ test("DebugLogger stays silent until explicitly enabled", () => {
     assert.deepEqual(lines, []);
 });
 
-test("DebugLogger mirrors Rust node indentation and labelled log helpers", () => {
+test("DebugLogger matches node indentation and labelled log helpers", () => {
     const lines: string[] = [];
     const logger = new DebugLogger((line: string) => lines.push(line));
     logger.enable();

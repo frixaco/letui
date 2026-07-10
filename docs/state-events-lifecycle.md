@@ -5,10 +5,10 @@
 - UI is a node tree
 - Signals hold mutable state
 - `ff(...)` reacts to signal reads/writes
-- JS snapshots current node state each reactive frame
-- same-shape trees keep Rust tree state alive and send deltas only
-- shape changes clear and rebuild Rust tree state once
-- Rust still owns layout, paint, terminal buffers, and incremental flush
+- the renderer resolves current node state each reactive frame
+- same-shape trees keep Taffy nodes and layout caches alive
+- shape changes rebuild the internal Taffy tree once
+- TypeScript owns layout, paint, terminal buffers, and incremental flush
 
 ## State primitives
 
@@ -59,18 +59,18 @@ refreshAppearance(): Promise<"light" | "dark" | "unknown">
 
 ## Render pipeline
 
-1. JS builds a sent-tree snapshot from the current nodes
-2. If previous and current tree shapes match, JS emits style deltas plus text ops (`SetText`, `DeleteTextRange`)
-3. If shape differs, JS clears Rust tree state and re-inserts the full tree
-4. Rust applies ops, resolves newline boundaries plus wrap/overflow, runs layout + paint, then updates the terminal buffer
-5. JS reads frame rectangles back into each node for measurement, while interaction uses the Rust-owned hitmap from the final painted frame
-6. Rust flushes only changed terminal cells
+1. The renderer compares component structure with its persistent Taffy tree
+2. If shape matches, changed styles and text measure contexts update in place
+3. If shape differs, the internal Taffy tree is rebuilt once
+4. Taffy computes layout and the renderer paints the typed-array terminal buffer and hit maps
+5. Frame rectangles are written directly onto each component node
+6. The terminal writer diffs buffers and flushes only changed cells
 
 Debug phase names in the quit summary and optional metrics file match that pipeline:
 
-- `js`: JS-side snapshot, diff, op drain, and FFI op submit
-- `render`: Rust layout + paint
-- `sync`: frame rectangles copied back into JS nodes
+- `js`: application-side reactive setup for the frame
+- `render`: Taffy layout, text wrapping, paint, and frame extraction
+- `sync`: renderer results installed for event dispatch
 - `flush`: terminal I/O
 - `worst`: single slowest recorded frame with exact bucket breakdown
 
@@ -111,7 +111,7 @@ const viewport = ScrollView(
 - Clicking empty space blurs current focus
 - Keyboard input routed to focused node first
 - If focused node consumes key event, global `onKey` handler does not run
-- For scrolled content, Rust is the final authority on which interactive cells are visible/clickable
+- For scrolled content, the renderer's final hit map is the authority on visible/clickable cells
 
 ## Input behavior
 
@@ -154,5 +154,5 @@ onKey("q", quit);
 ## Practical performance rule
 
 - Keep long-lived nodes and mutate them with `setText`, `setStyle`, or signals
-- Rebuilding whole subtrees every tick changes tree shape and forces Rust tree rebuilds
-- `ScrollView.setStyle({ scrollY })` stays on the style-diff path, so vertical scrolling does not require remounting children
+- Rebuilding whole subtrees every tick changes tree shape and forces Taffy tree rebuilds
+- `ScrollView.setStyle({ scrollY })` updates paint state without remounting children

@@ -4,7 +4,7 @@ import { AvailableSpace, AvailableSpaceSize, Display, Size, Style, TaffyTree, } 
 import type { NodeId } from "../src/index.js";
 
 type FixedMeasureContext = { count: number; width: number; height: number };
-test("Rust hand-written caching limits flexbox measurement count through deep wrapper trees", () => {
+test("caching limits flexbox measurement count through deep wrapper trees", () => {
     const taffy = TaffyTree.new();
     const leaf = taffy.newLeafWithContext(Style.default(), fixedContext(50, 50));
     let node = taffy.newWithChildren(Style.default(), [leaf]);
@@ -14,7 +14,7 @@ test("Rust hand-written caching limits flexbox measurement count through deep wr
     taffy.computeLayoutWithMeasure(node, AvailableSpaceSize.maxContent(), testMeasureFunction);
     assert.equal(taffy.getNodeContextMut(leaf)?.count, 4);
 });
-test("Rust hand-written caching limits grid measurement count through deep wrapper trees", () => {
+test("caching limits grid measurement count through deep wrapper trees", () => {
     const taffy = TaffyTree.new();
     const leaf = taffy.newLeafWithContext(new Style({ display: Display.Grid }), fixedContext(50, 50));
     let node = taffy.newWithChildren(Style.default(), [leaf]);

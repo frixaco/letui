@@ -62,7 +62,7 @@ test("FloatContext findContentSlot can continue after a previous segment", () =>
     assert.equal(secondSlot.segment_id, 2);
     assert.deepEqual({ x: secondSlot.x, y: secondSlot.y, width: secondSlot.width }, { x: 2, y: 52, width: 50 });
 });
-test("FloatIntrinsicWidthCalculator mirrors Rust min and max content contributions", () => {
+test("FloatIntrinsicWidthCalculator matches min and max content contributions", () => {
     const minContent = FloatIntrinsicWidthCalculator.new(AvailableSpace.minContent());
     minContent.addFloat(40, FloatDirection.Left, Clear.None);
     minContent.add_float(60, FloatDirection.Right, Clear.None);

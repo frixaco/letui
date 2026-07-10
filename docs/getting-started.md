@@ -4,17 +4,13 @@
 
 - You are inside this repo
 - Bun installed
-- Rust toolchain installed (`cargo` available)
 - You are building a demo app under `examples/`
 
-## 1. Build native backend once
+## 1. Install dependencies
 
 ```bash
 bun install
-bun run build-ffi
 ```
-
-What this does: compiles `core/` with `cargo build --release`.
 
 ## 2. Create first demo file
 
@@ -96,6 +92,6 @@ bun run examples/<your-file>.ts
 - In `examples/`, relative import from `../index.ts` is simplest starter path
 - Existing examples also use `@/...` alias for modules inside `src/`
 - Current public props come from `StyleProps`, `BoxProps`, `ScrollViewProps`, `TextProps`, `InputProps`, and `ButtonProps` in `src/types.ts`
-- Keep node references stable across updates when you can; same-shape trees let runtime send deltas instead of rebuilding Rust tree state
+- Keep node references stable across updates when you can; same-shape trees retain Taffy layout caches
 - `run(root, { debug: true })` prints phase timings on quit: `js`, `render`, `sync`, `flush`, plus worst-frame breakdown
 - To write those timings to a file, pass `run(root, { debug: true, metricsPath: "dump/metrics.txt" })`

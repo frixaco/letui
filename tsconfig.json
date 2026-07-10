@@ -10,7 +10,6 @@
 
     // Bundler mode
     "moduleResolution": "bundler",
-    "baseUrl": ".",
     "types": ["bun"],
     "paths": {
       "@": ["./index.ts"],
@@ -33,6 +32,5 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "include": ["index.ts", "src/**/*.ts", "src/**/*.d.ts", "examples/**/*.ts"],
-  "exclude": ["legacy"]
+  "include": ["index.ts", "src/**/*.ts", "src/**/*.d.ts", "examples/**/*.ts"]
 }

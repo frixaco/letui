@@ -131,7 +131,7 @@ const THREADS: readonly ThreadData[] = [
         accent: THEME.pink,
         body: [
           {
-            text: "  Keep node identity stable under theme changes and thread switches so the Rust tree can stay hot while only text and style deltas move through the bridge.",
+            text: "  Keep node identity stable under theme changes and thread switches so Taffy caches stay hot while layout and paint update directly.",
           },
         ],
       },

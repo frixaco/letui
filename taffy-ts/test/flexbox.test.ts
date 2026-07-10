@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AlignItems, AlignContent, AvailableSpace, AvailableSpaceSize, BoxSizing, Dimension, Direction, Display, FlexDirection, FlexWrap, LengthPercentage, LengthPercentageAuto, Overflow, Point, Position, Rect, Size, Style, TaffyTree, TrackSizingFunction, fr, lengthTrack, percentTrack, } from "../src/index.js";
-test("basic Rust example: centered percent-width flex child stretches in cross axis", () => {
+test("basic example: centered percent-width flex child stretches in cross axis", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(new Style({ size: new Size(Dimension.percent(0.5), Dimension.auto()) }));
     const root = taffy.newWithChildren(new Style({
@@ -14,7 +14,7 @@ test("basic Rust example: centered percent-width flex child stretches in cross a
     assert.equal(taffy.layout(child).location.x, 25);
     assert.equal(taffy.layout(child).location.y, 0);
 });
-test("flexbox_gap Rust example: row gap contributes to max-content container size and child offsets", () => {
+test("flexbox_gap example: row gap contributes to max-content container size and child offsets", () => {
     const taffy = TaffyTree.new();
     const childStyle = new Style({ size: new Size(Dimension.length(20), Dimension.length(20)) });
     const child0 = taffy.newLeaf(childStyle);
@@ -30,7 +30,7 @@ test("flexbox_gap Rust example: row gap contributes to max-content container siz
     assert.equal(taffy.layout(child2).location.x, 60);
     assert.equal(taffy.layout(child2).location.y, 0);
 });
-test("Rust XML block children in flex row and column preserve block sizing", () => {
+test("block children in flex row and column preserve block sizing", () => {
     const cases = [
         {
             flexDirection: FlexDirection.Row,
@@ -96,7 +96,7 @@ test("Rust XML block children in flex row and column preserve block sizing", () 
         }
     }
 });
-test("Rust XML flex children inside block participate in block layout", () => {
+test("flex children inside block participate in block layout", () => {
     for (const boxSizing of [BoxSizing.BorderBox, BoxSizing.ContentBox]) {
         for (const direction of [Direction.Ltr, Direction.Rtl]) {
             const taffy = TaffyTree.new();
@@ -135,7 +135,7 @@ test("Rust XML flex children inside block participate in block layout", () => {
         }
     }
 });
-test("Rust XML flex boxes block vertical margin collapse through block siblings", () => {
+test("flex boxes block vertical margin collapse through block siblings", () => {
     for (const boxSizing of [BoxSizing.BorderBox, BoxSizing.ContentBox]) {
         for (const direction of [Direction.Ltr, Direction.Rtl]) {
             const taffy = TaffyTree.new();
@@ -176,7 +176,7 @@ test("Rust XML flex boxes block vertical margin collapse through block siblings"
         }
     }
 });
-test("Rust XML flex boxes block first and last child margin collapse", () => {
+test("flex boxes block first and last child margin collapse", () => {
     const cases = [
         {
             flexMargin: new Rect(LengthPercentageAuto.zero(), LengthPercentageAuto.zero(), LengthPercentageAuto.length(10), LengthPercentageAuto.zero()),
@@ -231,7 +231,7 @@ test("Rust XML flex boxes block first and last child margin collapse", () => {
         }
     }
 });
-test("Rust XML blockflex overflow hidden can shrink below measured content", () => {
+test("blockflex overflow hidden can shrink below measured content", () => {
     for (const boxSizing of [BoxSizing.BorderBox, BoxSizing.ContentBox]) {
         for (const direction of [Direction.Ltr, Direction.Rtl]) {
             const taffy = TaffyTree.new();
@@ -272,7 +272,7 @@ test("Rust XML blockflex overflow hidden can shrink below measured content", () 
         }
     }
 });
-test("Rust XML gridflex row and column integration sizes grid flex item from measured cells", () => {
+test("gridflex row and column integration sizes grid flex item from measured cells", () => {
     const gridCellLocationsByDirection = new Map([
         [Direction.Ltr, [new Point(0, 0), new Point(20, 0), new Point(0, 10), new Point(20, 10)]],
         [Direction.Rtl, [new Point(20, 0), new Point(0, 0), new Point(20, 10), new Point(0, 10)]],
@@ -318,7 +318,7 @@ test("Rust XML gridflex row and column integration sizes grid flex item from mea
         }
     }
 });
-test("Rust XML gridflex kitchen-sink minimisations preserve intrinsic grid flex sizing", () => {
+test("gridflex kitchen-sink minimisations preserve intrinsic grid flex sizing", () => {
     for (const boxSizing of [BoxSizing.BorderBox, BoxSizing.ContentBox]) {
         for (const direction of [Direction.Ltr, Direction.Rtl]) {
             const taffy = TaffyTree.new();
@@ -355,7 +355,7 @@ test("Rust XML gridflex kitchen-sink minimisations preserve intrinsic grid flex 
         }
     }
 });
-test("Rust XML gridflex kitchen-sink nested auto grid keeps flex parent width", () => {
+test("gridflex kitchen-sink nested auto grid keeps flex parent width", () => {
     for (const boxSizing of [BoxSizing.BorderBox, BoxSizing.ContentBox]) {
         for (const direction of [Direction.Ltr, Direction.Rtl]) {
             const taffy = TaffyTree.new();
@@ -385,7 +385,7 @@ test("Rust XML gridflex kitchen-sink nested auto grid keeps flex parent width", 
         }
     }
 });
-test("Rust XML gridflex kitchen-sink percentage tracks overflow intrinsic grid width", () => {
+test("gridflex kitchen-sink percentage tracks overflow intrinsic grid width", () => {
     for (const boxSizing of [BoxSizing.BorderBox, BoxSizing.ContentBox]) {
         for (const direction of [Direction.Ltr, Direction.Rtl]) {
             const taffy = TaffyTree.new();
@@ -434,7 +434,7 @@ test("Rust XML gridflex kitchen-sink percentage tracks overflow intrinsic grid w
         }
     }
 });
-test("Rust XML gridflex kitchen-sink preserves nested flex and grid intrinsic sizing", () => {
+test("gridflex kitchen-sink preserves nested flex and grid intrinsic sizing", () => {
     for (const boxSizing of [BoxSizing.BorderBox, BoxSizing.ContentBox]) {
         for (const direction of [Direction.Ltr, Direction.Rtl]) {
             const taffy = TaffyTree.new();
@@ -534,7 +534,7 @@ test("flex container content size includes trailing padding", () => {
     assert.deepEqual(taffy.layout(child).location, new Point(5, 3));
     assert.deepEqual(taffy.layout(root).contentSize, new Size(32, 34));
 });
-test("Rust XML percentage padding resolves vertical and horizontal sides from container width", () => {
+test("percentage padding resolves vertical and horizontal sides from container width", () => {
     const taffy = TaffyTree.new();
     const grandchild = taffy.newLeaf(new Style({
         boxSizing: BoxSizing.ContentBox,
@@ -560,7 +560,7 @@ test("Rust XML percentage padding resolves vertical and horizontal sides from co
     assert.deepEqual(taffy.layout(grandchild).location, new Point(170, 20));
     assert.deepEqual(taffy.layout(grandchild).size, new Size(10, 10));
 });
-test("Rust XML margin and stretch row subtracts vertical margins from stretched child", () => {
+test("margin and stretch row subtracts vertical margins from stretched child", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(new Style({
         direction: Direction.Ltr,
@@ -576,7 +576,7 @@ test("Rust XML margin and stretch row subtracts vertical margins from stretched 
     assert.deepEqual(taffy.layout(child).location, new Point(0, 10));
     assert.deepEqual(taffy.layout(child).size, new Size(100, 80));
 });
-test("Rust XML content-sized flex container includes child size and border", () => {
+test("content-sized flex container includes child size and border", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(new Style({
         boxSizing: BoxSizing.ContentBox,
@@ -594,7 +594,7 @@ test("Rust XML content-sized flex container includes child size and border", () 
     assert.deepEqual(taffy.layout(child).location, new Point(10, 10));
     assert.deepEqual(taffy.layout(child).size, new Size(10, 10));
 });
-test("Rust XML unsized flex child stretches in the cross axis with zero main size", () => {
+test("unsized flex child stretches in the cross axis with zero main size", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(new Style({ direction: Direction.Ltr }));
     const root = taffy.newWithChildren(new Style({
@@ -606,7 +606,7 @@ test("Rust XML unsized flex child stretches in the cross axis with zero main siz
     assert.deepEqual(taffy.layout(child).location, Point.zero());
     assert.deepEqual(taffy.layout(child).size, new Size(0, 100));
 });
-test("Rust XML align-content center single line shrinks items on the main axis", () => {
+test("align-content center single line shrinks items on the main axis", () => {
     const taffy = TaffyTree.new();
     const childStyle = new Style({
         direction: Direction.Ltr,
@@ -625,7 +625,7 @@ test("Rust XML align-content center single line shrinks items on the main axis",
         assert.deepEqual(taffy.layout(child).size, new Size(20, 10));
     });
 });
-test("Rust XML align-content center wrapped lines are centered in cross space", () => {
+test("align-content center wrapped lines are centered in cross space", () => {
     const taffy = TaffyTree.new();
     const childStyle = new Style({
         direction: Direction.Ltr,
@@ -653,7 +653,7 @@ test("Rust XML align-content center wrapped lines are centered in cross space", 
         assert.deepEqual(taffy.layout(child).size, new Size(50, 10));
     });
 });
-test("Rust XML align-content flex-start keeps zero-height column children on the same line", () => {
+test("align-content flex-start keeps zero-height column children on the same line", () => {
     const taffy = TaffyTree.new();
     const children = [
         taffy.newLeaf(new Style({
@@ -791,7 +791,7 @@ test("rtl flex container reserves vertical scrollbar gutter on the inline start 
     assert.deepEqual(taffy.layout(child).location, new Point(80, 0));
     assert.deepEqual(taffy.layout(child).size, new Size(20, 10));
 });
-test("Rust XML flex scrollbars take up space in the main axis", () => {
+test("flex scrollbars take up space in the main axis", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(new Style({
         boxSizing: BoxSizing.ContentBox,
@@ -811,7 +811,7 @@ test("Rust XML flex scrollbars take up space in the main axis", () => {
     assert.deepEqual(taffy.layout(child).location, Point.zero());
     assert.deepEqual(taffy.layout(child).size, new Size(50, 35));
 });
-test("Rust XML flex scrollbars take up space in the cross axis", () => {
+test("flex scrollbars take up space in the cross axis", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(new Style({
         boxSizing: BoxSizing.ContentBox,
@@ -831,7 +831,7 @@ test("Rust XML flex scrollbars take up space in the cross axis", () => {
     assert.deepEqual(taffy.layout(child).location, Point.zero());
     assert.deepEqual(taffy.layout(child).size, new Size(35, 50));
 });
-test("Rust XML flex scrollbars are overridden by explicit container size", () => {
+test("flex scrollbars are overridden by explicit container size", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(new Style({
         boxSizing: BoxSizing.ContentBox,
@@ -851,7 +851,7 @@ test("Rust XML flex scrollbars are overridden by explicit container size", () =>
     assert.deepEqual(taffy.layout(child).location, Point.zero());
     assert.deepEqual(taffy.layout(child).size, Size.zero());
 });
-test("Rust XML flex scrollbars are overridden by available space", () => {
+test("flex scrollbars are overridden by available space", () => {
     const taffy = TaffyTree.new();
     const grandchild = taffy.newLeaf(new Style({
         boxSizing: BoxSizing.ContentBox,
@@ -878,7 +878,7 @@ test("Rust XML flex scrollbars are overridden by available space", () => {
     assert.deepEqual(taffy.layout(grandchild).location, Point.zero());
     assert.deepEqual(taffy.layout(grandchild).size, Size.zero());
 });
-test("Rust XML flex scrollbars are overridden by max size", () => {
+test("flex scrollbars are overridden by max size", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(new Style({
         boxSizing: BoxSizing.ContentBox,
@@ -1148,7 +1148,7 @@ test("row flex baseline alignment uses nested grid container first baseline", ()
     assert.deepEqual(taffy.layout(nested).size, new Size(20, 40));
     assert.deepEqual(taffy.layout(nestedChild).location, Point.zero());
 });
-test("Rust XML block baseline alignment uses block child fallback baselines", () => {
+test("block baseline alignment uses block child fallback baselines", () => {
     const taffy = TaffyTree.new();
     const tall = taffy.newLeaf(new Style({
         display: Display.Block,
@@ -1178,7 +1178,7 @@ test("Rust XML block baseline alignment uses block child fallback baselines", ()
     assert.deepEqual(taffy.layout(nestedChild).location, Point.zero());
     assert.deepEqual(taffy.layout(nestedChild).size, new Size(50, 10));
 });
-test("Rust XML block baseline alignment preserves block child margins", () => {
+test("block baseline alignment preserves block child margins", () => {
     const taffy = TaffyTree.new();
     const allFive = new Rect(LengthPercentageAuto.length(5), LengthPercentageAuto.length(5), LengthPercentageAuto.length(5), LengthPercentageAuto.length(5));
     const tall = taffy.newLeaf(new Style({
@@ -1211,7 +1211,7 @@ test("Rust XML block baseline alignment preserves block child margins", () => {
     assert.deepEqual(taffy.layout(nestedChild).location, new Point(5, 5));
     assert.deepEqual(taffy.layout(nestedChild).size, new Size(50, 10));
 });
-test("Rust XML block baseline alignment resolves percent margins against inline size", () => {
+test("block baseline alignment resolves percent margins against inline size", () => {
     const taffy = TaffyTree.new();
     const tall = taffy.newLeaf(new Style({
         display: Display.Block,
@@ -1244,7 +1244,7 @@ test("Rust XML block baseline alignment resolves percent margins against inline 
     assert.deepEqual(taffy.layout(nestedChild).location, new Point(1, 1));
     assert.deepEqual(taffy.layout(nestedChild).size, new Size(50, 10));
 });
-test("Rust XML block baseline alignment preserves padding offsets", () => {
+test("block baseline alignment preserves padding offsets", () => {
     const taffy = TaffyTree.new();
     const allFive = Rect.length(5, LengthPercentage);
     const tall = taffy.newLeaf(new Style({
@@ -1278,7 +1278,7 @@ test("Rust XML block baseline alignment preserves padding offsets", () => {
     assert.deepEqual(taffy.layout(nestedChild).location, new Point(5, 5));
     assert.deepEqual(taffy.layout(nestedChild).size, new Size(50, 10));
 });
-test("Rust XML block baseline alignment applies relative top to first block child", () => {
+test("block baseline alignment applies relative top to first block child", () => {
     const taffy = TaffyTree.new();
     const tall = taffy.newLeaf(new Style({
         display: Display.Block,
@@ -1310,7 +1310,7 @@ test("Rust XML block baseline alignment applies relative top to first block chil
     assert.deepEqual(taffy.layout(nestedChild).location, Point.zero());
     assert.deepEqual(taffy.layout(nestedChild).size, new Size(50, 10));
 });
-test("Rust XML block baseline alignment applies relative top to second block child", () => {
+test("block baseline alignment applies relative top to second block child", () => {
     const taffy = TaffyTree.new();
     const tall = taffy.newLeaf(new Style({
         display: Display.Block,
@@ -1342,7 +1342,7 @@ test("Rust XML block baseline alignment applies relative top to second block chi
     assert.deepEqual(taffy.layout(nestedChild).location, Point.zero());
     assert.deepEqual(taffy.layout(nestedChild).size, new Size(50, 10));
 });
-test("Rust XML block baseline alignment supports double-nested block children", () => {
+test("block baseline alignment supports double-nested block children", () => {
     const taffy = TaffyTree.new();
     const tallChild = taffy.newLeaf(new Style({
         display: Display.Block,
@@ -1380,7 +1380,7 @@ test("Rust XML block baseline alignment supports double-nested block children", 
     assert.deepEqual(taffy.layout(nestedChild).location, Point.zero());
     assert.deepEqual(taffy.layout(nestedChild).size, new Size(50, 15));
 });
-test("Rust XML block baseline alignment mirrors fallback baselines in rtl", () => {
+test("block baseline alignment mirrors fallback baselines in rtl", () => {
     const taffy = TaffyTree.new();
     const tall = taffy.newLeaf(new Style({
         display: Display.Block,
@@ -1410,7 +1410,7 @@ test("Rust XML block baseline alignment mirrors fallback baselines in rtl", () =
     assert.deepEqual(taffy.layout(nestedChild).location, Point.zero());
     assert.deepEqual(taffy.layout(nestedChild).size, new Size(50, 10));
 });
-test("Rust XML block baseline alignment handles content-box padding in rtl", () => {
+test("block baseline alignment handles content-box padding in rtl", () => {
     const taffy = TaffyTree.new();
     const allFive = Rect.length(5, LengthPercentage);
     const tall = taffy.newLeaf(new Style({
@@ -1667,7 +1667,7 @@ test("opposing cross-axis auto margins center the item and prevent stretch", () 
     assert.equal(taffy.layout(child).margin.top, 50);
     assert.equal(taffy.layout(child).margin.bottom, 50);
 });
-test("Rust XML taffy issue 937 keeps RTL gapped row items packed with auto cross margin", () => {
+test("taffy issue 937 keeps RTL gapped row items packed with auto cross margin", () => {
     const taffy = TaffyTree.new();
     const first = taffy.newLeaf(new Style({
         direction: Direction.Rtl,
@@ -1693,7 +1693,7 @@ test("Rust XML taffy issue 937 keeps RTL gapped row items packed with auto cross
     assert.deepEqual(taffy.layout(second).location, new Point(90, 0));
     assert.deepEqual(taffy.layout(third).location, new Point(30, 0));
 });
-test("Rust XML flex column-gap child margins share remaining row space", () => {
+test("flex column-gap child margins share remaining row space", () => {
     for (const boxSizing of [BoxSizing.BorderBox, BoxSizing.ContentBox]) {
         for (const direction of [Direction.Ltr, Direction.Rtl]) {
             const taffy = TaffyTree.new();
@@ -1724,7 +1724,7 @@ test("Rust XML flex column-gap child margins share remaining row space", () => {
         }
     }
 });
-test("Rust XML flex row-gap child margins share remaining column space", () => {
+test("flex row-gap child margins share remaining column space", () => {
     for (const boxSizing of [BoxSizing.BorderBox, BoxSizing.ContentBox]) {
         for (const direction of [Direction.Ltr, Direction.Rtl]) {
             const taffy = TaffyTree.new();
@@ -1756,7 +1756,7 @@ test("Rust XML flex row-gap child margins share remaining column space", () => {
         }
     }
 });
-test("Rust XML flex wrapped row-gap child margins size wrapped lines", () => {
+test("flex wrapped row-gap child margins size wrapped lines", () => {
     for (const boxSizing of [BoxSizing.BorderBox, BoxSizing.ContentBox]) {
         for (const direction of [Direction.Ltr, Direction.Rtl]) {
             const taffy = TaffyTree.new();

@@ -20,7 +20,7 @@ import { NodeId as NodeIdFromTreeModule } from "../src/tree.js";
 import { TaffyTree as TaffyTreeFromSnakeTreeModule } from "../src/tree/taffy_tree.js";
 import { round as roundFromUtilSysModule } from "../src/util/sys.js";
 import { maybe_min as maybeMinFromUtilModule } from "../src/util.js";
-test("prelude re-exports Rust prelude-style common layout APIs", () => {
+test("prelude re-exports common common layout APIs", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(new Style({ size: Size.length(10, Dimension) }));
     const root = taffy.newWithChildren(new Style({
@@ -84,7 +84,7 @@ test("package metadata points at Bun workspace and built TypeScript port entrypo
         assert.ok(existsSync(new URL(`../${target.bun}`, import.meta.url)), `${subpath} Bun target exists`);
     }
 });
-test("package subpath exports expose ported Rust module surfaces", async () => {
+test("package subpath exports expose layout module surfaces", async () => {
     const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
     const expectedSubpaths = [
         "./geometry",

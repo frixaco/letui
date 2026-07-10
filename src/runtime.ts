@@ -1,8 +1,7 @@
 /**
- * Runtime bridge that diffs the TS tree, syncs Rust ops, and drives terminal I/O.
+ * Reactive runtime that renders the component tree and drives terminal I/O.
  */
 
-import { toArrayBuffer, type Pointer } from "bun:ffi";
 import { Buffer } from "node:buffer";
 import process from "node:process";
 import {
@@ -11,12 +10,10 @@ import {
   refreshAppearance as refreshRuntimeAppearance,
   stripAppearanceResponses,
 } from "./appearance.ts";
-import api from "./ffi.ts";
 import { $, ff, type Signal } from "./signals.ts";
-import { getFocusedNode, getFocusVersion, syncScrollViewMetrics } from "./components.ts";
+import { getFocusedNode, getFocusVersion } from "./components.ts";
 import { dispatchInputChunk } from "./input.ts";
 import { NODE_TYPE, type AppearanceMode, type Node, type ScrollEvent } from "./types.ts";
-import { OpQueue } from "./ops.ts";
 import {
   startFrame,
   endFrame,
@@ -31,7 +28,8 @@ import {
 } from "./metrics.ts";
 import { logWriter } from "./debug.ts";
 import { extractMouseEvents, type ParsedMouseEvent } from "./helpers.ts";
-import { prepareRenderTreeSync, type SentNodeState } from "./sync.ts";
+import { Renderer } from "./renderer.ts";
+import { Terminal } from "./terminal.ts";
 
 export type RunOptions = {
   debug?: boolean;
@@ -44,22 +42,18 @@ export type { ScrollEvent } from "./types.ts";
 
 export function run(root: Node, options?: RunOptions): { quit: () => void } {
   configureAppearanceSession(options?.appearance ?? "auto");
-
-  if (api.init_buffer() !== 1) {
-    throw new Error("Failed to initialize letui buffer");
+  terminal = new Terminal();
+  try {
+    terminal.init();
+  } catch (error) {
+    cleanupAppearanceSession();
+    throw error;
   }
-  if (api.init_letui() !== 1) {
-    api.free_buffer();
-    throw new Error("Failed to initialize letui terminal");
-  }
-  api.clear_tree_state();
-
-  terminalWidth = $(api.get_width());
-  terminalHeight = $(api.get_height());
+  renderer = new Renderer();
+  terminalWidth = $(terminal.width);
+  terminalHeight = $(terminal.height);
   globalKeyHandlers = globalKeyHandlers ?? new Map();
   nodeRegistry = new Map();
-  ops = new OpQueue();
-  previousSentTree = null;
   spatialLookup = new Uint32Array(terminalWidth() * terminalHeight());
   scrollSpatialLookup = new Uint32Array(terminalWidth() * terminalHeight());
   pressedNodeId = null;
@@ -90,16 +84,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     process.off("unhandledRejection", handleUnhandledRejection);
 
     try {
-      api.clear_tree_state();
-    } catch {}
-    previousSentTree = null;
-
-    try {
-      api.free_buffer();
-    } catch {}
-
-    try {
-      api.deinit_letui();
+      terminal.deinit();
     } catch {}
 
     writeDebugMetrics();
@@ -135,38 +120,28 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     const frameStart = options?.debug ? startFrame() : 0;
     const jsStart = options?.debug ? startPhase() : 0;
 
-    nodeRegistry.clear();
-    const { sentTree, textStats, requiresTreeReset } = prepareRenderTreeSync(
-      root,
-      previousSentTree,
-      ops,
-    );
-    if (requiresTreeReset) {
-      api.clear_tree_state();
-    }
-    const opBuffer = ops.drain();
-    if (opBuffer.length > 0) {
-      api.apply_ops(opBuffer, opBuffer.length);
-    }
     if (options?.debug) {
-      endJs(jsStart, {
-        textOps: textStats.opCount,
-        textBytes: textStats.byteCount,
-        ffiBytes: opBuffer.length,
-      });
+      endJs(jsStart);
     }
-    previousSentTree = sentTree;
 
     const renderStart = options?.debug ? startPhase() : 0;
-    api.render();
-    if (options?.debug) endRender(renderStart);
+    const result = renderer.render(
+      root,
+      terminalWidth(),
+      terminalHeight(),
+      terminal.current,
+      options?.debug === true,
+    );
+    if (options?.debug) endRender(renderStart, result.timings);
 
     const syncStart = options?.debug ? startPhase() : 0;
-    updateNodeFrames(root);
+    nodeRegistry = result.registry;
+    spatialLookup = result.hitmap;
+    scrollSpatialLookup = result.scrollHitmap;
     if (options?.debug) endSync(syncStart);
 
     const flushStart = options?.debug ? startPhase() : 0;
-    api.flush();
+    terminal.flush();
     if (options?.debug) endFlush(flushStart);
 
     if (options?.debug) endFrame(frameStart);
@@ -185,59 +160,6 @@ export function onKey(key: string, callback: () => void): void {
     globalKeyHandlers = new Map();
   }
   globalKeyHandlers.set(key, callback);
-}
-
-function updateNodeFrames(root: Node): void {
-  const framesPtr = api.get_frames_ptr()!;
-  const framesLen = Number(api.get_frames_len()!);
-  const framesArray = new Float32Array(toArrayBuffer(framesPtr as Pointer, 0, framesLen * 4));
-  const hitmapPtr = api.get_hitmap_ptr?.();
-  const hitmapLen = Number(api.get_hitmap_len?.() ?? 0);
-  const scrollHitmapPtr = api.get_scroll_hitmap_ptr?.();
-  const scrollHitmapLen = Number(api.get_scroll_hitmap_len?.() ?? 0);
-
-  spatialLookup =
-    hitmapPtr && hitmapLen > 0
-      ? new Uint32Array(toArrayBuffer(hitmapPtr as Pointer, 0, hitmapLen * 4))
-      : new Uint32Array(terminalWidth() * terminalHeight());
-  scrollSpatialLookup =
-    scrollHitmapPtr && scrollHitmapLen > 0
-      ? new Uint32Array(toArrayBuffer(scrollHitmapPtr as Pointer, 0, scrollHitmapLen * 4))
-      : new Uint32Array(terminalWidth() * terminalHeight());
-
-  let idx = 0;
-
-  function updateFrames(node: Node): void {
-    nodeRegistry.set(node.id, node);
-
-    node.frame.x = framesArray[idx++]!;
-    node.frame.y = framesArray[idx++]!;
-    node.frame.width = framesArray[idx++]!;
-    node.frame.height = framesArray[idx++]!;
-    node.contentFrame.x = framesArray[idx++]!;
-    node.contentFrame.y = framesArray[idx++]!;
-    node.contentFrame.width = framesArray[idx++]!;
-    node.contentFrame.height = framesArray[idx++]!;
-    idx++;
-    const maxScrollY = framesArray[idx++]!;
-
-    node.frameWidth(node.frame.width);
-    node.frameHeight(node.frame.height);
-
-    if ("scrollTo" in node) {
-      syncScrollViewMetrics(node, {
-        viewportHeight: node.contentFrame.height,
-        maxScrollY,
-      });
-    }
-
-    const children = node.children?.() ?? [];
-    for (const child of children) {
-      updateFrames(child);
-    }
-  }
-
-  updateFrames(root);
 }
 
 function dispatchToNode(node: Node, data: string): boolean {
@@ -356,13 +278,9 @@ function handleInput(data: string): void {
 }
 
 function handleResize(): void {
-  api.update_terminal_size();
-
-  api.free_buffer();
-  api.init_buffer();
-
-  terminalWidth(api.get_width());
-  terminalHeight(api.get_height());
+  terminal.resize();
+  terminalWidth(terminal.width);
+  terminalHeight(terminal.height);
   spatialLookup = new Uint32Array(terminalWidth() * terminalHeight());
   scrollSpatialLookup = new Uint32Array(terminalWidth() * terminalHeight());
 }
@@ -376,8 +294,8 @@ let globalKeyHandlers: Map<string, () => void>;
 let pressedNodeId: number | null = null;
 let isRunning = false;
 let quitFn: (() => void) | null = null;
-let ops: OpQueue;
-let previousSentTree: SentNodeState | null = null;
+let terminal: Terminal;
+let renderer: Renderer;
 
 function getNodeAt(x: number, y: number): Node | undefined {
   if (x < 0 || y < 0 || x >= terminalWidth() || y >= terminalHeight()) {

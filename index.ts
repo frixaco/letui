@@ -34,5 +34,3 @@ export type {
   NormalizedStyledText,
   ScrollEvent,
 } from "./src/types.ts";
-
-// TODO: expose the raw FFI surface for low-level use cases?

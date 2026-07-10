@@ -1,7 +1,7 @@
 /** Minimal reactive signals used across the TypeScript component layer. */
 
-export function $<T>(defaultValue: T): Signal<T>;
-export function $<T>(defaultValue: T): Signal<T> {
+export function $<T>(defaultValue: T, onChange?: () => void): Signal<T>;
+export function $<T>(defaultValue: T, onChange?: () => void): Signal<T> {
   let v: T = defaultValue;
   let subs = new Set<Sub>();
 
@@ -17,11 +17,13 @@ export function $<T>(defaultValue: T): Signal<T> {
     let newV = next as T;
     if (Object.is(v, newV)) return;
     v = newV;
+    onChange?.();
 
     for (let s of subs) schedule(s);
   }
 
-  return $$;
+  $$.peek = () => v;
+  return $$ as Signal<T>;
 }
 
 export function dd<T>(fn: () => T): ReadonlySignal<T> {
@@ -143,6 +145,7 @@ export function whenSettled(fn: Sub): void {
 export type Signal<T> = {
   (): T;
   (next: T): void;
+  peek(): T;
 };
 export type ReadonlySignal<T> = () => T;
 export type Sub = () => void;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AvailableSpaceSize, BlockFormattingContext, BoxSizing, Clear, Dimension, Direction, Display, Float, FloatDirection, LengthPercentage, LengthPercentageAuto, Overflow, Point, Position, Rect, Size, Style, TaffyTree, } from "../src/index.js";
-test("block formatting context mirrors Rust low-level float context helpers", () => {
+test("block formatting context matches low-level float context helpers", () => {
     const formattingContext = BlockFormattingContext.new();
     const rootContext = formattingContext.root_block_context();
     assert.equal(rootContext.is_bfc_root(), true);
@@ -119,7 +119,7 @@ test("block vertical percentage margins resolve against container width", () => 
     assert.equal(taffy.layout(child).margin.top, 20);
     assert.equal(taffy.layout(child).margin.bottom, 20);
 });
-test("Rust XML block scrollbars reduce absolute child containing space", () => {
+test("block scrollbars reduce absolute child containing space", () => {
     const cases = [
         {
             name: "main_axis",
@@ -161,7 +161,7 @@ test("Rust XML block scrollbars reduce absolute child containing space", () => {
         assert.deepEqual(taffy.layout(child).size, testCase.expectedChildSize, testCase.name);
     }
 });
-test("Rust XML block scrollbars clamp absolute child space after size constraints", () => {
+test("block scrollbars clamp absolute child space after size constraints", () => {
     const explicitTree = TaffyTree.new();
     const explicitChild = explicitTree.newLeaf(new Style({
         direction: Direction.Ltr,
@@ -199,7 +199,7 @@ test("Rust XML block scrollbars clamp absolute child space after size constraint
     assert.deepEqual(maxTree.layout(maxChild).location, Point.zero());
     assert.deepEqual(maxTree.layout(maxChild).size, Size.zero());
 });
-test("Rust XML block rtl scrollbar keeps in-flow child on the physical content edge", () => {
+test("block rtl scrollbar keeps in-flow child on the physical content edge", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(new Style({
         direction: Direction.Rtl,
@@ -240,7 +240,7 @@ test("nested block margins collapse through same-bfc auto-height parent", () => 
     assert.deepEqual(taffy.layout(grandchild).location, Point.zero());
     assert.deepEqual(taffy.layout(grandchild).size, new Size(100, 10));
 });
-test("Rust XML block empty middle margins collapse through between siblings", () => {
+test("block empty middle margins collapse through between siblings", () => {
     const taffy = TaffyTree.new();
     const first = taffy.newLeaf(new Style({
         display: Display.Block,
@@ -266,7 +266,7 @@ test("Rust XML block empty middle margins collapse through between siblings", ()
     assert.deepEqual(taffy.layout(last).location, new Point(0, 20));
     assert.deepEqual(taffy.layout(last).size, new Size(50, 10));
 });
-test("Rust XML block complex vertical margins collapse through nested children", () => {
+test("block complex vertical margins collapse through nested children", () => {
     const taffy = TaffyTree.new();
     const first = taffy.newLeaf(new Style({
         direction: Direction.Ltr,
@@ -325,7 +325,7 @@ test("Rust XML block complex vertical margins collapse through nested children",
     assert.deepEqual(taffy.layout(fourth).location, new Point(0, -10));
     assert.deepEqual(taffy.layout(fourth).size, new Size(50, 10));
 });
-test("Rust XML block height and min-height prevent margin collapse-through", () => {
+test("block height and min-height prevent margin collapse-through", () => {
     const heightTree = TaffyTree.new();
     const heightFirst = heightTree.newLeaf(new Style({
         display: Display.Block,
@@ -375,7 +375,7 @@ test("Rust XML block height and min-height prevent margin collapse-through", () 
     assert.deepEqual(minHeightTree.layout(minHeightLast).location, new Point(0, 31));
     assert.deepEqual(minHeightTree.layout(minHeightLast).size, new Size(50, 10));
 });
-test("Rust XML block padding prevents margin collapse-through", () => {
+test("block padding prevents margin collapse-through", () => {
     const topPaddingTree = TaffyTree.new();
     const topPaddingFirst = topPaddingTree.newLeaf(new Style({
         display: Display.Block,
@@ -425,7 +425,7 @@ test("Rust XML block padding prevents margin collapse-through", () => {
     assert.deepEqual(bottomPaddingTree.layout(bottomPaddingLast).location, new Point(0, 31));
     assert.deepEqual(bottomPaddingTree.layout(bottomPaddingLast).size, new Size(50, 10));
 });
-test("Rust XML block aspect ratio prevents margin collapse-through", () => {
+test("block aspect ratio prevents margin collapse-through", () => {
     const taffy = TaffyTree.new();
     const first = taffy.newLeaf(new Style({
         display: Display.Block,
@@ -452,7 +452,7 @@ test("Rust XML block aspect ratio prevents margin collapse-through", () => {
     assert.deepEqual(taffy.layout(last).location, new Point(0, 55));
     assert.deepEqual(taffy.layout(last).size, new Size(50, 10));
 });
-test("Rust XML block measured line box prevents margin collapse-through", () => {
+test("block measured line box prevents margin collapse-through", () => {
     const taffy = TaffyTree.new();
     const first = taffy.newLeaf(new Style({
         display: Display.Block,
@@ -478,7 +478,7 @@ test("Rust XML block measured line box prevents margin collapse-through", () => 
     assert.deepEqual(taffy.layout(last).location, new Point(0, 40));
     assert.deepEqual(taffy.layout(last).size, new Size(50, 10));
 });
-test("Rust XML block zero-height line boxes still prevent margin collapse-through", () => {
+test("block zero-height line boxes still prevent margin collapse-through", () => {
     const heightTree = TaffyTree.new();
     const heightFirst = heightTree.newLeaf(new Style({
         display: Display.Block,
@@ -630,7 +630,7 @@ test("block absolute vertical percentage margins resolve against containing bloc
     assert.deepEqual(taffy.layout(absolute).location, new Point(0, 20));
     assert.equal(taffy.layout(absolute).margin.top, 20);
 });
-test("Rust XML block absolute vertical percentage insets resolve against parent height", () => {
+test("block absolute vertical percentage insets resolve against parent height", () => {
     const taffy = TaffyTree.new();
     const top = taffy.newLeaf(new Style({
         display: Display.Block,
@@ -767,7 +767,7 @@ test("block absolute child auto margin resolves only when insets are set", () =>
     assert.deepEqual(taffy.layout(withoutInset).location, new Point(0, 0));
     assert.equal(taffy.layout(withoutInset).margin.left, 0);
 });
-test("Rust XML block absolute auto margins distribute inset free space", () => {
+test("block absolute auto margins distribute inset free space", () => {
     const zero = () => LengthPercentageAuto.zero();
     const auto = () => LengthPercentageAuto.auto();
     const length = (value: number) => LengthPercentageAuto.length(value);
@@ -852,7 +852,7 @@ test("Rust XML block absolute auto margins distribute inset free space", () => {
     assert.deepEqual(multipleChildrenTree.layout(second).size, new Size(50, 50));
     assert.deepEqual(multipleChildrenTree.layout(second).margin, new Rect(0, 120, 0, 0));
 });
-test("Rust XML block absolute opposing vertical auto margins split inset free space", () => {
+test("block absolute opposing vertical auto margins split inset free space", () => {
     const taffy = TaffyTree.new();
     const absolute = taffy.newLeaf(new Style({
         position: Position.Absolute,
@@ -895,7 +895,7 @@ test("block item order compacts generated items after hidden children are filter
     assert.equal(taffy.layout(hidden).order, 1);
     assert.deepEqual(taffy.layout(hidden).size, Size.zero());
 });
-test("Rust XML block display-none recursively zeroes hidden child layouts", () => {
+test("block display-none recursively zeroes hidden child layouts", () => {
     const taffy = TaffyTree.new();
     const first = taffy.newLeaf(new Style({ direction: Direction.Ltr, size: new Size(Dimension.auto(), Dimension.length(10)) }));
     const hiddenChild = taffy.newLeaf(new Style({
@@ -920,7 +920,7 @@ test("Rust XML block display-none recursively zeroes hidden child layouts", () =
     assert.deepEqual(taffy.layout(second).location, new Point(0, 10));
     assert.deepEqual(taffy.layout(second).size, new Size(100, 10));
 });
-test("Rust XML block display-none ignores margins, insets, and absolute positioning", () => {
+test("block display-none ignores margins, insets, and absolute positioning", () => {
     const taffy = TaffyTree.new();
     const hiddenWithMargin = taffy.newLeaf(new Style({
         display: Display.None,
@@ -1030,7 +1030,7 @@ test("block content-box container preserves float packing and adds border to out
     assert.deepEqual(taffy.layout(children[3]).location, new Point(52, 2));
     assert.deepEqual(taffy.layout(children[4]).location, new Point(2, 2));
 });
-test("Rust XML float simple content-box rtl preserves physical right float packing", () => {
+test("float simple content-box rtl preserves physical right float packing", () => {
     const taffy = TaffyTree.new();
     const children = Array.from({ length: 5 }, () => taffy.newLeaf(new Style({
         boxSizing: BoxSizing.ContentBox,

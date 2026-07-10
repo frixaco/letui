@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AbstractAxis, AbsoluteAxis, AlignContent, AlignItems, AvailableSpace, AvailableSpaceSize, BoxGenerationMode, BoxSizing, Clear, CompactLength, CompactLengthTag, computeLeafLayout, Dimension, Direction, Display, FlexDirection, FlexWrap, Float, FloatDirection, GridAutoFlow, GridTemplateArea, Line, LayoutInput, LengthPercentage, LengthPercentageAuto, MaxTrackSizingFunction, MinMax, Overflow, ParseError, Point, Position, Rect, RequestedAxis, RunMode, Size, SizingMode, Style, TaffyTree, TextAlign, TrackSizingFunction, alignContentReversed, alignItemsFromString, auto, availableSpaceMaybeAdd, availableSpaceMaybeClamp, availableSpaceMaybeMax, availableSpaceMaybeMin, availableSpaceMaybeSub, availableSpaceComputeFreeSpace, availableSpaceFromString, availableSpaceIntoOption, availableSpaceOrElse, availableSpaceUnwrap, availableSpaceUnwrapOrElse, available_space_compute_free_space, available_space_from_string, available_space_into_option, available_space_is_definite, available_space_is_roughly_equal, available_space_map_definite_value, available_space_maybe_add, available_space_maybe_clamp, available_space_maybe_max, available_space_maybe_min, available_space_maybe_set, available_space_maybe_sub, available_space_or, available_space_or_else, available_space_unwrap, available_space_unwrap_or, available_space_unwrap_or_else, dimensionRectFromLengths, dimensionRectFromPercent, dimensionFromString, dimensionSizeFromLengths, dimensionSizeFromPercent, dimension_from_string, direction_is_rtl, displayFromString, displayToString, display_to_string, boxSizingFromString, clear_from_string, flexDirectionFromString, flex_wrap_from_string, flex_direction_cross_axis, flex_direction_is_column, flex_direction_is_reverse, flex_direction_is_row, flex_direction_main_axis, flexDirectionCrossAxis, flexDirectionIsColumn, flexDirectionIsReverse, flexDirectionIsRow, flexDirectionMainAxis, absoluteAxisOther, abstractAxisAsAbsoluteNaive, abstractAxisOther, fitContent, fit_content, floatFromString, gridPlacementLine, gridPlacementSpan, gridTemplateComponentFr, gridTemplateComponentLength, gridAutoFlowFromString, grid_auto_flow_from_string, length, lengthPercentageAutoFromString, lengthPercentageFromString, length_percentage_auto_from_string, length_percentage_from_string, maxContent, max_content, maybe_add, maybe_add_optional_size, maybe_add_size, maybe_clamp, maybe_clamp_size, maybe_clamp_optional_size, maybeAddSize, minContent, min_content, maybe_min, maybe_min_optional_size, maybe_min_size, maybeMinOptionalSize, maybeMinSize, maybe_max, maybe_max_optional_size, maybe_max_size, maybeMaxSize, maybeResolveDimension, maybeResolveDimensionSize, maybeResolveLengthPercentageAutoSize, maybeResolveLengthPercentageSize, maybe_sub, maybe_sub_optional_size, maybe_sub_size, maybeSubSize, maybeSubOptionalSize, resolveDimensionOrZero, resolveDimensionRectOrZero, resolveDimensionSizeOrZero, resolveLengthPercentageAutoOrZero, resolveLengthPercentageAutoSizeOrZero, resolveLengthPercentageOrZero, resolveLengthPercentageSizeOrZero, percent, overflow_is_scroll_container, overflow_maybe_into_automatic_min_size, float_direction, float_is_floated, position_from_string, rect_add, rect_horizontal_axis_sum, rect_sum_axes, rect_vertical_axis_sum, size_add, size_available_space_into_options, size_available_space_maybe_set, size_get_abs, size_get_absolute, size_has_non_zero_area, sizeAvailableSpaceMaybeSet, textAlignFromString, zero, } from "../src/index.js";
-test("keyword enum parsers mirror Rust FromStr parse feature", () => {
+test("keyword enum parsers mirror FromStr parse feature", () => {
     assert.equal(displayFromString(" FLEX "), Display.Flex);
     assert.equal(Display.from_string("grid"), Display.Grid);
     assert.equal(alignItemsFromString("flex-end"), AlignItems.FlexEnd);
@@ -19,7 +19,7 @@ test("keyword enum parsers mirror Rust FromStr parse feature", () => {
     assert.throws(() => displayFromString("inline"), ParseError);
     assert.throws(() => displayFromString("flex grid"), ParseError);
 });
-test("non-keyword parsers mirror Rust parse feature", () => {
+test("non-keyword parsers mirror reference parse feature", () => {
     assert.deepEqual(availableSpaceFromString(" 12px "), AvailableSpace.definite(12));
     assert.deepEqual(available_space_from_string("+3.5fr"), AvailableSpace.definite(3.5));
     assert.deepEqual(AvailableSpace.from_string("min-content"), AvailableSpace.minContent());
@@ -34,7 +34,7 @@ test("non-keyword parsers mirror Rust parse feature", () => {
     assert.throws(() => gridAutoFlowFromString("row dense column"), ParseError);
     assert.throws(() => gridAutoFlowFromString("ROW"), ParseError);
 });
-test("dimension parsers mirror Rust parse feature", () => {
+test("dimension parsers mirror reference parse feature", () => {
     assert.equal(lengthPercentageFromString("12px").intoRaw().value(), 12);
     assert.equal(length_percentage_from_string("-2.5px").into_raw().value(), -2.5);
     assert.equal(LengthPercentage.fromString("25%").intoRaw().value(), 0.25);
@@ -51,7 +51,7 @@ test("dimension parsers mirror Rust parse feature", () => {
     assert.throws(() => lengthPercentageAutoFromString("12em"), ParseError);
     assert.throws(() => dimensionFromString("AUTO"), ParseError);
 });
-test("Style.default mirrors Rust defaults for the ported fields", () => {
+test("Style.default matches defaults for the ported fields", () => {
     const style = Style.default();
     const areaName = "main";
     assert.equal(Display.DEFAULT, Display.Flex);
@@ -179,7 +179,7 @@ test("Style.default mirrors Rust defaults for the ported fields", () => {
     assert.equal(customStyle.justify_self(), AlignItems.FlexEnd);
     assert.equal(customStyle.grid_auto_flow(), GridAutoFlow.ColumnDense);
 });
-test("Style structurally satisfies Rust style trait surfaces", () => {
+test("Style structurally satisfies style trait surfaces", () => {
     const style = new Style({
         display: Display.Block,
         itemIsTable: true,
@@ -258,7 +258,7 @@ test("Style structurally satisfies Rust style trait surfaces", () => {
     assert.equal(gridItem.grid_placement(AbsoluteAxis.Vertical), style.gridRow);
     assert.equal(gridItem.justify_self(), AlignItems.FlexEnd);
 });
-test("Style constructor accepts Rust snake_case field aliases", () => {
+test("Style constructor accepts reference snake_case field aliases", () => {
     const rowTrack = gridTemplateComponentLength(10);
     const columnTrack = gridTemplateComponentFr(1);
     const autoRow = TrackSizingFunction.length(20);
@@ -341,7 +341,7 @@ test("Style constructor accepts Rust snake_case field aliases", () => {
     assert.equal(new Style({ flexDirection: FlexDirection.Row, flex_direction: FlexDirection.Column })
         .flexDirection, FlexDirection.Row);
 });
-test("Dimension resolution follows Rust MaybeResolve behavior", () => {
+test("Dimension resolution follows reference MaybeResolve behavior", () => {
     assert.equal(maybeResolveDimension(Dimension.auto(), undefined), undefined);
     assert.equal(maybeResolveDimension(Dimension.auto(), 5), undefined);
     assert.equal(maybeResolveDimension(Dimension.length(1), undefined), 1);
@@ -356,7 +356,7 @@ test("Dimension resolution follows Rust MaybeResolve behavior", () => {
     assert.equal(LengthPercentageAuto.auto().maybeResolve(200), undefined);
     assert.equal(LengthPercentageAuto.percent(0.25).maybe_resolve(200), 50);
 });
-test("dimension conversion helpers mirror Rust constructors", () => {
+test("dimension conversion helpers mirror reference constructors", () => {
     assert.equal(zero(), 0);
     assert.equal(zero(Dimension).intoRaw().tag(), CompactLengthTag.Length);
     assert.equal(auto(Dimension).intoRaw().tag(), CompactLengthTag.Auto);
@@ -454,7 +454,7 @@ test("dimension conversion helpers mirror Rust constructors", () => {
     assert.deepEqual(dimensionRectFromLengths(1, 2, 3, 4).map((value) => value.intoRaw().value()), new Rect(1, 2, 3, 4));
     assert.deepEqual(dimensionRectFromPercent(0.1, 0.2, 0.3, 0.4).map((value) => value.intoRaw().tag()), new Rect(CompactLengthTag.Percent, CompactLengthTag.Percent, CompactLengthTag.Percent, CompactLengthTag.Percent));
 });
-test("Size<Dimension> resolution and aspect ratio match Rust helpers", () => {
+test("Size<Dimension> resolution and aspect ratio match reference helpers", () => {
     assert.deepEqual(maybeResolveDimensionSize(dimensionSizeFromLengths(5, 5), Size.none()), new Size(5, 5));
     assert.deepEqual(maybeResolveDimensionSize(dimensionSizeFromPercent(5, 5), new Size(5, 5)), new Size(25, 25));
     assert.deepEqual(maybeResolveLengthPercentageSize(new Size(LengthPercentage.length(5), LengthPercentage.percent(0.5)), new Size(undefined, 20)), new Size(5, 10));
@@ -462,7 +462,7 @@ test("Size<Dimension> resolution and aspect ratio match Rust helpers", () => {
     assert.deepEqual(new Size(100, undefined).maybeApplyAspectRatio(2), new Size(100, 50));
     assert.deepEqual(new Size(undefined, 50).maybeApplyAspectRatio(2), new Size(100, 50));
 });
-test("ResolveOrZero helpers mirror Rust fallback behavior", () => {
+test("ResolveOrZero helpers mirror reference fallback behavior", () => {
     assert.equal(resolveDimensionOrZero(Dimension.auto(), 100), 0);
     assert.equal(resolveDimensionOrZero(Dimension.percent(0.5), undefined), 0);
     assert.equal(resolveDimensionOrZero(Dimension.percent(0.5), 100), 50);
@@ -486,7 +486,7 @@ test("ResolveOrZero helpers mirror Rust fallback behavior", () => {
     assert.deepEqual(new Rect(LengthPercentage.percent(0.1), LengthPercentage.length(2), LengthPercentage.percent(0.25), LengthPercentage.length(4)).resolveOrZero(new Size(200, 100)), new Rect(20, 2, 25, 4));
     assert.deepEqual(new Rect(LengthPercentageAuto.percent(0.1), LengthPercentageAuto.length(2), LengthPercentageAuto.auto(), LengthPercentageAuto.percent(0.25)).resolve_or_zero(100), new Rect(10, 2, 0, 25));
 });
-test("MaybeResolve and ResolveOrZero trait surfaces mirror Rust utility exports", () => {
+test("MaybeResolve and ResolveOrZero trait surfaces mirror reference utility exports", () => {
     const dimensionMaybe = Dimension.percent(0.5);
     const lengthMaybe = LengthPercentage.percent(0.25);
     const autoMaybe = LengthPercentageAuto.auto();
@@ -500,7 +500,7 @@ test("MaybeResolve and ResolveOrZero trait surfaces mirror Rust utility exports"
     assert.equal(lengthResolve.resolve_or_zero(200), 50);
     assert.equal(autoResolve.resolveOrZero(200), 0);
 });
-test("geometry axis helpers mirror Rust primitives", () => {
+test("geometry axis helpers mirror reference primitives", () => {
     const rect = new Rect(1, 2, 3, 4);
     assert.equal(AbsoluteAxis.otherAxis(AbsoluteAxis.Horizontal), AbsoluteAxis.Vertical);
     assert.equal(AbsoluteAxis.otherAxis(AbsoluteAxis.Vertical), AbsoluteAxis.Horizontal);
@@ -774,7 +774,7 @@ test("AvailableSpace helpers preserve definite and intrinsic constraints", () =>
     zeroSize.width = AvailableSpace.maxContent();
     assert.deepEqual(AvailableSpaceSize.ZERO, AvailableSpaceSize.zero());
 });
-test("AvailableSpace parity helpers mirror Rust fallback behavior", () => {
+test("AvailableSpace parity helpers mirror reference fallback behavior", () => {
     assert.equal(availableSpaceUnwrap(AvailableSpace.definite(12)), 12);
     assert.equal(available_space_unwrap(AvailableSpace.definite(12)), 12);
     assert.throws(() => availableSpaceUnwrap(AvailableSpace.minContent()), /not definite/);
@@ -827,7 +827,7 @@ test("Size<AvailableSpace>.maybe_set preserves intrinsic axes without replacemen
     assert.deepEqual(sizeAvailableSpaceMaybeSet(new Size(AvailableSpace.minContent(), AvailableSpace.maxContent()), new Size(10, undefined)), new Size(AvailableSpace.definite(10), AvailableSpace.maxContent()));
     assert.deepEqual(size_available_space_maybe_set(new Size(AvailableSpace.minContent(), AvailableSpace.maxContent()), new Size(10, undefined)), new Size(AvailableSpace.definite(10), AvailableSpace.maxContent()));
 });
-test("AvailableSpace MaybeMath helpers mirror Rust intrinsic rules", () => {
+test("AvailableSpace MaybeMath helpers mirror reference intrinsic rules", () => {
     assert.deepEqual(availableSpaceMaybeMin(AvailableSpace.definite(10), 6), AvailableSpace.definite(6));
     assert.deepEqual(availableSpaceMaybeMin(AvailableSpace.definite(Number.NaN), 6), AvailableSpace.definite(6));
     assert.deepEqual(availableSpaceMaybeMin(AvailableSpace.definite(10), undefined), AvailableSpace.definite(10));
@@ -853,7 +853,7 @@ test("AvailableSpace MaybeMath helpers mirror Rust intrinsic rules", () => {
     assert.deepEqual(availableSpaceMaybeSub(AvailableSpace.minContent(), 5), AvailableSpace.minContent());
     assert.deepEqual(available_space_maybe_sub(AvailableSpace.definite(10), 5), AvailableSpace.definite(5));
 });
-test("Size MaybeMath helpers mirror Rust component-wise optional rules", () => {
+test("Size MaybeMath helpers mirror reference component-wise optional rules", () => {
     assert.equal(maybe_min(10, 4), 4);
     assert.equal(maybe_max(10, 20), 20);
     assert.equal(maybe_clamp(10, 12, 20), 12);
@@ -893,7 +893,7 @@ test("Size MaybeMath helpers mirror Rust component-wise optional rules", () => {
     assert.deepEqual(new Size(10, 20).maybeAdd(new Size(4, undefined)), new Size(14, 20));
     assert.deepEqual(new Size(10, undefined).maybe_sub(new Size(4, 2)), new Size(6, undefined));
 });
-test("Alignment and flex direction helpers mirror Rust enum methods", () => {
+test("Alignment and flex direction helpers mirror reference enum methods", () => {
     assert.equal(alignContentReversed(AlignContent.Start), AlignContent.End);
     assert.equal(AlignContent.reversed(AlignContent.Start), AlignContent.End);
     assert.equal(alignContentReversed(AlignContent.Stretch), AlignContent.End);
@@ -977,7 +977,7 @@ test("Leaf style size overrides measurement", () => {
     assert.equal(taffy.layout(node).size.width, 50);
     assert.equal(taffy.layout(node).size.height, 50);
 });
-test("Rust XML leaf padding and border override undersized explicit size", () => {
+test("leaf padding and border override undersized explicit size", () => {
     const taffy = TaffyTree.new();
     const node = taffy.newLeaf(new Style({
         direction: Direction.Ltr,
@@ -989,7 +989,7 @@ test("Rust XML leaf padding and border override undersized explicit size", () =>
     assert.deepEqual(taffy.layout(node).location, Point.zero());
     assert.deepEqual(taffy.layout(node).size, new Size(22, 14));
 });
-test("Rust XML leaf padding and border override undersized max size", () => {
+test("leaf padding and border override undersized max size", () => {
     for (const boxSizing of [BoxSizing.BorderBox, BoxSizing.ContentBox]) {
         for (const direction of [Direction.Ltr, Direction.Rtl]) {
             const taffy = TaffyTree.new();
@@ -1006,7 +1006,7 @@ test("Rust XML leaf padding and border override undersized max size", () => {
         }
     }
 });
-test("Rust XML leaf measured content includes content-box padding and border", () => {
+test("leaf measured content includes content-box padding and border", () => {
     const taffy = TaffyTree.new();
     const node = taffy.newLeafWithContext(new Style({
         boxSizing: BoxSizing.ContentBox,
@@ -1021,7 +1021,7 @@ test("Rust XML leaf measured content includes content-box padding and border", (
     assert.deepEqual(taffy.layout(node).location, Point.zero());
     assert.deepEqual(taffy.layout(node).size, new Size(62, 24));
 });
-test("Rust XML leaf measured content includes padding and border variants", () => {
+test("leaf measured content includes padding and border variants", () => {
     const cases = [
         {
             style: new Style({
@@ -1071,7 +1071,7 @@ test("Rust XML leaf measured content includes padding and border variants", () =
         assert.deepEqual(taffy.layout(node).size, expected);
     }
 });
-test("Rust XML leaf scrollbars take up measured content space", () => {
+test("leaf scrollbars take up measured content space", () => {
     const cases = [
         {
             overflow: new Point(Overflow.Scroll, Overflow.Scroll),
@@ -1109,7 +1109,7 @@ test("Rust XML leaf scrollbars take up measured content space", () => {
         }
     }
 });
-test("Rust XML leaf scrollbars affect measured available space", () => {
+test("leaf scrollbars affect measured available space", () => {
     const text = "HHHHHHHHHHHHHHHHHHHHH";
     const cases = [
         {
@@ -1149,7 +1149,7 @@ test("Rust XML leaf scrollbars affect measured available space", () => {
         }
     }
 });
-test("Rust XML leaf scrollbars are overridden by available space", () => {
+test("leaf scrollbars are overridden by available space", () => {
     for (const boxSizing of [BoxSizing.BorderBox, BoxSizing.ContentBox]) {
         for (const direction of [Direction.Ltr, Direction.Rtl]) {
             const taffy = TaffyTree.new();
@@ -1176,7 +1176,7 @@ test("Rust XML leaf scrollbars are overridden by available space", () => {
         }
     }
 });
-test("Rust XML leaf padding and border override min and content-box size", () => {
+test("leaf padding and border override min and content-box size", () => {
     const cases = [
         {
             boxSizing: BoxSizing.BorderBox,
@@ -1250,7 +1250,7 @@ test("Rust XML leaf padding and border override min and content-box size", () =>
         assert.deepEqual(taffy.layout(node).size, expected);
     }
 });
-test("Rust XML leaf scrollbars are overridden by explicit and max size", () => {
+test("leaf scrollbars are overridden by explicit and max size", () => {
     for (const boxSizing of [BoxSizing.BorderBox, BoxSizing.ContentBox]) {
         for (const direction of [Direction.Ltr, Direction.Rtl]) {
             const explicitTree = TaffyTree.new();
@@ -1293,7 +1293,7 @@ test("Leaf max-height clamps measured content before final aspect-ratio height f
     taffy.computeLayoutWithMeasure(node, AvailableSpaceSize.maxContent(), () => new Size(80, 80));
     assert.deepEqual(taffy.layout(node).size, new Size(80, 40));
 });
-test("leaf aspect-ratio height floor mirrors Rust f32_max with NaN width", () => {
+test("leaf aspect-ratio height floor matches f32_max with NaN width", () => {
     const output = computeLeafLayout(new LayoutInput({
         runMode: RunMode.PerformLayout,
         sizingMode: SizingMode.InherentSize,

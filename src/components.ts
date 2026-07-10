@@ -35,8 +35,9 @@ import type {
 } from "./types.ts";
 
 export function Box(input: BoxProps, children: Node[]): BoxNode {
-  const props = createBoxSignals(input);
-  const childrenSignal = $(children);
+  const revision = createNodeRevision();
+  const props = createBoxSignals(input, revision.mark);
+  const childrenSignal = $(children, revision.mark);
   const frameWidth = $(0);
   const frameHeight = $(0);
   const initialType = directionToBoxKind(input.direction);
@@ -64,18 +65,21 @@ export function Box(input: BoxProps, children: Node[]): BoxNode {
     isFocused: () => focusedNode === node,
   };
 
+  revision.register(node);
   return node;
 }
 
 export function ScrollView(input: ScrollViewProps, children: Node[]): ScrollViewNode {
+  const revision = createNodeRevision();
   const { onScroll, ...styleInput } = input;
-  const props = createScrollViewSignals(styleInput);
-  const childrenSignal = $(children);
+  const props = createScrollViewSignals(styleInput, revision.mark);
+  const childrenSignal = $(children, revision.mark);
   const frameWidth = $(0);
   const frameHeight = $(0);
   const viewportHeight = $(0);
   const contentHeight = $(0);
   const maxScrollY = $(0);
+  const setStyleSignals = makeSetStyle(props);
 
   const node: ScrollViewNode = {
     type: NODE_TYPE.Column,
@@ -93,11 +97,7 @@ export function ScrollView(input: ScrollViewProps, children: Node[]): ScrollView
       if (scrollY !== undefined) {
         setScrollPosition(node, scrollY);
       }
-      for (const [key, value] of Object.entries(nextStyle)) {
-        if (key in props) {
-          (props as any)[key](value);
-        }
-      }
+      setStyleSignals(nextStyle);
     },
     focus: () => focusNode(node),
     blur: () => blurNode(node),
@@ -113,6 +113,7 @@ export function ScrollView(input: ScrollViewProps, children: Node[]): ScrollView
     maxScrollY,
   };
 
+  revision.register(node);
   return node;
 }
 
@@ -127,7 +128,8 @@ export function Row(props: Omit<BoxProps, "direction">, children: Node[]): BoxNo
 }
 
 export function Text(input: TextProps): TextNode {
-  const props = createTextSignals(input);
+  const revision = createNodeRevision();
+  const props = createTextSignals(input, revision.mark);
   const frameWidth = $(0);
   const frameHeight = $(0);
 
@@ -149,12 +151,14 @@ export function Text(input: TextProps): TextNode {
     isFocused: () => focusedNode === node,
   };
 
+  revision.register(node);
   return node;
 }
 
 export function Input(input: InputProps): InputNode {
+  const revision = createNodeRevision();
   const { onChange, onSubmit, onFocus, onBlur, ...styleInput } = input;
-  const props = createInputSignals(styleInput);
+  const props = createInputSignals(styleInput, revision.mark);
   const frameWidth = $(0);
   const frameHeight = $(0);
 
@@ -176,13 +180,15 @@ export function Input(input: InputProps): InputNode {
     isFocused: () => focusedNode === node,
   };
 
+  revision.register(node);
   return node;
 }
 
 export function Button(input: ButtonProps, children: Node[] = []): ButtonNode {
+  const revision = createNodeRevision();
   const { onClick, onKeyDown, onFocus, onBlur, ...styleInput } = input;
-  const props = createButtonSignals(styleInput);
-  const childrenSignal = $(children);
+  const props = createButtonSignals(styleInput, revision.mark);
+  const childrenSignal = $(children, revision.mark);
   const frameWidth = $(0);
   const frameHeight = $(0);
 
@@ -204,6 +210,7 @@ export function Button(input: ButtonProps, children: Node[] = []): ButtonNode {
     isFocused: () => focusedNode === node,
   };
 
+  revision.register(node);
   return node;
 }
 
@@ -221,62 +228,67 @@ export function focusNode(node: Node): void {
   if (focusedNode) {
     const prev = focusedNode;
     focusedNode = null;
+    markNodeDirty(prev);
     focusVersion(focusVersion() + 1);
     const handler = (prev.handlers as any).onBlur;
     if (handler) handler(prev);
   }
 
   focusedNode = node;
+  markNodeDirty(node);
   focusVersion(focusVersion() + 1);
   const handler = (node.handlers as any).onFocus;
   if (handler) handler(node);
 }
 
-function createStyleSignals(input: StyleProps): _StyleProps {
+function createStyleSignals(input: StyleProps, onChange: () => void): _StyleProps {
   return {
-    border: $(input.border),
-    borderTop: $(input.borderTop),
-    borderRight: $(input.borderRight),
-    borderBottom: $(input.borderBottom),
-    borderLeft: $(input.borderLeft),
-    padding: $(input.padding),
-    paddingX: $(input.paddingX),
-    paddingY: $(input.paddingY),
-    background: $(input.background),
-    foreground: $(input.foreground),
-    flexGrow: $(input.flexGrow),
-    width: $(input.width),
-    height: $(input.height),
-    minWidth: $(input.minWidth),
-    minHeight: $(input.minHeight),
-    maxWidth: $(input.maxWidth),
-    maxHeight: $(input.maxHeight),
-    margin: $(input.margin),
-    marginX: $(input.marginX),
-    marginY: $(input.marginY),
-    alignItems: $(input.alignItems),
-    justifyContent: $(input.justifyContent),
-    alignSelf: $(input.alignSelf),
-    flexShrink: $(input.flexShrink),
-    flexBasis: $(input.flexBasis),
-    flexWrap: $(input.flexWrap),
-    boxSizing: $(input.boxSizing),
+    border: $(input.border, onChange),
+    borderTop: $(input.borderTop, onChange),
+    borderRight: $(input.borderRight, onChange),
+    borderBottom: $(input.borderBottom, onChange),
+    borderLeft: $(input.borderLeft, onChange),
+    padding: $(input.padding, onChange),
+    paddingX: $(input.paddingX, onChange),
+    paddingY: $(input.paddingY, onChange),
+    background: $(input.background, onChange),
+    foreground: $(input.foreground, onChange),
+    flexGrow: $(input.flexGrow, onChange),
+    width: $(input.width, onChange),
+    height: $(input.height, onChange),
+    minWidth: $(input.minWidth, onChange),
+    minHeight: $(input.minHeight, onChange),
+    maxWidth: $(input.maxWidth, onChange),
+    maxHeight: $(input.maxHeight, onChange),
+    margin: $(input.margin, onChange),
+    marginX: $(input.marginX, onChange),
+    marginY: $(input.marginY, onChange),
+    alignItems: $(input.alignItems, onChange),
+    justifyContent: $(input.justifyContent, onChange),
+    alignSelf: $(input.alignSelf, onChange),
+    flexShrink: $(input.flexShrink, onChange),
+    flexBasis: $(input.flexBasis, onChange),
+    flexWrap: $(input.flexWrap, onChange),
+    boxSizing: $(input.boxSizing, onChange),
   };
 }
 
-function createBoxSignals(input: BoxProps): _BoxProps {
+function createBoxSignals(input: BoxProps, onChange: () => void): _BoxProps {
   return {
-    ...createStyleSignals(input),
-    gap: $(input.gap),
-    direction: $(input.direction),
+    ...createStyleSignals(input, onChange),
+    gap: $(input.gap, onChange),
+    direction: $(input.direction, onChange),
   };
 }
 
-function createScrollViewSignals(input: Omit<ScrollViewProps, "onScroll">): _ScrollViewProps {
+function createScrollViewSignals(
+  input: Omit<ScrollViewProps, "onScroll">,
+  onChange: () => void,
+): _ScrollViewProps {
   return {
-    ...createBoxSignals({ ...input, direction: "column" }),
-    overflow: $("scroll" as Overflow | undefined),
-    scrollY: $(normalizeScrollValue(input.scrollY)),
+    ...createBoxSignals({ ...input, direction: "column" }, onChange),
+    overflow: $("scroll" as Overflow | undefined, onChange),
+    scrollY: $(normalizeScrollValue(input.scrollY), onChange),
   };
 }
 
@@ -310,15 +322,15 @@ function setTextSignals(props: _TextProps, input: string | StyledText): void {
   props.styledText(styledText);
 }
 
-function createTextSignals(input: TextProps): _TextProps {
+function createTextSignals(input: TextProps, onChange: () => void): _TextProps {
   const resolved = resolveTextValue(input.text);
 
   return {
-    ...createStyleSignals(input),
-    text: $(resolved.text),
-    styledText: $(resolved.styledText),
-    wrap: $(input.wrap),
-    textOverflow: $(input.textOverflow),
+    ...createStyleSignals(input, onChange),
+    text: $(resolved.text, onChange),
+    styledText: $(resolved.styledText, onChange),
+    wrap: $(input.wrap, onChange),
+    textOverflow: $(input.textOverflow, onChange),
   };
 }
 
@@ -328,20 +340,24 @@ function createInputSignals(
     multiline?: boolean;
     wrap?: TextWrap;
   } & StyleProps,
+  onChange: () => void,
 ): _InputProps {
   return {
-    ...createStyleSignals(input),
-    text: $(""),
-    placeholder: $(input.placeholder),
-    multiline: $(input.multiline),
-    wrap: $(input.wrap),
+    ...createStyleSignals(input, onChange),
+    text: $("", onChange),
+    placeholder: $(input.placeholder, onChange),
+    multiline: $(input.multiline, onChange),
+    wrap: $(input.wrap, onChange),
   };
 }
 
-function createButtonSignals(input: { text: string } & StyleProps): _ButtonProps {
+function createButtonSignals(
+  input: { text: string } & StyleProps,
+  onChange: () => void,
+): _ButtonProps {
   return {
-    ...createStyleSignals(input),
-    text: $(prepareTextInput(input.text).text),
+    ...createStyleSignals(input, onChange),
+    text: $(prepareTextInput(input.text).text, onChange),
   };
 }
 
@@ -367,11 +383,47 @@ function makeSetStyle<T extends Record<string, Signal<any>>>(
   return (newProps) => {
     for (const [key, value] of Object.entries(newProps)) {
       if (key in props) {
-        (props as any)[key](value);
+        const signal = (props as any)[key] as Signal<unknown>;
+        if (!shallowEqual(signal.peek(), value)) signal(value);
       }
     }
   };
 }
+
+export function getNodeRenderVersion(node: Node): number {
+  return nodeRevisions.get(node)?.() ?? 0;
+}
+
+function createNodeRevision(): { mark: () => void; register: (node: Node) => void } {
+  let version = 0;
+  const revision = $(version);
+  const mark = () => revision(++version);
+  return {
+    mark,
+    register: (node) => {
+      nodeRevisions.set(node, revision);
+      nodeDirtyMarkers.set(node, mark);
+    },
+  };
+}
+
+function markNodeDirty(node: Node): void {
+  nodeDirtyMarkers.get(node)?.();
+}
+
+function shallowEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (!left || !right || typeof left !== "object" || typeof right !== "object") return false;
+  const leftEntries = Object.entries(left);
+  const rightEntries = Object.entries(right);
+  return (
+    leftEntries.length === rightEntries.length &&
+    leftEntries.every(([key, value]) => Object.is(value, (right as Record<string, unknown>)[key]))
+  );
+}
+
+const nodeRevisions = new WeakMap<Node, Signal<number>>();
+const nodeDirtyMarkers = new WeakMap<Node, () => void>();
 
 function directionToBoxKind(direction: Direction | undefined): BoxKind {
   return direction?.startsWith("row") ? NODE_TYPE.Row : NODE_TYPE.Column;

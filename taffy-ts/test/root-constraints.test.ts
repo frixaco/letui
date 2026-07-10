@@ -1,25 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AvailableSpace, AvailableSpaceSize, Dimension, LengthPercentage, Rect, Size, Style, TaffyTree, } from "../src/index.js";
-test("Rust hand-written root with percentage size resolves against available space", () => {
+test("root with percentage size resolves against available space", () => {
     const taffy = TaffyTree.new();
     const node = taffy.newLeaf(new Style({ size: new Size(Dimension.percent(1), Dimension.percent(1)) }));
     taffy.computeLayout(node, new Size(AvailableSpace.definite(100), AvailableSpace.definite(200)));
     assert.deepEqual(taffy.layout(node).size, new Size(100, 200));
 });
-test("Rust hand-written root with no size remains zero sized", () => {
+test("root with no size remains zero sized", () => {
     const taffy = TaffyTree.new();
     const node = taffy.newLeaf(Style.default());
     taffy.computeLayout(node, new Size(AvailableSpace.definite(100), AvailableSpace.definite(100)));
     assert.deepEqual(taffy.layout(node).size, Size.zero());
 });
-test("Rust hand-written root explicit size can exceed available space", () => {
+test("root explicit size can exceed available space", () => {
     const taffy = TaffyTree.new();
     const node = taffy.newLeaf(new Style({ size: new Size(Dimension.length(200), Dimension.length(200)) }));
     taffy.computeLayout(node, new Size(AvailableSpace.definite(100), AvailableSpace.definite(100)));
     assert.deepEqual(taffy.layout(node).size, new Size(200, 200));
 });
-test("Rust hand-written root padding and border larger than definite size floor block root size", () => {
+test("root padding and border larger than definite size floor block root size", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(Style.default());
     const ten = LengthPercentage.length(10);

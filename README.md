@@ -1,6 +1,6 @@
 # LeTUI
 
-TUI library with a Rust rendering core and TypeScript wrapper API. Written from scratch.
+Reactive TUI library for Bun, powered by a TypeScript port of Taffy.
 
 ## Demos
 
@@ -19,8 +19,6 @@ https://github.com/user-attachments/assets/1599de82-146d-4a0d-bc66-86a2b51a77c1
 ## Prerequisites
 
 - Runtime: [Bun](https://bun.sh/) 1.3+ (Node.js not supported)
-- Prebuilt binaries: `darwin-arm64`, `linux-x64`, `win32-x64`
-- Rust toolchain if building locally
 
 ## Quick start
 
@@ -28,7 +26,6 @@ https://github.com/user-attachments/assets/1599de82-146d-4a0d-bc66-86a2b51a77c1
 git clone https://github.com/frixaco/letui.git
 cd letui
 bun install
-bun run build-ffi
 ```
 
 More examples:
@@ -42,8 +39,7 @@ bun run examples/typing-speed.ts
 Checks:
 
 ```bash
-bun run typecheck
-bun run check:rust
+bun run check
 ```
 
 ## Install as a library
@@ -52,7 +48,7 @@ bun run check:rust
 bun add @frixaco/letui
 ```
 
-On supported targets, install pulls the matching native binary automatically.
+The package runs consistently across Bun-supported platforms.
 
 Minimal reactive app:
 
@@ -114,22 +110,20 @@ bun run app.ts
 
 ## How it works
 
-1. Signals-based TypeScript runtime drives updates
-2. Each reactive frame snapshots the current node tree into JS-side sent state
-3. If node shape stays compatible, JS sends only style deltas plus text ops; if shape changes, Rust tree state is rebuilt once
-4. Rust keeps persistent tree state, runs layout + paint, and owns the terminal buffers
-5. Frame data is synced back to JS nodes for `frame` / `frameWidth()` / `frameHeight()`, while Rust also exposes the final visible hitmap for interaction
-6. Terminal output is cell-based and incremental; flush only writes changed cells
+1. Signals drive reactive frames from the live component tree
+2. A persistent TypeScript `TaffyTree` updates changed styles and measure contexts in place
+3. Taffy computes layout, then the renderer paints text, borders, backgrounds, and hit maps into typed arrays
+4. Frames are written directly onto component nodes for `frame` / `frameWidth()` / `frameHeight()`
+5. The ANSI terminal writer diffs cell buffers and writes only changed cells
 
 ## Architecture
 
-- **TypeScript** — component API, signals, input routing, sent-tree diffing, op encoding
-- **Rust** — persistent tree state, style/text op application, layout, paint, incremental flush
-- **Bun FFI** — bridge for op buffers, frame buffers, and lifecycle hooks
-- Packaged native binaries for `darwin-arm64`, `linux-x64`, `win32-x64`
-- TypeScript runtime deps: none. Rust deps: `crossterm`, `taffy`, `unicode-width`, and `unicode-segmentation`.
+- **Components and signals** — public API and reactive state
+- **Taffy TypeScript port** — persistent flexbox layout and caching
+- **Renderer** — Unicode text layout, cell painting, frames, and hit maps
+- **Terminal** — raw-mode lifecycle and incremental ANSI output
 
-Text wrapping, clipping, and overflow are resolved in the Rust renderer. Explicit newlines are treated as hard row boundaries after text normalization.
+Text wrapping, clipping, and overflow are resolved by the TypeScript renderer. Explicit newlines are treated as hard row boundaries after text normalization.
 
 Vertical scrolling is available on `ScrollView`:
 
@@ -144,7 +138,7 @@ const viewport = ScrollView(
 );
 ```
 
-`ScrollView` always scrolls vertically. `scrollY` is a row offset; Rust clamps oversized values, floors fractional values to whole rows, and owns the final hit-testing for the visible scrolled region.
+`ScrollView` always scrolls vertically. `scrollY` is a row offset; the renderer clamps oversized values, floors fractional values to whole rows, and owns final hit-testing for the visible scrolled region.
 
 Debug metrics split the frame into `js`, `render`, `sync`, and `flush`, plus a worst-frame breakdown. Enable with `run(root, { debug: true })` to print the summary on quit. If you also want a file, pass `run(root, { debug: true, metricsPath: "dump/metrics.txt" })`.
 
@@ -175,8 +169,7 @@ Pass `appearance: "light"`, `"dark"`, or `"unknown"` to `run()` to override dete
 
 ## Benchmarks
 
-Generally speaking it's on par if not faster than OpenTUI, Ink and probably any other popular TUI library at its current state.
-It loses to Ratatui though, as it is pure Rust.
+Run `bun run bench` for renderer measurements on your machine. The performance gate targets an average direct render below 1 ms for the representative fixture.
 
 ## Docs
 
@@ -186,21 +179,6 @@ It loses to Ratatui though, as it is pure Rust.
 - [State, events & lifecycle](./docs/state-events-lifecycle.md)
 - [Releasing](./docs/releasing.md)
 - [Troubleshooting](./docs/troubleshooting.md)
-
-## TODO
-
-- [x] All essential features except ones below
-- [x] Text styling with `StyledText` spans
-- [x] Text wrap, overflow, clipping, and explicit newline layout in the renderer
-- [x] Persistent Taffy tree
-- [x] Vertical scrolling with `ScrollView`
-- [x] Minimal theming support with startup detection and DEC 2031 live updates
-- [ ] Full grapheme rendering support: store/render whole grapheme strings per lead cell instead of a single codepoint
-- [ ] Better Input experience: multiline editing, shortcuts, cursor movement, scrolling, placeholder rendering, etc.
-- [ ] Safer quit/cleanup when used as a library
-- [ ] Experiment: Neovim as text input via a Bun-compatible PTY workflow
-- [ ] Refactor `flush` with `BatchWriter` pattern
-- [ ] Performance stats overlay
 
 ## Releasing
 

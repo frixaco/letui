@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AbstractAxis, AbsoluteAxis, AlignContent, CompactLength, CompactLengthTag, Dimension, GridAutoFlow, GridAutoTracks, GridTemplateArea, InvalidStringRepetitionValue, LengthPercentage, LengthPercentageAuto, Line, MaxTrackSizingFunction, MinTrackSizingFunction, ParseError, Style, TrackSizingFunction, TrackCounts, GridTemplateTracks, evenlySizedTracks, evenly_sized_tracks, flex, fr, gridLineAsI16, gridLineIntoOriginZeroLine, grid_line_as_i16, grid_line_into_origin_zero_line, grid_auto_flow_is_dense, grid_auto_flow_primary_axis, gridAutoFlowIsDense, gridAutoFlowPrimaryAxis, gridPlacementIntoOriginZeroIgnoringNamed, gridPlacementLine, gridPlacementLineIntoOriginZeroIgnoringNamed, gridPlacementLineIsDefinite, gridPlacementFromString, gridPlacementNamedLine, gridPlacementNamedSpan, gridPlacementSpan, grid_placement_from_string, gridTemplateComponentAsComponentRef, gridTemplateComponentAuto, gridTemplateComponentFitContent, gridTemplateComponentFr, gridTemplateComponentIsAutoRepetition, gridTemplateComponentLength, gridTemplateComponentMaxContent, gridTemplateComponentMinContent, gridTemplateComponentPercent, gridTemplateComponentSingle, gridTemplateComponentZero, gridTemplateComponentFromString, grid_template_component_as_component_ref, grid_template_component_is_auto_repetition, grid_template_component_from_string, gridAutoTracksFromString, grid_auto_tracks_from_string, gridTemplateTracksFromString, grid_template_tracks_from_string, lengthTrack, maxTrackSizingFunctionFromString, max_track_sizing_function_from_string, minmax, minTrackSizingFunctionFromString, min_track_sizing_function_from_string, nonNamedGridPlacementIntoOriginZero, nonNamedGridPlacementLineIntoOriginZero, nonNamedGridPlacementLineIsDefinite, originZeroGridPlacementLineIndefiniteSpan, originZeroGridPlacementLineIsDefinite, originZeroGridPlacementLineResolveAbsolutelyPositionedGridTracks, originZeroGridPlacementLineResolveDefiniteGridLines, originZeroGridPlacementLineResolveIndefiniteGridTracks, originZeroLineImpliedNegativeImplicitTracks, originZeroLineImpliedPositiveImplicitTracks, originZeroLineIntoTrackVecIndex, originZeroLineSpan, originZeroLineTryIntoTrackVecIndex, origin_zero_line_implied_negative_implicit_tracks, origin_zero_line_implied_positive_implicit_tracks, origin_zero_line_into_track_vec_index, origin_zero_line_span, origin_zero_line_try_into_track_vec_index, percentTrack, repeat, repetitionCountFrom, repetitionCountFromString, repetition_count_from_string, trackSizingFunctionFromString, track_sizing_function_from_string, } from "../src/index.js";
 import { evenlySizedTracks as helperEvenlySizedTracks, evenly_sized_tracks as helper_evenly_sized_tracks, flex as helperFlex, fr as helperFr, line as helperLine, minmax as helperMinmax, repeat as helperRepeat, span as helperSpan, } from "../src/style/helpers.js";
-test("track sizing constructors mirror Rust style helper conversions", () => {
+test("track sizing constructors mirror style helper conversions", () => {
     assert.equal(MaxTrackSizingFunction.ZERO.intoRaw().value(), 0);
     assert.equal(MaxTrackSizingFunction.AUTO.isAuto(), true);
     assert.equal(MaxTrackSizingFunction.MIN_CONTENT.isMinContent(), true);
@@ -76,7 +76,7 @@ test("track sizing constructors mirror Rust style helper conversions", () => {
     assert.equal(fr(3, TrackSizingFunction).max.isFr(), true);
     assert.equal(fr(3, { fromFr: gridTemplateComponentFr }).type, "Single");
 });
-test("track sizing conversion helpers mirror Rust From implementations", () => {
+test("track sizing conversion helpers mirror From implementations", () => {
     const lengthPercentage = LengthPercentage.percent(0.25);
     const lengthPercentageAuto = LengthPercentageAuto.auto();
     const dimension = Dimension.length(32);
@@ -98,12 +98,12 @@ test("track sizing conversion helpers mirror Rust From implementations", () => {
     assert.equal(fromDimension.min.intoRaw().value(), 32);
     assert.equal(fromDimension.max.intoRaw().value(), 32);
 });
-test("min track conversion from max track follows Rust fr and fit-content exceptions", () => {
+test("min track conversion from max track follows reference fr and fit-content exceptions", () => {
     assert.equal(MinTrackSizingFunction.fromMax(MaxTrackSizingFunction.fr(1)).isAuto(), true);
     assert.equal(MinTrackSizingFunction.fromMax(MaxTrackSizingFunction.fitContent(LengthPercentage.length(20))).isAuto(), true);
     assert.equal(MinTrackSizingFunction.fromMax(MaxTrackSizingFunction.length(20)).intoRaw().value(), 20);
 });
-test("max track definite limits and percentage checks mirror Rust", () => {
+test("max track definite limits and percentage checks mirror reference", () => {
     const fitPx = MaxTrackSizingFunction.fitContentPx(40);
     assert.equal(fitPx.definiteValue(100), undefined);
     assert.equal(fitPx.definiteLimit(100), 40);
@@ -113,7 +113,7 @@ test("max track definite limits and percentage checks mirror Rust", () => {
     assert.equal(fitPercent.definiteLimit(400), 100);
     assert.equal(fitPercent.usesPercentage(), true);
 });
-test("track sizing parsers mirror Rust parse feature", () => {
+test("track sizing parsers mirror reference parse feature", () => {
     assert.equal(minTrackSizingFunctionFromString("12px").intoRaw().value(), 12);
     assert.equal(min_track_sizing_function_from_string("25%").into_raw().value(), 0.25);
     assert.equal(MinTrackSizingFunction.fromString("auto").isAuto(), true);
@@ -139,7 +139,7 @@ test("track sizing parsers mirror Rust parse feature", () => {
     assert.throws(() => trackSizingFunctionFromString("minmax(10px 1fr)"), ParseError);
     assert.throws(() => trackSizingFunctionFromString("10PX"), ParseError);
 });
-test("grid helper constructors mirror Rust helper module", () => {
+test("grid helper constructors mirror reference helper module", () => {
     assert.deepEqual(repetitionCountFrom(3), { type: "Count", count: 3 });
     assert.deepEqual(repetitionCountFrom("auto-fit"), { type: "AutoFit" });
     assert.deepEqual(repetitionCountFrom("auto-fill"), { type: "AutoFill" });
@@ -206,7 +206,7 @@ test("grid helper constructors mirror Rust helper module", () => {
     assert.throws(() => gridAutoTracksFromString("10px minmax(20px, 1fr"), ParseError);
     assert.throws(() => gridAutoTracksFromString("10px bad-token"), ParseError);
 });
-test("grid template track parsers mirror Rust parse feature", () => {
+test("grid template track parsers mirror reference parse feature", () => {
     const tracks = gridTemplateTracksFromString("[start main] 10px [middle] minmax(20px, 1fr) [end]");
     assert.equal(tracks.tracks.length, 2);
     assert.deepEqual(tracks.lineNames, [["start", "main"], ["middle"], ["end"]]);
@@ -221,7 +221,7 @@ test("grid template track parsers mirror Rust parse feature", () => {
     assert.throws(() => gridTemplateTracksFromString("10px [bad"), ParseError);
     assert.throws(() => gridTemplateTracksFromString("10px [1bad]"), ParseError);
 });
-test("grid template component parser mirrors Rust parse feature", () => {
+test("grid template component parser matches parse feature", () => {
     const single: any = gridTemplateComponentFromString("fit-content(30%)");
     assert.equal(single.type, "Single");
     if (single.type === "Single") {
@@ -245,7 +245,7 @@ test("grid template component parser mirrors Rust parse feature", () => {
     assert.throws(() => gridTemplateComponentFromString("repeat(2 10px)"), ParseError);
     assert.throws(() => gridTemplateComponentFromString("repeat(2, 10px, 20px)"), ParseError);
 });
-test("grid placement parser mirrors Rust parse feature", () => {
+test("grid placement parser matches parse feature", () => {
     assert.deepEqual(gridPlacementFromString("auto"), { type: "Auto" });
     assert.deepEqual(gridPlacementFromString("2"), { type: "Line", line: 2 });
     assert.deepEqual(grid_placement_from_string("-2"), { type: "Line", line: -2 });
@@ -272,7 +272,7 @@ test("grid placement parser mirrors Rust parse feature", () => {
     assert.throws(() => gridPlacementFromString("main aside"), ParseError);
     assert.throws(() => gridPlacementFromString("1 2"), ParseError);
 });
-test("generic grid public types mirror Rust aliases", () => {
+test("generic grid public types mirror reference aliases", () => {
     const placementAuto = { type: "Auto" };
     const placementLine = { type: "Line", line: 4 };
     const placementSpan = { type: "Span", span: 2 };
@@ -288,7 +288,7 @@ test("generic grid public types mirror Rust aliases", () => {
     assert.equal(genericSingle.track.max.intoRaw().value(), 12);
     assert.deepEqual(genericRepeat.repetition.count, "once");
 });
-test("grid template component single constructors mirror Rust scalar conversions", () => {
+test("grid template component single constructors mirror reference scalar conversions", () => {
     const area = new GridTemplateArea("main", 1, 3, 2, 4);
     assert.equal(area.row_start, 1);
     assert.equal(area.row_end, 3);
@@ -335,7 +335,7 @@ test("grid template component single constructors mirror Rust scalar conversions
     assert.equal(fraction.type, "Single");
     assert.equal(fraction.track.max.intoRaw().tag(), CompactLengthTag.Fr);
 });
-test("grid auto-flow helpers mirror Rust enum methods", () => {
+test("grid auto-flow helpers mirror reference enum methods", () => {
     assert.equal(gridAutoFlowIsDense(GridAutoFlow.Row), false);
     assert.equal(gridAutoFlowIsDense(GridAutoFlow.Column), false);
     assert.equal(gridAutoFlowIsDense(GridAutoFlow.RowDense), true);
@@ -349,7 +349,7 @@ test("grid auto-flow helpers mirror Rust enum methods", () => {
     assert.equal(grid_auto_flow_primary_axis(GridAutoFlow.RowDense), AbsoluteAxis.Horizontal);
     assert.equal(GridAutoFlow.primary_axis(GridAutoFlow.Column), AbsoluteAxis.Vertical);
 });
-test("Style grid trait helper methods mirror Rust axis dispatch", () => {
+test("Style grid trait helper methods mirror reference axis dispatch", () => {
     const rows = [gridTemplateComponentSingle(TrackSizingFunction.length(12))];
     const columns = [gridTemplateComponentSingle(TrackSizingFunction.fr(1))];
     const rowPlacement = new Line(gridPlacementLine(2), gridPlacementSpan(3));
@@ -371,7 +371,7 @@ test("Style grid trait helper methods mirror Rust axis dispatch", () => {
     assert.equal(style.grid_placement(AbsoluteAxis.Horizontal), columnPlacement);
     assert.equal(style.grid_placement(AbsoluteAxis.Vertical), rowPlacement);
 });
-test("grid placement helpers mirror Rust line and span conversions", () => {
+test("grid placement helpers mirror reference line and span conversions", () => {
     assert.deepEqual(gridPlacementLine(2), { type: "Line", line: 2 });
     assert.deepEqual(gridPlacementSpan(3), { type: "Span", span: 3 });
     assert.deepEqual(gridPlacementNamedLine("main", -1), {
@@ -381,7 +381,7 @@ test("grid placement helpers mirror Rust line and span conversions", () => {
     });
     assert.deepEqual(gridPlacementNamedSpan("main", 2), { type: "NamedSpan", name: "main", span: 2 });
 });
-test("grid coordinate helpers mirror Rust origin-zero conversions", () => {
+test("grid coordinate helpers mirror reference origin-zero conversions", () => {
     const counts = TrackCounts.fromRaw(2, 4, 3);
     assert.deepEqual(TrackCounts.default(), new TrackCounts(0, 0, 0));
     assert.deepEqual(TrackCounts.from_raw(2, 4, 3), counts);
@@ -422,7 +422,7 @@ test("grid coordinate helpers mirror Rust origin-zero conversions", () => {
     assert.equal(originZeroLineSpan(new Line(4, -1)), 0);
     assert.equal(origin_zero_line_span(new Line(-1, 4)), 5);
 });
-test("grid placement origin-zero helpers mirror Rust named-ignoring conversion", () => {
+test("grid placement origin-zero helpers mirror reference named-ignoring conversion", () => {
     assert.deepEqual(gridPlacementIntoOriginZeroIgnoringNamed(gridPlacementLine(1), 4), {
         type: "Line",
         line: 0,
@@ -444,13 +444,13 @@ test("grid placement origin-zero helpers mirror Rust named-ignoring conversion",
     assert.deepEqual(linePlacement.start, { type: "Line", line: 3 });
     assert.deepEqual(linePlacement.end, { type: "Span", span: 3 });
 });
-test("grid placement definiteness mirrors Rust public placement rules", () => {
+test("grid placement definiteness matches public placement rules", () => {
     assert.equal(gridPlacementLineIsDefinite(new Line(gridPlacementLine(0), gridPlacementSpan(2))), false);
     assert.equal(gridPlacementLineIsDefinite(new Line(gridPlacementLine(1), gridPlacementSpan(2))), true);
     assert.equal(gridPlacementLineIsDefinite(new Line(gridPlacementSpan(2), gridPlacementLine(-1))), true);
     assert.equal(gridPlacementLineIsDefinite(new Line(gridPlacementNamedLine("main", 0), gridPlacementSpan(2))), true);
 });
-test("non-named grid placement helpers mirror Rust origin-zero conversion", () => {
+test("non-named grid placement helpers mirror reference origin-zero conversion", () => {
     assert.deepEqual(nonNamedGridPlacementIntoOriginZero({ type: "Line", line: 3 }, 4), {
         type: "Line",
         line: 2,
@@ -472,7 +472,7 @@ test("non-named grid placement helpers mirror Rust origin-zero conversion", () =
     assert.equal(nonNamedGridPlacementLineIsDefinite(new Line({ type: "Line", line: 0 }, { type: "Span", span: 2 })), false);
     assert.equal(nonNamedGridPlacementLineIsDefinite(new Line({ type: "Auto" }, { type: "Line", line: -1 })), true);
 });
-test("origin-zero grid placement definiteness and indefinite spans mirror Rust", () => {
+test("origin-zero grid placement definiteness and indefinite spans mirror reference", () => {
     assert.equal(originZeroGridPlacementLineIsDefinite(new Line({ type: "Auto" }, { type: "Span", span: 3 })), false);
     assert.equal(originZeroGridPlacementLineIsDefinite(new Line({ type: "Line", line: 0 }, { type: "Auto" })), true);
     assert.equal(originZeroGridPlacementLineIndefiniteSpan(new Line({ type: "Auto" }, { type: "Auto" })), 1);
@@ -481,7 +481,7 @@ test("origin-zero grid placement definiteness and indefinite spans mirror Rust",
     assert.equal(originZeroGridPlacementLineIndefiniteSpan(new Line({ type: "Span", span: 5 }, { type: "Span", span: 2 })), 5);
     assert.throws(() => originZeroGridPlacementLineIndefiniteSpan(new Line({ type: "Line", line: 1 }, { type: "Line", line: 3 })));
 });
-test("origin-zero grid placement resolution helpers mirror Rust definite and absolute cases", () => {
+test("origin-zero grid placement resolution helpers mirror reference definite and absolute cases", () => {
     assert.deepEqual(originZeroGridPlacementLineResolveDefiniteGridLines(new Line({ type: "Line", line: 2 }, { type: "Line", line: 2 })), new Line(2, 3));
     assert.deepEqual(originZeroGridPlacementLineResolveDefiniteGridLines(new Line({ type: "Line", line: 6 }, { type: "Line", line: 2 })), new Line(2, 6));
     assert.deepEqual(originZeroGridPlacementLineResolveDefiniteGridLines(new Line({ type: "Span", span: 3 }, { type: "Line", line: 8 })), new Line(5, 8));
@@ -490,7 +490,7 @@ test("origin-zero grid placement resolution helpers mirror Rust definite and abs
     assert.deepEqual(originZeroGridPlacementLineResolveAbsolutelyPositionedGridTracks(new Line({ type: "Auto" }, { type: "Line", line: 6 })), new Line(undefined, 6));
     assert.deepEqual(originZeroGridPlacementLineResolveAbsolutelyPositionedGridTracks(new Line({ type: "Span", span: 3 }, { type: "Auto" })), new Line(undefined, undefined));
 });
-test("origin-zero grid placement indefinite resolution mirrors Rust", () => {
+test("origin-zero grid placement indefinite resolution mirrors reference", () => {
     assert.deepEqual(originZeroGridPlacementLineResolveIndefiniteGridTracks(new Line({ type: "Auto" }, { type: "Auto" }), 4), new Line(4, 5));
     assert.deepEqual(originZeroGridPlacementLineResolveIndefiniteGridTracks(new Line({ type: "Span", span: 3 }, { type: "Auto" }), 4), new Line(4, 7));
     assert.deepEqual(originZeroGridPlacementLineResolveIndefiniteGridTracks(new Line({ type: "Auto" }, { type: "Span", span: 2 }), 4), new Line(4, 6));

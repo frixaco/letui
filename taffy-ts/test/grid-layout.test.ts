@@ -17,7 +17,7 @@ test("grid repeat integer lays auto-placed items row by row", () => {
     assert.deepEqual(taffy.layout(children[4]).location, new Point(40, 40));
     assert.deepEqual(taffy.layout(children[8]).location, new Point(80, 80));
 });
-test("grid layout stores detailed grid information like Rust detailed_layout_info", () => {
+test("grid layout stores detailed grid information consistently detailed_layout_info", () => {
     const taffy = TaffyTree.new();
     const first = taffy.newLeaf(new Style({ gridColumn: span(2) }));
     const second = taffy.newLeaf(Style.default());
@@ -56,7 +56,7 @@ test("grid layout stores detailed grid information like Rust detailed_layout_inf
         },
     });
 });
-test("Rust XML grid scrollbars reduce stretched grid item space", () => {
+test("grid scrollbars reduce stretched grid item space", () => {
     const cases = [
         {
             name: "x_axis",
@@ -94,7 +94,7 @@ test("Rust XML grid scrollbars reduce stretched grid item space", () => {
         assert.deepEqual(taffy.layout(child).size, testCase.expectedChildSize, testCase.name);
     }
 });
-test("Rust XML grid rtl scrollbar reduces percentage column track", () => {
+test("grid rtl scrollbar reduces percentage column track", () => {
     const taffy = TaffyTree.new();
     const child = taffy.newLeaf(new Style({
         direction: Direction.Rtl,
@@ -114,7 +114,7 @@ test("Rust XML grid rtl scrollbar reduces percentage column track", () => {
     assert.deepEqual(taffy.layout(child).location, new Point(15, 0));
     assert.deepEqual(taffy.layout(child).size, new Size(85, 200));
 });
-test("Rust XML grid scrollbars clamp stretched item space after size constraints", () => {
+test("grid scrollbars clamp stretched item space after size constraints", () => {
     const explicitTree = TaffyTree.new();
     const explicitChild = explicitTree.newLeaf(new Style({ direction: Direction.Ltr }));
     const explicitRoot = explicitTree.newWithChildren(new Style({
@@ -144,7 +144,7 @@ test("Rust XML grid scrollbars clamp stretched item space after size constraints
     assert.deepEqual(maxTree.layout(maxChild).location, Point.zero());
     assert.deepEqual(maxTree.layout(maxChild).size, Size.zero());
 });
-test("Rust XML nested grid scrollbars are clamped by parent available space", () => {
+test("nested grid scrollbars are clamped by parent available space", () => {
     const taffy = TaffyTree.new();
     const grandchild = taffy.newLeaf(new Style({ direction: Direction.Ltr }));
     const child = taffy.newWithChildren(new Style({
@@ -166,7 +166,7 @@ test("Rust XML nested grid scrollbars are clamped by parent available space", ()
     assert.deepEqual(taffy.layout(grandchild).location, Point.zero());
     assert.deepEqual(taffy.layout(grandchild).size, Size.zero());
 });
-test("Rust XML grid inline overflow preserves visible and scrollable content", () => {
+test("grid inline overflow preserves visible and scrollable content", () => {
     const cases = [
         {
             name: "visible",
@@ -210,7 +210,7 @@ test("Rust XML grid inline overflow preserves visible and scrollable content", (
         }
     }
 });
-test("Rust XML grid item padding and border floor undersized child dimensions", () => {
+test("grid item padding and border floor undersized child dimensions", () => {
     const padding = new Rect(LengthPercentage.length(8), LengthPercentage.length(4), LengthPercentage.length(2), LengthPercentage.length(6));
     const border = new Rect(LengthPercentage.length(7), LengthPercentage.length(3), LengthPercentage.length(1), LengthPercentage.length(5));
     const cases = [
@@ -271,7 +271,7 @@ test("Rust XML grid item padding and border floor undersized child dimensions", 
         assert.deepEqual(taffy.layout(child).size, testCase.expected, testCase.name);
     }
 });
-test("Rust XML grid container padding and border floor undersized container dimensions", () => {
+test("grid container padding and border floor undersized container dimensions", () => {
     const padding = new Rect(LengthPercentage.length(8), LengthPercentage.length(4), LengthPercentage.length(2), LengthPercentage.length(6));
     const border = new Rect(LengthPercentage.length(7), LengthPercentage.length(3), LengthPercentage.length(1), LengthPercentage.length(5));
     const cases = [
@@ -324,7 +324,7 @@ test("Rust XML grid container padding and border floor undersized container dime
         assert.deepEqual(taffy.layout(child).size, testCase.expectedChild, testCase.name);
     }
 });
-test("Rust XML blockgrid grid children inside block participate in block layout", () => {
+test("blockgrid grid children inside block participate in block layout", () => {
     for (const boxSizing of [BoxSizing.BorderBox, BoxSizing.ContentBox]) {
         for (const direction of [Direction.Ltr, Direction.Rtl]) {
             const taffy = TaffyTree.new();
@@ -363,7 +363,7 @@ test("Rust XML blockgrid grid children inside block participate in block layout"
         }
     }
 });
-test("Rust XML grid boxes block vertical margin collapse through block siblings", () => {
+test("grid boxes block vertical margin collapse through block siblings", () => {
     for (const boxSizing of [BoxSizing.BorderBox, BoxSizing.ContentBox]) {
         for (const direction of [Direction.Ltr, Direction.Rtl]) {
             const taffy = TaffyTree.new();
@@ -404,7 +404,7 @@ test("Rust XML grid boxes block vertical margin collapse through block siblings"
         }
     }
 });
-test("Rust XML grid boxes block first and last child margin collapse", () => {
+test("grid boxes block first and last child margin collapse", () => {
     const cases = [
         {
             gridMargin: new Rect(LengthPercentageAuto.zero(), LengthPercentageAuto.zero(), LengthPercentageAuto.length(10), LengthPercentageAuto.zero()),
@@ -458,7 +458,7 @@ test("Rust XML grid boxes block first and last child margin collapse", () => {
         }
     }
 });
-test("Rust XML block children in single-column grids size block text by track function", () => {
+test("block children in single-column grids size block text by track function", () => {
     const cases = [
         { track: TrackSizingFunction.auto(), expectedWidth: 40, expectedHeight: 10 },
         { track: fr(1), expectedWidth: 40, expectedHeight: 10 },
@@ -520,7 +520,7 @@ test("Rust XML block children in single-column grids size block text by track fu
         }
     }
 });
-test("grid holy grail Rust example lays out named regions with helper placements", () => {
+test("grid holy grail example lays out named regions with helper placements", () => {
     const taffy = TaffyTree.new();
     const rootStyle = new Style({
         display: Display.Grid,
@@ -823,7 +823,7 @@ test("grid negative named line index selects from the end", () => {
     assert.deepEqual(taffy.layout(child).location, new Point(80, 0));
     assert.deepEqual(taffy.layout(child).size, new Size(20, 40));
 });
-test("grid line placement conflict handling mirrors Rust", () => {
+test("grid line placement conflict handling mirrors reference", () => {
     const taffy = TaffyTree.new();
     const child0 = taffy.newLeaf(new Style({
         gridColumn: new Line(line(3), line(1)),
@@ -1355,7 +1355,7 @@ test("grid justify-content distributes free inline track space", () => {
     assert.deepEqual(taffy.layout(children[2]).location, new Point(160, 0));
     assert.deepEqual(taffy.layout(children[8]).location, new Point(160, 80));
 });
-test("Rust XML grid justify-content center offsets column tracks in inline space", () => {
+test("grid justify-content center offsets column tracks in inline space", () => {
     const taffy = TaffyTree.new();
     const children = Array.from({ length: 9 }, () => taffy.newLeaf(new Style({ direction: Direction.Ltr })));
     const root = taffy.newWithChildren(new Style({
@@ -1373,7 +1373,7 @@ test("Rust XML grid justify-content center offsets column tracks in inline space
     assert.deepEqual(taffy.layout(children[8]).location, new Point(120, 80));
     assert.deepEqual(taffy.layout(children[8]).size, new Size(40, 40));
 });
-test("Rust XML grid justify-content center respects rtl physical column order", () => {
+test("grid justify-content center respects rtl physical column order", () => {
     const taffy = TaffyTree.new();
     const children = Array.from({ length: 9 }, () => taffy.newLeaf(new Style({ direction: Direction.Ltr })));
     const root = taffy.newWithChildren(new Style({
@@ -1392,7 +1392,7 @@ test("Rust XML grid justify-content center respects rtl physical column order", 
     assert.deepEqual(taffy.layout(children[8]).location, new Point(40, 80));
     assert.deepEqual(taffy.layout(children[8]).size, new Size(40, 40));
 });
-test("Rust XML grid justify-content center with negative free space and gaps preserves overflow", () => {
+test("grid justify-content center with negative free space and gaps preserves overflow", () => {
     const taffy = TaffyTree.new();
     const children = Array.from({ length: 9 }, () => taffy.newLeaf(new Style({ direction: Direction.Ltr })));
     const grid = taffy.newWithChildren(new Style({
@@ -1439,7 +1439,7 @@ test("grid align-content end accounts for padding and border", () => {
     assert.deepEqual(taffy.layout(children[3]).location, new Point(48, 84));
     assert.deepEqual(taffy.layout(children[8]).location, new Point(128, 124));
 });
-test("Rust XML grid align-content center offsets row tracks in block space", () => {
+test("grid align-content center offsets row tracks in block space", () => {
     const taffy = TaffyTree.new();
     const children = Array.from({ length: 9 }, () => taffy.newLeaf(new Style({ direction: Direction.Ltr })));
     const root = taffy.newWithChildren(new Style({
@@ -1457,7 +1457,7 @@ test("Rust XML grid align-content center offsets row tracks in block space", () 
     assert.deepEqual(taffy.layout(children[8]).location, new Point(80, 120));
     assert.deepEqual(taffy.layout(children[8]).size, new Size(40, 40));
 });
-test("Rust XML grid align-content space-around distributes row track space", () => {
+test("grid align-content space-around distributes row track space", () => {
     const taffy = TaffyTree.new();
     const children = Array.from({ length: 9 }, () => taffy.newLeaf(new Style({ direction: Direction.Ltr })));
     const root = taffy.newWithChildren(new Style({
@@ -1475,7 +1475,7 @@ test("Rust XML grid align-content space-around distributes row track space", () 
     assert.deepEqual(taffy.layout(children[8]).location, new Point(80, 147));
     assert.deepEqual(taffy.layout(children[8]).size, new Size(40, 40));
 });
-test("Rust XML grid align-content spaced modes account for padding and border", () => {
+test("grid align-content spaced modes account for padding and border", () => {
     const padding = new Rect(LengthPercentage.length(40), LengthPercentage.length(20), LengthPercentage.length(10), LengthPercentage.length(30));
     const border = new Rect(LengthPercentage.length(8), LengthPercentage.length(4), LengthPercentage.length(2), LengthPercentage.length(6));
     const cases = [
@@ -1544,7 +1544,7 @@ test("Rust XML grid align-content spaced modes account for padding and border", 
         assert.deepEqual(taffy.layout(children[8]).size, new Size(40, 40), testCase.name);
     }
 });
-test("Rust XML grid align-content center with negative free space and gaps preserves overflow", () => {
+test("grid align-content center with negative free space and gaps preserves overflow", () => {
     const taffy = TaffyTree.new();
     const children = Array.from({ length: 9 }, () => taffy.newLeaf(new Style({ direction: Direction.Ltr })));
     const grid = taffy.newWithChildren(new Style({
@@ -1590,7 +1590,7 @@ test("grid justify-content space-evenly accounts for padding and border", () => 
     assert.deepEqual(taffy.layout(children[1]).location, new Point(92, 12));
     assert.deepEqual(taffy.layout(children[2]).location, new Point(134, 12));
 });
-test("Rust XML grid justify-content spaced modes account for padding and border", () => {
+test("grid justify-content spaced modes account for padding and border", () => {
     const padding = new Rect(LengthPercentage.length(40), LengthPercentage.length(20), LengthPercentage.length(10), LengthPercentage.length(30));
     const border = new Rect(LengthPercentage.length(8), LengthPercentage.length(4), LengthPercentage.length(2), LengthPercentage.length(6));
     const cases = [
@@ -1736,7 +1736,7 @@ test("grid percent tracks resolve against definite content size", () => {
     assert.deepEqual(taffy.layout(children[5]).location, new Point(36, 18));
     assert.deepEqual(taffy.layout(children[5]).size, new Size(36, 36));
 });
-test("Rust XML grid percentage tracks resolve definite and content-sized containers", () => {
+test("grid percentage tracks resolve definite and content-sized containers", () => {
     const runPercentTracks = (rowPercents: number[], columnPercents: number[], rootSize: Size, leadingContentSize: Size | undefined = undefined) => {
         const taffy = TaffyTree.new();
         const first = taffy.newLeaf(new Style({
@@ -1802,7 +1802,7 @@ test("Rust XML grid percentage tracks resolve definite and content-sized contain
     assert.deepEqual(contentOverflow.taffy.layout(contentOverflow.children[6]).location, new Point(80, 50));
     assert.deepEqual(contentOverflow.taffy.layout(contentOverflow.children[6]).size, new Size(40, 80));
 });
-test("Rust XML grid percentage items resolve against grid area width", () => {
+test("grid percentage items resolve against grid area width", () => {
     const cases = [
         {
             name: "width and padding border-box ltr",
@@ -1875,7 +1875,7 @@ test("Rust XML grid percentage items resolve against grid area width", () => {
         assert.deepEqual(taffy.layout(child).size, testCase.expectedChildSize, testCase.name);
     }
 });
-test("Rust XML grid percentage child inside stretched grid item resolves from stretched area", () => {
+test("grid percentage child inside stretched grid item resolves from stretched area", () => {
     for (const direction of [Direction.Ltr, Direction.Rtl]) {
         const taffy = TaffyTree.new();
         const grandchild = taffy.newLeaf(new Style({
@@ -2149,7 +2149,7 @@ test("grid align and justify items center sized children in their cells", () => 
     assert.deepEqual(taffy.layout(child0).location, new Point(10, 10));
     assert.deepEqual(taffy.layout(child1).location, new Point(70, 70));
 });
-test("Rust XML grid absolute resolved insets honor border, scrollbars, percentages, and rtl", () => {
+test("grid absolute resolved insets honor border, scrollbars, percentages, and rtl", () => {
     const len = LengthPercentageAuto.length;
     const percent = LengthPercentageAuto.percent;
     const auto = LengthPercentageAuto.auto();
@@ -2312,7 +2312,7 @@ test("Rust XML grid absolute resolved insets honor border, scrollbars, percentag
         assert.deepEqual(taffy.layout(children[5]).size, testCase.expectedFullSize, `${testCase.name} percent size`);
     }
 });
-test("Rust XML grid baseline alignment shims items per row", () => {
+test("grid baseline alignment shims items per row", () => {
     const taffy = TaffyTree.new();
     const childWithInner = (height: number) => {
         const inner = taffy.newLeaf(new Style({
@@ -2368,7 +2368,7 @@ test("Rust XML grid baseline alignment shims items per row", () => {
     assert.deepEqual(taffy.layout(children[7]).location, new Point(40, 95));
     assert.deepEqual(taffy.layout(children[8]).location, new Point(80, 80));
 });
-test("Rust XML grid baseline alignment contributes shims to auto row sizing", () => {
+test("grid baseline alignment contributes shims to auto row sizing", () => {
     const taffy = TaffyTree.new();
     const childWithInner = (outerHeight: number, innerHeight: number) => {
         const inner = taffy.newLeaf(new Style({
@@ -2406,7 +2406,7 @@ test("Rust XML grid baseline alignment contributes shims to auto row sizing", ()
     assert.deepEqual(taffy.layout(children[2]).location, new Point(0, 100));
     assert.deepEqual(taffy.layout(children[3]).location, new Point(50, 60));
 });
-test("Rust XML grid baseline alignment preserves margin and padding offsets", () => {
+test("grid baseline alignment preserves margin and padding offsets", () => {
     const five = LengthPercentage.length(5);
     const onePercent = LengthPercentageAuto.percent(0.01);
     const fivePercent = LengthPercentageAuto.percent(0.05);
@@ -2473,7 +2473,7 @@ test("Rust XML grid baseline alignment preserves margin and padding offsets", ()
         assert.deepEqual(taffy.layout(inner).location, testCase.expectedInner, testCase.name);
     }
 });
-test("Rust XML grid baseline alignment composes with relative top offsets", () => {
+test("grid baseline alignment composes with relative top offsets", () => {
     const cases = [
         {
             name: "first baseline child offset",
@@ -2522,7 +2522,7 @@ test("Rust XML grid baseline alignment composes with relative top offsets", () =
         assert.deepEqual(taffy.layout(inner).location, Point.zero(), testCase.name);
     }
 });
-test("Rust XML grid baseline alignment follows nested column baselines", () => {
+test("grid baseline alignment follows nested column baselines", () => {
     const taffy = TaffyTree.new();
     const first = taffy.newLeaf(new Style({
         display: Display.Grid,

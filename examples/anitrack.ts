@@ -2,7 +2,7 @@
 //
 // Data flow:
 // Search input → fetchResults() → scrape API → toScrapeResults() → results signal → ff() effect → result row tree render
-// Keyboard / wheel → pane focus → ScrollView methods → Rust layout metrics → clamped viewport state
+// Keyboard / wheel → pane focus → ScrollView methods → layout metrics → clamped viewport state
 
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";

@@ -437,7 +437,7 @@ const DECKS: readonly Deck[] = [
       "A limit, jittered backoff, and idempotency or duplicate protection.",
     ),
   ]),
-  deck("Rust Patterns", 9, 4, [
+  deck("TypeScript Patterns", 9, 4, [
     card(
       "When should a function accept &str instead of String?",
       "When it only needs to read borrowed text and should not require ownership.",

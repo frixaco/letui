@@ -1,17 +1,5 @@
 # troubleshooting
 
-## Native library load fails
-
-Symptom:
-
-- error around `dlopen` / missing `letui_core`
-
-Checks:
-
-1. run `bun run build-ffi`
-2. confirm release artifact exists under `core/target/release`
-3. rerun demo: `bun run examples/<file>.ts`
-
 ## App exits but terminal looks broken
 
 Symptom:
@@ -65,13 +53,13 @@ Checks:
 Checks:
 
 1. keep updates signal-driven; avoid rebuilding whole subtrees each tick
-2. keep node identity stable so runtime can reuse Rust tree state
+2. keep node identity stable so runtime can reuse Taffy tree state and caches
 3. enable debug metrics: `run(root, { debug: true })`
 4. to persist metrics, pass `run(root, { debug: true, metricsPath: "dump/metrics.txt" })`
 5. inspect the quit summary or metrics file for phase bottlenecks
 
 Interpretation:
 
-- high `js`: too much JS-side tree churn, text rewriting, or op submission work
-- high `render`: layout/paint cost in native side
+- high `js`: too much application-side reactive work
+- high `render`: layout, text wrapping, or paint cost
 - high `flush`: terminal I/O bound; reduce changed surface area

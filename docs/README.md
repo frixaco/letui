@@ -3,7 +3,7 @@
 ## Start here
 
 1. Read `docs/getting-started.md`
-2. Run `bun install && bun run build-ffi`
+2. Run `bun install`
 3. Use `docs/components-and-styling.md` for current public components and props
 4. Use `docs/state-events-lifecycle.md` for signals, focus, input, and cleanup
 5. Use `docs/releasing.md` when cutting a new npm release
@@ -20,11 +20,11 @@
 
 ## Current runtime shape
 
-- JS keeps a previous sent-tree snapshot and compares it against the current node tree each frame
-- compatible tree shape => send style deltas and text ops only
-- incompatible tree shape => clear Rust tree state and rebuild it once
-- Rust owns persistent tree state, layout, paint, terminal buffers, and incremental flush
-- Rust text layout treats explicit newlines as hard row boundaries; wrap and overflow happen there, not in JS
+- TypeScript keeps a persistent Taffy tree alongside the live component tree
+- compatible tree shape => update changed styles and measure contexts in place
+- incompatible tree shape => rebuild the internal Taffy tree once
+- TypeScript owns layout, paint, terminal buffers, hit maps, and incremental flush
+- text layout treats explicit newlines as hard row boundaries before wrapping and overflow
 - debug metrics phases: `js`, `render`, `sync`, `flush`
 - auto appearance starts with a terminal color-scheme request plus OSC 11 fallback, then listens for DEC 2031 live updates when supported
 
@@ -40,7 +40,6 @@
 - `examples/anitrack.ts`: interactive torrent-search demo
 - `examples/anki.ts`: two-screen Anki-style flashcard UI demo
 - `examples/ai-agent.ts`: chat-style agent UI demo
-- `examples/fuzzy-file-search.ts`: file finder demo backed by `@ff-labs/fff-node`
 - `examples/smoke.ts`: deterministic smoke-test fixture
 - `examples/snake.ts`: keyboard-driven game demo
 - `examples/typing-speed.ts`: centered Colemak Mod-DH typing tester
