@@ -1,0 +1,233 @@
+{
+  "name": "taffy-ts",
+  "version": "0.9.1",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./src/index.ts",
+  "module": "./dist/src/index.js",
+  "files": ["src", "dist"],
+  "scripts": {
+    "build": "rm -rf dist && tsgo -p tsconfig.build.json",
+    "typecheck": "tsgo -p tsconfig.json",
+    "test": "bun test test/*.test.ts",
+    "bench": "bun run bench/layout.ts",
+    "check": "bun run typecheck && bun test test/*.test.ts && bun run build && bun run bench/layout.ts"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "bun": "./src/index.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./prelude": {
+      "types": "./src/prelude.ts",
+      "bun": "./src/prelude.ts",
+      "import": "./dist/src/prelude.js"
+    },
+    "./compute": {
+      "types": "./src/compute.ts",
+      "bun": "./src/compute.ts",
+      "import": "./dist/src/compute.js"
+    },
+    "./compute/block": {
+      "types": "./src/compute/block.ts",
+      "bun": "./src/compute/block.ts",
+      "import": "./dist/src/compute/block.js"
+    },
+    "./compute/common": {
+      "types": "./src/compute/common.ts",
+      "bun": "./src/compute/common.ts",
+      "import": "./dist/src/compute/common.js"
+    },
+    "./compute/common/alignment": {
+      "types": "./src/compute/common/alignment.ts",
+      "bun": "./src/compute/common/alignment.ts",
+      "import": "./dist/src/compute/common/alignment.js"
+    },
+    "./compute/common/content_size": {
+      "types": "./src/compute/common/content_size.ts",
+      "bun": "./src/compute/common/content_size.ts",
+      "import": "./dist/src/compute/common/content_size.js"
+    },
+    "./compute/detailed_info": {
+      "types": "./src/compute/detailed_info.ts",
+      "bun": "./src/compute/detailed_info.ts",
+      "import": "./dist/src/compute/detailed_info.js"
+    },
+    "./compute/flexbox": {
+      "types": "./src/compute/flexbox.ts",
+      "bun": "./src/compute/flexbox.ts",
+      "import": "./dist/src/compute/flexbox.js"
+    },
+    "./compute/float": {
+      "types": "./src/compute/float.ts",
+      "bun": "./src/compute/float.ts",
+      "import": "./dist/src/compute/float.js"
+    },
+    "./compute/grid": {
+      "types": "./src/compute/grid.ts",
+      "bun": "./src/compute/grid.ts",
+      "import": "./dist/src/compute/grid.js"
+    },
+    "./compute/leaf": {
+      "types": "./src/compute/leaf.ts",
+      "bun": "./src/compute/leaf.ts",
+      "import": "./dist/src/compute/leaf.js"
+    },
+    "./geometry": {
+      "types": "./src/geometry.ts",
+      "bun": "./src/geometry.ts",
+      "import": "./dist/src/geometry.js"
+    },
+    "./style": {
+      "types": "./src/style.ts",
+      "bun": "./src/style.ts",
+      "import": "./dist/src/style.js"
+    },
+    "./style/alignment": {
+      "types": "./src/style/alignment.ts",
+      "bun": "./src/style/alignment.ts",
+      "import": "./dist/src/style/alignment.js"
+    },
+    "./style/available_space": {
+      "types": "./src/style/available_space.ts",
+      "bun": "./src/style/available_space.ts",
+      "import": "./dist/src/style/available_space.js"
+    },
+    "./style/available-space": {
+      "types": "./src/style/available-space.ts",
+      "bun": "./src/style/available-space.ts",
+      "import": "./dist/src/style/available-space.js"
+    },
+    "./style/block": {
+      "types": "./src/style/block.ts",
+      "bun": "./src/style/block.ts",
+      "import": "./dist/src/style/block.js"
+    },
+    "./style/compact_length": {
+      "types": "./src/style/compact_length.ts",
+      "bun": "./src/style/compact_length.ts",
+      "import": "./dist/src/style/compact_length.js"
+    },
+    "./style/dimension": {
+      "types": "./src/style/dimension.ts",
+      "bun": "./src/style/dimension.ts",
+      "import": "./dist/src/style/dimension.js"
+    },
+    "./style/dimensions": {
+      "types": "./src/style/dimensions.ts",
+      "bun": "./src/style/dimensions.ts",
+      "import": "./dist/src/style/dimensions.js"
+    },
+    "./style/flex": {
+      "types": "./src/style/flex.ts",
+      "bun": "./src/style/flex.ts",
+      "import": "./dist/src/style/flex.js"
+    },
+    "./style/float": {
+      "types": "./src/style/float.ts",
+      "bun": "./src/style/float.ts",
+      "import": "./dist/src/style/float.js"
+    },
+    "./style/grid": {
+      "types": "./src/style/grid.ts",
+      "bun": "./src/style/grid.ts",
+      "import": "./dist/src/style/grid.js"
+    },
+    "./style/helpers": {
+      "types": "./src/style/helpers.ts",
+      "bun": "./src/style/helpers.ts",
+      "import": "./dist/src/style/helpers.js"
+    },
+    "./style/style": {
+      "types": "./src/style/style.ts",
+      "bun": "./src/style/style.ts",
+      "import": "./dist/src/style/style.js"
+    },
+    "./style/traits": {
+      "types": "./src/style/traits.ts",
+      "bun": "./src/style/traits.ts",
+      "import": "./dist/src/style/traits.js"
+    },
+    "./style_helpers": {
+      "types": "./src/style_helpers.ts",
+      "bun": "./src/style_helpers.ts",
+      "import": "./dist/src/style_helpers.js"
+    },
+    "./tree": {
+      "types": "./src/tree.ts",
+      "bun": "./src/tree.ts",
+      "import": "./dist/src/tree.js"
+    },
+    "./tree/node": {
+      "types": "./src/tree/node.ts",
+      "bun": "./src/tree/node.ts",
+      "import": "./dist/src/tree/node.js"
+    },
+    "./tree/cache": {
+      "types": "./src/tree/cache.ts",
+      "bun": "./src/tree/cache.ts",
+      "import": "./dist/src/tree/cache.js"
+    },
+    "./tree/layout": {
+      "types": "./src/tree/layout.ts",
+      "bun": "./src/tree/layout.ts",
+      "import": "./dist/src/tree/layout.js"
+    },
+    "./tree/taffy_tree": {
+      "types": "./src/tree/taffy_tree.ts",
+      "bun": "./src/tree/taffy_tree.ts",
+      "import": "./dist/src/tree/taffy_tree.js"
+    },
+    "./tree/taffy-tree": {
+      "types": "./src/tree/taffy-tree.ts",
+      "bun": "./src/tree/taffy-tree.ts",
+      "import": "./dist/src/tree/taffy-tree.js"
+    },
+    "./tree/traits": {
+      "types": "./src/tree/traits.ts",
+      "bun": "./src/tree/traits.ts",
+      "import": "./dist/src/tree/traits.js"
+    },
+    "./util": {
+      "types": "./src/util.ts",
+      "bun": "./src/util.ts",
+      "import": "./dist/src/util.js"
+    },
+    "./util/math": {
+      "types": "./src/util/math.ts",
+      "bun": "./src/util/math.ts",
+      "import": "./dist/src/util/math.js"
+    },
+    "./util/parse": {
+      "types": "./src/util/parse.ts",
+      "bun": "./src/util/parse.ts",
+      "import": "./dist/src/util/parse.js"
+    },
+    "./util/print": {
+      "types": "./src/util/print.ts",
+      "bun": "./src/util/print.ts",
+      "import": "./dist/src/util/print.js"
+    },
+    "./util/resolve": {
+      "types": "./src/util/resolve.ts",
+      "bun": "./src/util/resolve.ts",
+      "import": "./dist/src/util/resolve.js"
+    },
+    "./util/sys": {
+      "types": "./src/util/sys.ts",
+      "bun": "./src/util/sys.ts",
+      "import": "./dist/src/util/sys.js"
+    },
+    "./util/debug": {
+      "types": "./src/util/debug.ts",
+      "bun": "./src/util/debug.ts",
+      "import": "./dist/src/util/debug.js"
+    }
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.13"
+  }
+}

@@ -1,0 +1,74 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { AvailableSpace, Clear, FloatContext, FloatDirection, FloatIntrinsicWidthCalculator, Point, Size, } from "../src/index.js";
+test("FloatContext packs right floats against the physical right edge", () => {
+    const context = FloatContext.new();
+    context.set_width(254);
+    const first = context.place_floated_box(new Size(50, 50), 2, [2, 2], FloatDirection.Right, Clear.None);
+    const second = context.placeFloatedBox(new Size(50, 50), 2, [2, 2], FloatDirection.Right, Clear.None);
+    assert.deepEqual(first, new Point(202, 2));
+    assert.deepEqual(second, new Point(152, 2));
+    assert.equal(context.hasFloats(), true);
+    assert.equal(context.has_floats(), true);
+    assert.equal(context.hasActiveFloats(51), true);
+    assert.equal(context.has_active_floats(51), true);
+    assert.equal(context.hasActiveFloats(52), false);
+    assert.equal(context.right_floats()[0].x_inset, context.rightFloats()[0].xInset);
+});
+test("FloatContext wraps same-side floats below full segments", () => {
+    const context = FloatContext.new();
+    context.setWidth(104);
+    const first = context.placeFloatedBox(new Size(50, 50), 2, [2, 2], FloatDirection.Right, Clear.None);
+    const second = context.placeFloatedBox(new Size(50, 50), 2, [2, 2], FloatDirection.Right, Clear.None);
+    const third = context.placeFloatedBox(new Size(50, 50), 2, [2, 2], FloatDirection.Right, Clear.None);
+    assert.deepEqual(first, new Point(52, 2));
+    assert.deepEqual(second, new Point(2, 2));
+    assert.deepEqual(third, new Point(52, 52));
+});
+test("FloatContext clear places a same-side float below the cleared side", () => {
+    const context = FloatContext.new();
+    context.setWidth(104);
+    const first = context.placeFloatedBox(new Size(50, 50), 2, [2, 2], FloatDirection.Right, Clear.None);
+    const second = context.placeFloatedBox(new Size(50, 50), 2, [2, 2], FloatDirection.Right, Clear.Right);
+    assert.deepEqual(first, new Point(52, 2));
+    assert.deepEqual(second, new Point(52, 52));
+    assert.equal(context.clearedThreshold(Clear.Right), 102);
+});
+test("FloatContext clear both uses the later side segment", () => {
+    const context = FloatContext.new();
+    context.setWidth(104);
+    const left = context.placeFloatedBox(new Size(40, 30), 2, [2, 2], FloatDirection.Left, Clear.None);
+    const right = context.placeFloatedBox(new Size(40, 50), 2, [2, 2], FloatDirection.Right, Clear.Left);
+    const cleared = context.placeFloatedBox(new Size(40, 20), 2, [2, 2], FloatDirection.Left, Clear.Both);
+    assert.deepEqual(left, new Point(2, 2));
+    assert.deepEqual(right, new Point(62, 32));
+    assert.deepEqual(cleared, new Point(2, 82));
+    assert.equal(context.clearedThreshold(Clear.Left), 102);
+    assert.equal(context.clearedThreshold(Clear.Right), 82);
+    assert.equal(context.clearedThreshold(Clear.Both), 102);
+});
+test("FloatContext findContentSlot can continue after a previous segment", () => {
+    const context = FloatContext.new();
+    context.setWidth(104);
+    context.placeFloatedBox(new Size(50, 50), 2, [2, 2], FloatDirection.Right, Clear.None);
+    context.placeFloatedBox(new Size(50, 50), 2, [2, 2], FloatDirection.Right, Clear.None);
+    context.placeFloatedBox(new Size(50, 50), 2, [2, 2], FloatDirection.Right, Clear.None);
+    const firstSlot = context.findContentSlot(2, [2, 2], Clear.None, undefined);
+    const secondSlot = context.find_content_slot(2, [2, 2], Clear.None, firstSlot.segment_id);
+    assert.equal(firstSlot.segmentId, 1);
+    assert.equal(firstSlot.segment_id, 1);
+    assert.deepEqual({ x: firstSlot.x, y: firstSlot.y, width: firstSlot.width }, { x: 2, y: 2, width: 0 });
+    assert.equal(secondSlot.segmentId, 2);
+    assert.equal(secondSlot.segment_id, 2);
+    assert.deepEqual({ x: secondSlot.x, y: secondSlot.y, width: secondSlot.width }, { x: 2, y: 52, width: 50 });
+});
+test("FloatIntrinsicWidthCalculator mirrors Rust min and max content contributions", () => {
+    const minContent = FloatIntrinsicWidthCalculator.new(AvailableSpace.minContent());
+    minContent.addFloat(40, FloatDirection.Left, Clear.None);
+    minContent.add_float(60, FloatDirection.Right, Clear.None);
+    const maxContent = FloatIntrinsicWidthCalculator.new(AvailableSpace.maxContent());
+    maxContent.addFloat(40, FloatDirection.Left, Clear.None);
+    maxContent.add_float(60, FloatDirection.Right, Clear.None);
+    assert.equal(minContent.result(), 60);
+    assert.equal(maxContent.result(), 100);
+});
