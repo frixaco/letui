@@ -44,6 +44,21 @@ describe("Renderer", () => {
     expect(buffer.foreground[0]).toBe(0x123456);
   });
 
+  test("invalidates cached text layout when styled spans change", () => {
+    const label = Text({
+      text: { text: "same", spans: [{ start: 0, end: 4, foreground: 0x123456 }] },
+    });
+    const root = Column({}, [label]);
+    const buffer = new CellBuffer(8, 2);
+    const renderer = new Renderer();
+    renderer.render(root, 8, 2, buffer);
+
+    label.setText({ text: "same", spans: [{ start: 0, end: 4, foreground: 0xabcdef }] });
+    renderer.render(root, 8, 2, buffer);
+
+    expect(buffer.foreground[0]).toBe(0xabcdef);
+  });
+
   test("rebuilds the internal tree when component shape changes", () => {
     const first = Text({ text: "first" });
     const root = Column({}, [first]);

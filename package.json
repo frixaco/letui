@@ -14,6 +14,7 @@
     "build:taffy": "bun run --cwd taffy-ts build",
     "build:anitrack-binary": "bun run scripts/build-anitrack-binary.ts",
     "bench": "bun run bench/render.ts",
+    "bench:anitrack": "bun run bench/anitrack.ts",
     "anki": "bun run examples/anki.ts",
     "anitrack": "bun run examples/anitrack.ts",
     "ai-agent": "bun run examples/ai-agent.ts",
@@ -25,7 +26,7 @@
     "test": "bun test ./test",
     "typecheck": "bun x tsgo -p tsconfig.check.json",
     "visualizer": "bun run examples/visualizer.ts",
-    "check": "bun run --cwd taffy-ts check && bun run typecheck && bun run lint && bun run test && bun run bench && bun run smoke"
+    "check": "bun run --cwd taffy-ts check && bun run typecheck && bun run lint && bun run test && bun run bench && bun run bench:anitrack && bun run smoke"
   },
   "devDependencies": {
     "@types/bun": "^1.3.13",

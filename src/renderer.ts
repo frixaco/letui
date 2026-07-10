@@ -32,7 +32,7 @@ import {
   type ResolvedBorder,
   type SurfaceRect,
 } from "./surface.ts";
-import { textWidth, wrapText } from "./text-layout.ts";
+import { textWidth, wrapText, type WrappedText } from "./text-layout.ts";
 import {
   NODE_TYPE,
   type AlignItems as LetuiAlignItems,
@@ -57,7 +57,8 @@ type RenderContext = {
   textOverflow: TextOverflow;
   scrollable: boolean;
   scrollY: number;
-  measureCache: Map<string, Size>;
+  measureCache?: Map<string, Size>;
+  textLayoutCache?: Map<string, WrappedText>;
 };
 
 export type RenderResult = {
@@ -225,8 +226,11 @@ export class Renderer {
           const context = this.tree.getNodeContext(id);
           if (context) {
             const measureCache = context.measureCache;
+            const textLayoutCache =
+              context.spans === resolved.context.spans ? context.textLayoutCache : undefined;
             Object.assign(context, resolved.context);
             context.measureCache = measureCache;
+            context.textLayoutCache = textLayoutCache;
           }
         }
         this.versions.set(node.id, version);
@@ -315,9 +319,8 @@ export class Renderer {
     surface.drawBorder(rect, viewport, context.border, style.background);
 
     if (context.node.type === NODE_TYPE.Input) {
-      const wrapped = wrapText(
-        context.text,
-        [],
+      const wrapped = layoutText(
+        context,
         contentRect.width,
         contentRect.height,
         context.wrap,
@@ -349,9 +352,8 @@ export class Renderer {
         }
       }
     } else if (context.node.type === NODE_TYPE.Text) {
-      const wrapped = wrapText(
-        context.text,
-        context.spans,
+      const wrapped = layoutText(
+        context,
         contentRect.width,
         contentRect.height,
         context.wrap,
@@ -433,7 +435,6 @@ function resolveNode(
     textOverflow: props.textOverflow?.() ?? "clip",
     scrollable,
     scrollY: finiteNumber(props.scrollY?.(), 0),
-    measureCache: new Map(),
   };
   const style = new Style({
     gap: new Size(LengthPercentage.length(finiteNumber(props.gap?.(), 0)), LengthPercentage.zero()),
@@ -522,7 +523,8 @@ function measureNode(
     return new Size(known.width, known.height);
   if (!context || !supportsText(context.node)) return Size.zero();
   const cacheKey = measurementKey(known, available);
-  const cached = context.measureCache.get(cacheKey);
+  const measureCache = (context.measureCache ??= new Map());
+  const cached = measureCache.get(cacheKey);
   if (cached) return cached;
   const maxWidth =
     available.width?.type === "Definite"
@@ -534,11 +536,27 @@ function measureNode(
       : Number.POSITIVE_INFINITY;
   const wrap = context.node.type === NODE_TYPE.Button ? "none" : context.wrap;
   const overflow = context.node.type === NODE_TYPE.Text ? context.textOverflow : "clip";
-  const wrapped = wrapText(context.text, context.spans, maxWidth, maxHeight, wrap, overflow);
+  const wrapped = layoutText(context, maxWidth, maxHeight, wrap, overflow);
   const measuredWidth = wrapped.lines.reduce((max, line) => Math.max(max, textWidth(line.text)), 0);
   const measured = new Size(known.width ?? measuredWidth, known.height ?? wrapped.lines.length);
-  context.measureCache.set(cacheKey, measured);
+  measureCache.set(cacheKey, measured);
   return measured;
+}
+
+function layoutText(
+  context: RenderContext,
+  maxWidth: number,
+  maxHeight: number,
+  wrap: TextWrap,
+  overflow: TextOverflow,
+): WrappedText {
+  const cache = (context.textLayoutCache ??= new Map());
+  const key = `${maxWidth}:${maxHeight}:${wrap}:${overflow}`;
+  const cached = cache.get(key);
+  if (cached) return cached;
+  const wrapped = wrapText(context.text, context.spans, maxWidth, maxHeight, wrap, overflow);
+  cache.set(key, wrapped);
+  return wrapped;
 }
 
 function measurementKey(known: Size, available: Size): string {

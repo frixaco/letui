@@ -22,7 +22,6 @@ export enum ClearState {
 export class Cache {
     finalLayoutEntry?: CacheEntry<LayoutOutput>;
     measureEntries: Array<Array<CacheEntry<Size>>>;
-    measureEntryMap = new Map<string, CacheEntry<Size>>();
     empty: boolean = true;
     static new() {
         return new Cache();
@@ -48,9 +47,11 @@ export class Cache {
                 return undefined;
             case RunMode.ComputeSize:
                 {
-                    const exactEntry = this.measureEntryMap.get(cacheEntryKey(knownDimensions, availableSpace));
-                    if (exactEntry !== undefined)
-                        return LayoutOutput.fromOuterSize(exactEntry.content);
+                    const entries = this.measureEntries[computeCacheSlot(knownDimensions, availableSpace)];
+                    for (const entry of entries) {
+                        if (cacheEntryMatchesExactly(entry, knownDimensions, availableSpace))
+                            return LayoutOutput.fromOuterSize(entry.content);
+                    }
                 }
                 for (const entries of this.measureEntries) {
                     for (const entry of entries) {
@@ -76,8 +77,12 @@ export class Cache {
                     : undefined;
             case RunMode.ComputeSize:
                 {
-                    const exactEntry = this.measureEntryMap.get(cacheEntryKey(knownDimensions, availableSpace));
-                    return exactEntry === undefined ? undefined : LayoutOutput.fromOuterSize(exactEntry.content);
+                    const entries = this.measureEntries[computeCacheSlot(knownDimensions, availableSpace)];
+                    for (const entry of entries) {
+                        if (cacheEntryMatchesExactly(entry, knownDimensions, availableSpace))
+                            return LayoutOutput.fromOuterSize(entry.content);
+                    }
+                    return undefined;
                 }
             case RunMode.PerformHiddenLayout:
                 return undefined;
@@ -94,12 +99,11 @@ export class Cache {
             case RunMode.ComputeSize:
                 this.empty = false;
                 {
-                    const key = cacheEntryKey(knownDimensions, availableSpace);
-                    if (this.measureEntryMap.has(key))
+                    const entries = this.measureEntries[computeCacheSlot(knownDimensions, availableSpace)];
+                    if (entries.some((entry) => cacheEntryMatchesExactly(entry, knownDimensions, availableSpace)))
                         break;
                     const entry = { knownDimensions, availableSpace, content: layoutOutput.size };
-                    this.measureEntryMap.set(key, entry);
-                    this.measureEntries[computeCacheSlot(knownDimensions, availableSpace)].push(entry);
+                    entries.push(entry);
                 }
                 break;
             case RunMode.PerformHiddenLayout:
@@ -112,22 +116,16 @@ export class Cache {
         }
         this.empty = true;
         this.finalLayoutEntry = undefined;
-        this.measureEntries = Array.from({ length: CACHE_SIZE }, () => []);
-        this.measureEntryMap.clear();
+        for (const entries of this.measureEntries)
+            entries.length = 0;
         return ClearState.Cleared;
     }
     isEmpty(): boolean {
-        return this.finalLayoutEntry === undefined && this.measureEntryMap.size === 0;
+        return this.empty;
     }
     is_empty() {
         return this.isEmpty();
     }
-}
-function cacheEntryKey(knownDimensions: Size, availableSpace: Size): string {
-    return `${knownDimensions.width ?? ""},${knownDimensions.height ?? ""}|${availableSpaceKey(availableSpace.width)},${availableSpaceKey(availableSpace.height)}`;
-}
-function availableSpaceKey(space: AvailableSpaceValue): string {
-    return space.type === "Definite" ? `Definite:${space.value}` : space.type;
 }
 function computeCacheSlot(knownDimensions: Size, availableSpace: Size): number {
     const hasKnownWidth = knownDimensions.width !== undefined;
