@@ -16,6 +16,19 @@ https://github.com/user-attachments/assets/7f4f53f5-deb6-4781-bdfa-bf769cabfbb1
 
 https://github.com/user-attachments/assets/1599de82-146d-4a0d-bc66-86a2b51a77c1
 
+The AI agent demo is a functional Amp-inspired coding agent built entirely with LeTUI. It uses the
+Codex app-server for ChatGPT subscription authentication and agent execution, and keeps its own
+thread index, transcript, archive state, and cross-thread references in local SQLite.
+
+```bash
+# Requires the Codex CLI on PATH. Sign-in can be completed from the command palette.
+bun run ai-agent
+```
+
+Press `Ctrl+O` for commands, `Ctrl+S` to cycle reasoning effort, `Alt+T` to expand tool details,
+`@` to mention files, or `@@` to reference a previous local thread. The footer reports the Codex
+five-hour subscription window instead of API cost or credit data.
+
 ## Prerequisites
 
 - Runtime: [Bun](https://bun.sh/) 1.3+ (Node.js not supported)
@@ -196,7 +209,13 @@ It loses to Ratatui though, as it is pure Rust.
 - [x] Vertical scrolling with `ScrollView`
 - [x] Minimal theming support with startup detection and DEC 2031 live updates
 - [ ] Full grapheme rendering support: store/render whole grapheme strings per lead cell instead of a single codepoint
-- [ ] Better Input experience: multiline editing, shortcuts, cursor movement, scrolling, placeholder rendering, etc.
+- [ ] Full cursor-based Input editor: mid-buffer insertion/deletion, selection, multiline navigation, caret-following scroll, shortcuts, and placeholder rendering
+- [ ] Add configurable multiline submission: submit on Return while preserving Ctrl+J or Shift+Enter for newline
+- [ ] Normalize keyboard and paste events: structured keys/modifiers, bracketed paste, and terminal-independent escape-sequence handling
+- [ ] Add ScrollView conveniences: optional scrollbar, follow-end mode, scroll anchoring, and post-layout scrolling
+- [ ] Expose renderer-owned text measurement: visual row count, wrap boundaries, source ranges, and styled-text width
+- [ ] Complete overlay support: `top`/`left` insets, explicit layer ordering, overlay hosts, and modal focus containment
+- [ ] Expand border styling: custom glyph sets, heavy/double styles, embedded labels, styled segments, and wrapped-text gutters
 - [ ] Safer quit/cleanup when used as a library
 - [ ] Experiment: Neovim as text input via a Bun-compatible PTY workflow
 - [ ] Refactor `flush` with `BatchWriter` pattern

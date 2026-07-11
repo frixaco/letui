@@ -47,6 +47,7 @@ export type FlexWrap = "noWrap" | "wrap" | "wrapReverse";
 export type TextWrap = "none" | "word" | "char";
 export type TextOverflow = "clip" | "ellipsis";
 export type Overflow = boolean | "scroll";
+export type Position = "relative" | "absolute";
 
 export type TextSpan = {
   start: number;
@@ -87,6 +88,9 @@ export type _StyleProps = {
   background: Signal<number | undefined>;
   foreground: Signal<number | undefined>;
   flexGrow: Signal<number | undefined>;
+  position: Signal<Position | undefined>;
+  right: Signal<number | undefined>;
+  bottom: Signal<number | undefined>;
   width: Signal<number | undefined>;
   height: Signal<number | undefined>;
   minWidth: Signal<number | undefined>;
@@ -145,6 +149,9 @@ export type StyleProps = {
   background?: number;
   foreground?: number;
   flexGrow?: number;
+  position?: Position;
+  right?: number;
+  bottom?: number;
   width?: number;
   height?: number;
   minWidth?: number;

@@ -326,6 +326,9 @@ enum StyleProp {
     BorderLeftColor,
     BorderStyle,
     FlexGrow,
+    Position,
+    Right,
+    Bottom,
     Direction,
     Width,
     Height,
@@ -369,6 +372,9 @@ impl StyleProp {
             "borderLeftColor" => Some(Self::BorderLeftColor),
             "borderStyle" => Some(Self::BorderStyle),
             "flexGrow" => Some(Self::FlexGrow),
+            "position" => Some(Self::Position),
+            "right" => Some(Self::Right),
+            "bottom" => Some(Self::Bottom),
             "direction" => Some(Self::Direction),
             "width" => Some(Self::Width),
             "height" => Some(Self::Height),
@@ -524,6 +530,14 @@ fn parse_direction(value: &str) -> Option<Direction> {
         "column" => Some(Direction::Column),
         "rowReverse" => Some(Direction::RowReverse),
         "columnReverse" => Some(Direction::ColumnReverse),
+        _ => None,
+    }
+}
+
+fn parse_position(value: &str) -> Option<Position> {
+    match value {
+        "relative" => Some(Position::Relative),
+        "absolute" => Some(Position::Absolute),
         _ => None,
     }
 }
@@ -687,6 +701,9 @@ fn apply_style(node: &mut NodeContext, prop: StyleProp, value: StyleValue<'_>) -
         }
         StyleProp::BorderStyle => apply_border_style_value(&mut node.style.border.style, value),
         StyleProp::FlexGrow => apply_f32(&mut node.style.flex_grow, 0.0, value),
+        StyleProp::Position => apply_position(&mut node.style.position, value),
+        StyleProp::Right => apply_dimension(&mut node.style.right, value),
+        StyleProp::Bottom => apply_dimension(&mut node.style.bottom, value),
         StyleProp::Direction => apply_direction_value(node, value),
         StyleProp::Width => apply_dimension(&mut node.style.width, value),
         StyleProp::Height => apply_dimension(&mut node.style.height, value),
@@ -868,6 +885,15 @@ fn apply_box_sizing(slot: &mut BoxSizing, value: StyleValue<'_>) -> Option<()> {
     Some(())
 }
 
+fn apply_position(slot: &mut Position, value: StyleValue<'_>) -> Option<()> {
+    match value {
+        StyleValue::Reset => *slot = Position::Relative,
+        StyleValue::String(value) => *slot = parse_position(value)?,
+        StyleValue::Number(_) => return None,
+    }
+    Some(())
+}
+
 const STYLE_VALUE_RESET: u8 = 0;
 const STYLE_VALUE_NUMBER: u8 = 1;
 const STYLE_VALUE_STRING: u8 = 2;
@@ -987,6 +1013,9 @@ pub struct NodeStyle {
     pub bg: u32,
     pub fg: u32,
     pub flex_grow: f32,
+    pub position: Position,
+    pub right: StyleDimension,
+    pub bottom: StyleDimension,
     pub direction: Direction,
     pub width: StyleDimension,
     pub height: StyleDimension,
@@ -1020,6 +1049,9 @@ impl NodeStyle {
             bg: RESET_COLOR,
             fg: RESET_COLOR,
             flex_grow: 0.0,
+            position: Position::Relative,
+            right: StyleDimension::Auto,
+            bottom: StyleDimension::Auto,
             direction: Direction::from_node_type(kind),
             width: StyleDimension::Auto,
             height: StyleDimension::Auto,
@@ -1052,12 +1084,26 @@ fn style_dimension_to_taffy(dim: StyleDimension) -> Dimension {
     }
 }
 
+fn style_dimension_to_taffy_inset(dim: StyleDimension) -> LengthPercentageAuto {
+    match dim {
+        StyleDimension::Auto => LengthPercentageAuto::auto(),
+        StyleDimension::Points(v) => LengthPercentageAuto::length(v),
+    }
+}
+
 pub fn node_context_to_taffy_style(ctx: &NodeContext) -> Style {
     let s = &ctx.style;
     let mut style = Style {
+        position: s.position,
+        inset: Rect {
+            left: LengthPercentageAuto::auto(),
+            right: style_dimension_to_taffy_inset(s.right),
+            top: LengthPercentageAuto::auto(),
+            bottom: style_dimension_to_taffy_inset(s.bottom),
+        },
         gap: Size {
             width: length(s.gap),
-            height: zero(),
+            height: length(s.gap),
         },
         padding: Rect {
             left: length(s.padding_x),

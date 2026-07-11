@@ -152,6 +152,9 @@ export type StylePropName =
   | "borderLeftColor"
   | "borderStyle"
   | "flexGrow"
+  | "position"
+  | "right"
+  | "bottom"
   | "direction"
   | "width"
   | "height"
@@ -194,6 +197,9 @@ export const EMITTED_STYLE_PROPS = [
   "borderLeftColor",
   "borderStyle",
   "flexGrow",
+  "position",
+  "right",
+  "bottom",
   "direction",
   "width",
   "height",

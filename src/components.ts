@@ -70,7 +70,20 @@ export function Box(input: BoxProps, children: Node[]): BoxNode {
 export function ScrollView(input: ScrollViewProps, children: Node[]): ScrollViewNode {
   const { onScroll, ...styleInput } = input;
   const props = createScrollViewSignals(styleInput);
-  const childrenSignal = $(children);
+  // Grow to the viewport when content is short, but retain intrinsic height once it overflows.
+  const contentContainer = Column(
+    {
+      flexGrow: 1,
+      flexShrink: 0,
+      alignSelf: "stretch",
+      gap: styleInput.gap,
+      alignItems: styleInput.alignItems,
+      justifyContent: styleInput.justifyContent,
+      flexWrap: styleInput.flexWrap,
+    },
+    children,
+  );
+  const childrenSignal = $<Node[]>([contentContainer]);
   const frameWidth = $(0);
   const frameHeight = $(0);
   const viewportHeight = $(0);
@@ -87,12 +100,20 @@ export function ScrollView(input: ScrollViewProps, children: Node[]): ScrollView
     frameWidth,
     frameHeight,
     children: childrenSignal,
-    setChildren: (nodes) => childrenSignal(nodes),
+    setChildren: (nodes) => contentContainer.setChildren(nodes),
     setStyle: (newProps) => {
       const { scrollY, ...nextStyle } = newProps;
       if (scrollY !== undefined) {
         setScrollPosition(node, scrollY);
       }
+      contentContainer.setStyle({
+        ...(Object.hasOwn(nextStyle, "gap") ? { gap: nextStyle.gap } : {}),
+        ...(Object.hasOwn(nextStyle, "alignItems") ? { alignItems: nextStyle.alignItems } : {}),
+        ...(Object.hasOwn(nextStyle, "justifyContent")
+          ? { justifyContent: nextStyle.justifyContent }
+          : {}),
+        ...(Object.hasOwn(nextStyle, "flexWrap") ? { flexWrap: nextStyle.flexWrap } : {}),
+      });
       for (const [key, value] of Object.entries(nextStyle)) {
         if (key in props) {
           (props as any)[key](value);
@@ -245,6 +266,9 @@ function createStyleSignals(input: StyleProps): _StyleProps {
     background: $(input.background),
     foreground: $(input.foreground),
     flexGrow: $(input.flexGrow),
+    position: $(input.position),
+    right: $(input.right),
+    bottom: $(input.bottom),
     width: $(input.width),
     height: $(input.height),
     minWidth: $(input.minWidth),

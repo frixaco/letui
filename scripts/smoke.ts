@@ -222,7 +222,7 @@ try {
   await waitFor("keyboard scroll: 3");
   await waitFor("scroll-row-03");
 
-  await write("\x1b[<65;5;15M");
+  await write("\x1b[<65;5;20M");
   await waitFor("mouse scroll: 1");
 
   await write("t");

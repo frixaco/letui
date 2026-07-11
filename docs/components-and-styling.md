@@ -45,6 +45,7 @@ Button(input: ButtonProps, children?: Node[]): Node
   - optional: `scrollY` (`number`)
   - optional: `onScroll` (`(event: ScrollEvent) => void`)
   - behavior note: `ScrollView` always uses vertical scrolling
+  - behavior note: children are laid out in an internal, non-shrinking content column; `ScrollView` does not override child `flexShrink` styles
   - behavior note: `scrollY` is vertical-only and interpreted in row units
 
 ## Shared style fields (`StyleProps`)

@@ -166,6 +166,21 @@ function readSentStyleState(node: Node): SentStyleState {
     style.flexGrow = flexGrow;
   }
 
+  const position = props.position?.();
+  if (position !== undefined && position !== "relative") {
+    style.position = position;
+  }
+
+  const right = props.right?.();
+  if (right !== undefined) {
+    style.right = right;
+  }
+
+  const bottom = props.bottom?.();
+  if (bottom !== undefined) {
+    style.bottom = bottom;
+  }
+
   const direction = props.direction?.();
   if (
     direction !== undefined &&

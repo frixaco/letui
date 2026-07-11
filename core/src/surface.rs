@@ -280,16 +280,25 @@ fn collect_graphemes(text: &str) -> Vec<TextSegment> {
 
 fn collect_word_segments(text: &str) -> Vec<TextSegment> {
     let mut byte_offset = 0usize;
-
     let mut segments = Vec::new();
+    let mut previous_was_whitespace = None;
+
     for boundary in text.split_word_bounds() {
         let start_byte = byte_offset;
         byte_offset += boundary.len();
-        segments.push(TextSegment {
-            start_byte,
-            end_byte: byte_offset,
-            width: boundary.width(),
-        });
+        let is_whitespace = boundary.chars().all(char::is_whitespace);
+        if previous_was_whitespace == Some(is_whitespace) {
+            let previous: &mut TextSegment = segments.last_mut().unwrap();
+            previous.end_byte = byte_offset;
+            previous.width += boundary.width();
+        } else {
+            segments.push(TextSegment {
+                start_byte,
+                end_byte: byte_offset,
+                width: boundary.width(),
+            });
+            previous_was_whitespace = Some(is_whitespace);
+        }
     }
 
     segments
@@ -578,6 +587,18 @@ mod tests {
             TextWrap::Word,
             TextOverflow::Clip,
             &["hello ", "world"],
+        );
+    }
+
+    #[test]
+    fn word_wrap_keeps_trailing_punctuation_with_its_word() {
+        assert_lines(
+            "one edge.",
+            8,
+            10,
+            TextWrap::Word,
+            TextOverflow::Clip,
+            &["one ", "edge."],
         );
     }
 
