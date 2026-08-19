@@ -21,6 +21,10 @@ const manifest = {
   name: fullPkgName,
   version,
   description: `Prebuilt binary for letui on ${platform}-${arch}`,
+  repository: {
+    type: "git",
+    url: "https://github.com/frixaco/letui",
+  },
   os: [platform],
   cpu: [arch],
   files: ["*.dylib", "*.so", "*.dll", "*.node"],

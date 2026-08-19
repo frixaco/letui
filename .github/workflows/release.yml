@@ -7,7 +7,10 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+permissions:
+  contents: read
+  id-token: write
+
 
 jobs:
   build-and-publish-binary:
@@ -28,10 +31,19 @@ jobs:
             arch: x64
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Install an OIDC-compatible npm version
+        run: npm install --global npm@latest
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -75,26 +87,28 @@ jobs:
         shell: bash
         run: |
           cd npm/letui-${{ matrix.platform }}-${{ matrix.arch }}
-
-          # Setup .npmrc with token
-          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
-
           npm publish --access public
 
   publish-main:
     needs: build-and-publish-binary
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Install an OIDC-compatible npm version
+        run: npm install --global npm@latest
+
       - name: Publish Main Package
         run: |
-          # Setup .npmrc with token
-          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > .npmrc
-
           # Update version in package.json to match tag
           VERSION=${GITHUB_REF#refs/tags/v}
           npm version $VERSION --no-git-tag-version --allow-same-version
