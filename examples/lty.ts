@@ -56,6 +56,7 @@ import {
 } from "./ai-agent/picker-view.ts";
 import {
   ACTIVITY_FRAMES,
+  BORDER_PULSE_FRAMES,
   DEFAULT_DIAL_EFFORTS,
   LEFT_KEYS,
   NEXT_KEYS,
@@ -102,6 +103,7 @@ let entryRefreshQueued = false;
 let composerTopKey = "";
 let composerBottomKey = "";
 let codexVersionWarning = "";
+let streamedOutputTokens = 0;
 
 const MENTION_WIDTH = 31;
 const MENTION_RESULT_COUNT = 18;
@@ -668,6 +670,7 @@ function handleNotification(message: RpcMessage): void {
     case "turn/started": {
       const turn = asRecord(params.turn);
       activeTurnId = stringValue(turn.id) || activeTurnId;
+      streamedOutputTokens = 0;
       busy(true);
       break;
     }
@@ -723,6 +726,12 @@ function handleNotification(message: RpcMessage): void {
         true,
       );
       break;
+    case "thread/tokenUsage/updated": {
+      const usage = asRecord(params.tokenUsage);
+      const outputTokens = asRecord(usage.last).outputTokens;
+      if (typeof outputTokens === "number") streamedOutputTokens = outputTokens;
+      break;
+    }
     case "warning":
     case "guardianWarning":
       appendEntry(
@@ -1744,7 +1753,9 @@ ff(() => {
   const activity = summarizeTurnActivity(working);
   const showActivity =
     activity.runningToolCount > 0 &&
-    (activity.finishedToolCount > 0 || activity.runningToolCount > 1);
+    (activity.finishedToolCount > 0 ||
+      activity.failedToolCount > 0 ||
+      activity.runningToolCount > 1);
   composerActivity.setText(showActivity ? activityText(frame, queued, activity) : "");
   composerActivity.setStyle({ height: showActivity ? 1 : 0 });
   composerSteerHint.setText(working && queued > 0 ? "Enter to steer" : "");
@@ -1944,6 +1955,7 @@ type QueuedPrompt = { text: string; entry: TranscriptEntry };
 type TurnActivity = {
   runningToolCount: number;
   finishedToolCount: number;
+  failedToolCount: number;
   onlyRunningCommands: boolean;
   runningReasoning: boolean;
   runningAssistant: boolean;
@@ -1974,16 +1986,20 @@ function renderComposerChrome(
 
   const displayedEffort = dialEffortLabel(selectedEffort);
   let usageLabel = working || entries.length > 0 ? fiveHourLabel(rateLimits) : "";
-  let topLabel = usageLabel ? `${usageLabel} ─ ${displayedEffort}` : displayedEffort;
+  const pulse = working ? BORDER_PULSE_FRAMES[frame % BORDER_PULSE_FRAMES.length]! : "";
+  let topLabel = [pulse, usageLabel, displayedEffort].filter(Boolean).join(" ─ ");
   if (topLabel.length + 5 > width) topLabel = displayedEffort;
   if (topLabel === displayedEffort) usageLabel = "";
-  const nextTopKey = `${width}\0${usageLabel}\0${displayedEffort}`;
+  const visiblePulse = topLabel === displayedEffort ? "" : pulse;
+  const nextTopKey = `${width}\0${visiblePulse}\0${usageLabel}\0${displayedEffort}`;
   if (composerTopKey !== nextTopKey) {
     composerTopKey = nextTopKey;
     const topDashes = "─".repeat(Math.max(0, width - topLabel.length - 5));
     composerTopLine.setText(
       styled([
         { text: `╭${topDashes} `, foreground: THEME.composerLine },
+        { text: visiblePulse, foreground: THEME.blue, bold: true },
+        { text: visiblePulse ? " ─ " : "", foreground: THEME.composerLine },
         { text: usageLabel, foreground: THEME.muted },
         { text: usageLabel ? " ─ " : "", foreground: THEME.composerLine },
         { text: displayedEffort, foreground: dialColor(selectedEffort) },
@@ -2001,7 +2017,7 @@ function renderComposerChrome(
       : activity.runningReasoning
         ? "Thinking"
         : activity.runningAssistant
-          ? "Generating"
+          ? `Streaming${streamedOutputTokens > 0 ? ` ${streamedOutputTokens} tok` : ""}`
           : "Sending"
     : connection.text;
   const statusIcon = working
@@ -2068,6 +2084,10 @@ function activityText(frame: number, queued: number, activity: TurnActivity): St
       text: activity.finishedToolCount > 0 ? `, ${activity.finishedToolCount} finished` : "",
       foreground: THEME.muted,
     },
+    {
+      text: activity.failedToolCount > 0 ? `, ${activity.failedToolCount} failed` : "",
+      foreground: THEME.red,
+    },
     { text: queued > 0 ? `, ${queued} queued` : "", foreground: THEME.amber },
     { text: " ▸", foreground: THEME.text },
   ]);
@@ -2077,6 +2097,7 @@ function summarizeTurnActivity(working: boolean): TurnActivity {
   const activity: TurnActivity = {
     runningToolCount: 0,
     finishedToolCount: 0,
+    failedToolCount: 0,
     onlyRunningCommands: true,
     runningReasoning: false,
     runningAssistant: false,
@@ -2094,8 +2115,9 @@ function summarizeTurnActivity(working: boolean): TurnActivity {
       } else if (entry.kind === "assistant") {
         activity.runningAssistant = true;
       }
-    } else if (entry.role === "tool" && entry.status === "completed") {
-      activity.finishedToolCount++;
+    } else if (entry.role === "tool") {
+      if (entry.status === "completed") activity.finishedToolCount++;
+      if (entry.status === "failed") activity.failedToolCount++;
     }
   }
   return activity;

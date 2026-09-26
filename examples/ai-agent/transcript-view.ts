@@ -169,14 +169,11 @@ function entrySummary(
       const command = displayCommand(entry.text);
       return styled([
         {
-          text: running ? `${spinner} ` : "$ ",
-          foreground: running ? THEME.blue : THEME.userPrompt,
+          text: running ? `${spinner} ` : failed ? "✗ " : "✓ ",
+          foreground: running ? THEME.blue : failed ? THEME.red : THEME.userPrompt,
+          bold: !running,
         },
         { text: command, foreground: THEME.prose },
-        {
-          text: failed ? " (failed)" : "",
-          foreground: failed ? THEME.red : THEME.blue,
-        },
         { text: running ? "" : disclosure, foreground: THEME.dim },
       ]);
     }
