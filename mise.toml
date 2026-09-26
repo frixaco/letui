@@ -1,2 +1,2 @@
 [tools]
-"github:oven-sh/bun" = "canary"
+bun = "latest"
