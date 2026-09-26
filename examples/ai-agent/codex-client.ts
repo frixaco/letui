@@ -26,6 +26,11 @@ export class CodexAppServer {
     return () => this.stderrListeners.delete(listener);
   }
 
+  onExit(listener: (code: number) => void): () => void {
+    this.exitListeners.add(listener);
+    return () => this.exitListeners.delete(listener);
+  }
+
   async request<T>(method: string, params?: unknown): Promise<T> {
     if (this.closed) {
       throw new Error("Codex app-server is not running");
@@ -74,6 +79,7 @@ export class CodexAppServer {
   private readonly notificationListeners = new Set<RpcListener>();
   private readonly serverRequestListeners = new Set<RpcListener>();
   private readonly stderrListeners = new Set<(line: string) => void>();
+  private readonly exitListeners = new Set<(code: number) => void>();
   private readonly pending = new Map<number, PendingRequest>();
   private readonly requestTimeoutMs: number;
   private requestId = 0;
@@ -100,6 +106,7 @@ export class CodexAppServer {
       if (this.closed) return;
       this.closed = true;
       this.rejectPending(new Error(`Codex app-server exited with status ${code}`));
+      for (const listener of this.exitListeners) listener(code);
     });
   }
 
@@ -188,6 +195,34 @@ export class CodexAppServer {
     }
     this.pending.clear();
   }
+}
+
+export function readCodexCliVersion(executable = process.env.CODEX_BIN ?? "codex"): string | null {
+  try {
+    const result = Bun.spawnSync([executable, "--version"], { stdout: "pipe", stderr: "pipe" });
+    if (result.exitCode !== 0) return null;
+    return result.stdout.toString().match(/\b\d+\.\d+\.\d+\b/)?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function codexVersionIsAtLeast(version: string, minimum: string): boolean {
+  const current = version.split(".").map(Number);
+  const required = minimum.split(".").map(Number);
+  if (
+    current.length !== 3 ||
+    required.length !== 3 ||
+    current.some((part) => !Number.isInteger(part)) ||
+    required.some((part) => !Number.isInteger(part))
+  ) {
+    return false;
+  }
+  for (let index = 0; index < 3; index++) {
+    if (current[index]! > required[index]!) return true;
+    if (current[index]! < required[index]!) return false;
+  }
+  return true;
 }
 
 export class CodexRpcError extends Error {

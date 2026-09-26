@@ -20,7 +20,9 @@ import {
   type TranscriptEntryView,
 } from "./ai-agent/transcript-view.ts";
 import {
+  codexVersionIsAtLeast,
   CodexAppServer,
+  readCodexCliVersion,
   type CodexAccount,
   type CodexModel,
   type CodexThread,
@@ -99,9 +101,11 @@ let reconciliationMatches: Set<string> | null = null;
 let entryRefreshQueued = false;
 let composerTopKey = "";
 let composerBottomKey = "";
+let codexVersionWarning = "";
 
 const MENTION_WIDTH = 31;
 const MENTION_RESULT_COUNT = 18;
+const MINIMUM_CODEX_VERSION = "0.157.0";
 
 const entries: TranscriptEntry[] = [];
 const entryByItem = new Map<string, TranscriptEntry>();
@@ -812,11 +816,24 @@ function handleServerRequest(message: RpcMessage): void {
 
 async function initializeAgent(): Promise<void> {
   try {
+    const installedVersion = readCodexCliVersion();
+    if (!installedVersion) {
+      throw new Error("Codex CLI not found. Install Codex and make sure `codex` is on PATH");
+    }
+    if (!codexVersionIsAtLeast(installedVersion, MINIMUM_CODEX_VERSION)) {
+      codexVersionWarning = `Codex ${installedVersion} is older than ${MINIMUM_CODEX_VERSION}`;
+    }
+
     codex = await CodexAppServer.connect({ cwd });
     codex.onNotification(handleNotification);
     codex.onServerRequest(handleServerRequest);
     codex.onStderr((line) => {
       if (/\b(error|failed)\b/i.test(line)) showToast("Codex app-server reported an error");
+    });
+    codex.onExit((code) => {
+      if (cleanedUp) return;
+      connectionState("error");
+      appendError(`Codex app-server stopped unexpectedly with status ${code}`);
     });
 
     const [accountResult, modelResult, rateResult] = await Promise.all([
@@ -831,6 +848,7 @@ async function initializeAgent(): Promise<void> {
     connectionState("ready");
     modelVersion(modelVersion() + 1);
     rateLimitVersion(rateLimitVersion() + 1);
+    if (codexVersionWarning) showToast(`${codexVersionWarning}. Update Codex for best results`);
   } catch (error) {
     connectionState("error");
     appendError(errorMessage(error));
@@ -1714,6 +1732,7 @@ ff(() => {
 });
 
 ff(() => {
+  connectionState();
   modelVersion();
   rateLimitVersion();
   activeThreadVersion();
@@ -1975,6 +1994,7 @@ function renderComposerChrome(
 
   const path = displayPath.length + 5 <= width ? displayPath : fallbackDisplayPath;
   const hasRunningTool = activity.runningToolCount > 0;
+  const connection = connectionFooter();
   const status = working
     ? hasRunningTool
       ? "Running Tools"
@@ -1983,17 +2003,20 @@ function renderComposerChrome(
         : activity.runningAssistant
           ? "Generating"
           : "Sending"
-    : "";
-  const statusIcon = hasRunningTool
-    ? showActivity
-      ? ["≋", "≈", "≋", "∼"][frame % 4]!
-      : "∼"
-    : activity.runningReasoning
-      ? "✻"
-      : activity.runningAssistant
-        ? "✦"
-        : "∼";
-  const nextBottomKey = `${width}\0${path}\0${status}\0${statusIcon}`;
+    : connection.text;
+  const statusIcon = working
+    ? hasRunningTool
+      ? showActivity
+        ? ["≋", "≈", "≋", "∼"][frame % 4]!
+        : "∼"
+      : activity.runningReasoning
+        ? "✻"
+        : activity.runningAssistant
+          ? "✦"
+          : "∼"
+    : connection.icon;
+  const statusColor = working ? THEME.blue : connection.color;
+  const nextBottomKey = `${width}\0${path}\0${status}\0${statusIcon}\0${statusColor}`;
   if (composerBottomKey === nextBottomKey) return;
   composerBottomKey = nextBottomKey;
   const idleDashCount = Math.max(0, width - path.length - 5);
@@ -2012,13 +2035,24 @@ function renderComposerChrome(
   composerBottomLine.setText(
     styled([
       { text: "╰ ", foreground: THEME.composerLine },
-      { text: statusIcon, foreground: THEME.blue, bold: true },
+      { text: statusIcon, foreground: statusColor, bold: true },
       { text: ` ${status} `, foreground: THEME.muted },
       { text: `${middleDashes} `, foreground: THEME.composerLine },
       { text: path, foreground: THEME.muted },
       { text: " ─╯", foreground: THEME.composerLine },
     ]),
   );
+}
+
+function connectionFooter(): { icon: string; text: string; color: number } {
+  if (codexVersionWarning) return { icon: "!", text: codexVersionWarning, color: THEME.amber };
+  if (connectionState() === "starting")
+    return { icon: "◌", text: "Codex starting", color: THEME.muted };
+  if (connectionState() === "error")
+    return { icon: "✗", text: "Codex unavailable", color: THEME.red };
+  if (account?.type === "chatgpt")
+    return { icon: "●", text: "ChatGPT connected", color: THEME.userPrompt };
+  return { icon: "○", text: "ChatGPT sign-in required", color: THEME.amber };
 }
 
 function activityText(frame: number, queued: number, activity: TurnActivity): StyledText {
