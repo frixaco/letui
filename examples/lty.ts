@@ -78,7 +78,7 @@ let codex: CodexAppServer | null = null;
 let account: CodexAccount = null;
 let models: CodexModel[] = [];
 let selectedModel: CodexModel | null = null;
-let selectedEffort = "high";
+let selectedEffort = store.getSetting("effort") ?? "high";
 let rateLimits: RateLimitSnapshot | null = null;
 let activeThread: LocalThread | null = null;
 let activeTurnId: string | null = null;
@@ -1567,13 +1567,11 @@ function selectInitialModel(): void {
     null;
   if (!selectedModel) return;
   const efforts = selectedModel.supportedReasoningEfforts.map((option) => option.reasoningEffort);
-  const savedEffort = store.getSetting("effort");
-  selectedEffort =
-    savedEffort && efforts.includes(savedEffort)
-      ? savedEffort
-      : efforts.includes("high")
-        ? "high"
-        : selectedModel.defaultReasoningEffort;
+  selectedEffort = efforts.includes(selectedEffort)
+    ? selectedEffort
+    : efforts.includes("high")
+      ? "high"
+      : selectedModel.defaultReasoningEffort;
 }
 
 function selectModel(model: CodexModel): void {
