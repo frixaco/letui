@@ -32,6 +32,7 @@ import {
   asRateLimit,
   asRecord,
   asThreadItem,
+  formatFileChanges,
   formatPlan,
   itemToTranscriptEntry,
   stringValue,
@@ -680,11 +681,21 @@ function handleNotification(message: RpcMessage): void {
     case "item/reasoning/textDelta":
       updateDelta(stringValue(params.itemId), stringValue(params.delta), "detail");
       break;
+    case "item/plan/delta":
+      updateDelta(stringValue(params.itemId), stringValue(params.delta), "text");
+      break;
     case "item/commandExecution/outputDelta":
     case "item/fileChange/outputDelta":
-    case "item/fileChange/patchUpdated":
-      updateDelta(stringValue(params.itemId), stringValue(params.delta ?? params.patch), "detail");
+      updateDelta(stringValue(params.itemId), stringValue(params.delta), "detail");
       break;
+    case "item/fileChange/patchUpdated": {
+      const entry = entryByItem.get(stringValue(params.itemId));
+      if (entry) {
+        entry.detail = formatFileChanges(params.changes);
+        refreshEntry(entry);
+      }
+      break;
+    }
     case "item/completed": {
       const item = asThreadItem(params.item);
       if (item) upsertItem(item, stringValue(params.turnId) || activeTurnId, true);
@@ -757,21 +768,46 @@ function handleNotification(message: RpcMessage): void {
 function handleServerRequest(message: RpcMessage): void {
   if (!codex || message.id === undefined) return;
   const method = message.method ?? "";
-  if (
-    method === "item/commandExecution/requestApproval" ||
-    method === "item/fileChange/requestApproval"
-  ) {
-    codex.respond(message.id, { decision: "decline" });
-    appendError(
-      "Codex unexpectedly requested approval; the LeTUI agent runs workspace tools with approvalPolicy=never",
-    );
-    return;
-  }
-  if (method === "item/tool/requestUserInput") {
-    codex.respond(message.id, { answers: {} });
-    return;
+  switch (method) {
+    case "item/commandExecution/requestApproval":
+    case "item/fileChange/requestApproval":
+      codex.respond(message.id, { decision: "decline" });
+      appendError("Letty declined an unexpected tool approval request");
+      return;
+    case "item/permissions/requestApproval":
+      codex.respond(message.id, { permissions: {}, scope: "turn" });
+      appendEntry(
+        createLocalEntry(
+          "system",
+          "status",
+          "Additional permissions were not granted",
+          "completed",
+        ),
+        activeThread !== null,
+      );
+      return;
+    case "item/tool/requestUserInput":
+      codex.respond(message.id, { answers: {} });
+      appendEntry(
+        createLocalEntry("system", "status", "Interactive agent question skipped", "completed"),
+        activeThread !== null,
+      );
+      return;
+    case "mcpServer/elicitation/request":
+      codex.respond(message.id, { action: "cancel", content: null, _meta: null });
+      appendEntry(
+        createLocalEntry("system", "status", "Interactive MCP request cancelled", "completed"),
+        activeThread !== null,
+      );
+      return;
+    case "applyPatchApproval":
+    case "execCommandApproval":
+      codex.respond(message.id, { decision: "abort" });
+      appendError("Letty declined a legacy approval request");
+      return;
   }
   codex.reject(message.id, -32601, `Unsupported Codex server request: ${method}`);
+  appendError(`Unsupported Codex request: ${method || "unknown"}`);
 }
 
 async function initializeAgent(): Promise<void> {

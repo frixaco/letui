@@ -100,6 +100,10 @@ export function formatPlan(value: unknown): string {
     .join("\n");
 }
 
+export function formatFileChanges(value: unknown): string {
+  return recordList(value).map(describeFileChange).join("\n");
+}
+
 export function userInputText(value: unknown): string {
   if (!Array.isArray(value)) return "";
   return value
