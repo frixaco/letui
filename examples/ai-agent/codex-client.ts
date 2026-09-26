@@ -106,8 +106,8 @@ export class CodexAppServer {
   private async initialize(): Promise<void> {
     await this.request("initialize", {
       clientInfo: {
-        name: "letui_agent",
-        title: "LeTUI Agent",
+        name: "lty",
+        title: "Letty Agent",
         version: this.version,
       },
     });

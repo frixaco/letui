@@ -428,8 +428,8 @@ function framedTopLine(title: string, width: number): StyledText {
 }
 
 function framedBottomLine(width: number): StyledText {
-  const firstKey = "Opt+W/Ctrl+T";
-  const middle = " all workspaces · ";
+  const firstKey = "Enter";
+  const middle = " open · ";
   const secondKey = "Esc";
   const suffix = " close";
   const labelLength = firstKey.length + middle.length + secondKey.length + suffix.length;
@@ -447,8 +447,8 @@ function framedBottomLine(width: number): StyledText {
 }
 
 function framedHistoryBottomLine(width: number): StyledText {
-  const firstKey = "Opt+W/Ctrl+T";
-  const suffix = " toggle filter · Showing: current workspace";
+  const firstKey = "Enter";
+  const suffix = " reuse prompt · Esc close";
   return styled([
     {
       text: `╰${"─".repeat(Math.max(1, width - firstKey.length - suffix.length - 5))} `,

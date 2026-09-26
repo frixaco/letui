@@ -1,5 +1,5 @@
 /**
- * Amp-inspired coding agent: LeTUI renders the UI while Codex app-server runs the agent.
+ * Letty Agent: LeTUI renders the local UI while Codex app-server runs the agent.
  *
  * Data flow:
  * composer / palette -> Codex JSONL RPC -> streamed turn items -> stable transcript nodes
@@ -127,7 +127,7 @@ const toastValue = $("");
 
 const welcomeLogo = Text({ text: "", width: 50, wrap: "none" });
 const welcomeTitle = Text({
-  text: "Welcome to Amp",
+  text: "Welcome to Letty Agent",
   foreground: THEME.green,
   wrap: "word",
 });
@@ -280,17 +280,15 @@ const helpComposer = Column(
   },
   [
     shortcutRow("Ctrl+O", "command palette", "Ctrl+R", "prompt history"),
-    shortcutRow("Ctrl+V", "paste images", "Shift+Enter", "newline"),
-    shortcutRow("Ctrl+S", "switch modes", "Opt+D", "toggle reasoning effort"),
-    shortcutRow("Ctrl+G", "edit in $EDITOR", "Opt+T", "expand/collapse details"),
-    shortcutRow("@ / @@", "mention files/threads", "Tab/Shift+Tab", "navigate messages"),
+    shortcutRow("Ctrl+S", "reasoning dial", "Alt+T", "expand tool details"),
+    shortcutRow("@ / @@", "mention files/threads", "↑ / ↓", "navigate or scroll"),
+    shortcutRow("Esc Esc", "interrupt active turn", "Ctrl+C Ctrl+C", "quit"),
     shortcutRow("?", "toggle this help"),
-    Text({ text: "", height: 1 }),
-    Text({ text: "Sidebar", height: 1, paddingX: 1, foreground: THEME.highlight }),
-    shortcutRow("Opt+S", "toggle sidebar focus"),
-    shortcutRow("Enter", "open selected thread"),
-    shortcutRow("Cmd+Shift+E", "archive selected thread"),
     helpSeparator,
+    Text({ text: "", height: 1 }),
+    Text({ text: "", height: 1 }),
+    Text({ text: "", height: 1 }),
+    Text({ text: "", height: 1 }),
     Text({ text: "", height: 1 }),
     Text({ text: "", height: 1 }),
     Text({ text: "", height: 1 }),
@@ -960,27 +958,27 @@ function commandPaletteOptions(): PickerOption[] {
       run: () => showToast(signedIn ? formatRateLimit(rateLimits) : "Not signed in"),
     },
     {
-      category: "amp",
+      category: "lty",
       title: "show welcome",
       description: "Return to the welcome screen",
       run: newThread,
     },
     {
-      category: "amp",
+      category: "lty",
       title: "show version",
-      description: "LeTUI agent clone using Codex app-server",
-      run: () => showToast("LeTUI Agent · Codex app-server"),
+      description: "Letty Agent powered by Codex app-server",
+      run: () => showToast("lty · Letty Agent · Codex app-server"),
     },
     {
-      category: "amp",
+      category: "lty",
       title: "help",
       description: "Keyboard map and supported features",
       run: openHelp,
     },
     {
-      category: "amp",
+      category: "lty",
       title: "quit",
-      description: "Close LeTUI Agent",
+      description: "Close Letty Agent",
       shortcut: "Ctrl+C Ctrl+C",
       run: () => app.quit(),
     },
@@ -1317,12 +1315,6 @@ function refreshMentions(value: string): void {
             insert: `@${path}`,
             kind,
           })),
-          {
-            label: "@: mention a commit",
-            detail: "",
-            insert: "@:",
-            kind: "action" as const,
-          },
           {
             label: "@@ mention a thread",
             detail: "",

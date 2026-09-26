@@ -1,11 +1,11 @@
 {
   "name": "@frixaco/letui",
   "version": "0.4.0",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/frixaco/letui"
   },
-  "license": "MIT",
   "files": [
     "index.ts",
     "src/**/*.ts"
@@ -17,7 +17,7 @@
     "build:anitrack-binary": "bun run scripts/build-anitrack-binary.ts",
     "anki": "bun run build-ffi && bun run examples/anki.ts",
     "anitrack": "bun run build-ffi && bun run examples/anitrack.ts",
-    "ai-agent": "bun run build-ffi && bun run examples/ai-agent.ts",
+    "lty": "bun run build-ffi && bun run examples/lty.ts",
     "file-search": "bun run build-ffi && bun run examples/fuzzy-file-search.ts",
     "fmt": "oxfmt .",
     "fmt-check": "oxfmt --check .",

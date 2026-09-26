@@ -342,6 +342,6 @@ function dedupeReconstructedMessages(messages: LocalMessage[]): LocalMessage[] {
 }
 
 function defaultDatabasePath(): string {
-  const home = process.env.LETUI_AGENT_HOME ?? join(homedir(), ".letui-agent");
+  const home = process.env.LTY_HOME ?? join(homedir(), ".lty");
   return join(home, "threads.sqlite");
 }
