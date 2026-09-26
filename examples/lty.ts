@@ -2116,7 +2116,7 @@ function summarizeTurnActivity(working: boolean): TurnActivity {
 function setActivityAnimationEnabled(enabled: boolean): void {
   if (enabled === (animationTimer !== null)) return;
   if (enabled) {
-    animationTimer = setInterval(() => animationFrame(animationFrame() + 1), 90);
+    animationTimer = setInterval(() => animationFrame(animationFrame() + 1), 126);
     return;
   }
   clearInterval(animationTimer!);
