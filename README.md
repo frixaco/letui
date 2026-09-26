@@ -14,7 +14,7 @@ https://github.com/user-attachments/assets/7f4f53f5-deb6-4781-bdfa-bf769cabfbb1
 
 ### Letty Agent (`lty`)
 
-![Letty Agent running successful and failed tools](docs/assets/lty-demo.gif)
+![Letty Agent moving through connection, streaming, and tool states](docs/assets/lty-demo.gif)
 
 Letty Agent is a small, local coding agent built entirely with LeTUI. It uses Codex app-server for
 ChatGPT subscription authentication and agent execution, while keeping its thread index,

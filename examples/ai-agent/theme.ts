@@ -45,7 +45,7 @@ export const THEME = {
 
 export const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 export const ACTIVITY_FRAMES = ["⠿", "⠷", "⠯", "⠟", "⠻", "⠽"] as const;
-export const BORDER_PULSE_FRAMES = ["•···", "·•··", "··•·", "···•"] as const;
+export const TURN_STATUS_FRAMES = ["∼", "≈", "≋", "≈"] as const;
 export const NEXT_KEYS = new Set(["\x1b[B", "\x1bOB"]);
 export const PREV_KEYS = new Set(["\x1b[A", "\x1bOA"]);
 export const RIGHT_KEYS = new Set(["\x1b[C", "\x1bOC"]);

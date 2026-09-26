@@ -56,13 +56,13 @@ import {
 } from "./ai-agent/picker-view.ts";
 import {
   ACTIVITY_FRAMES,
-  BORDER_PULSE_FRAMES,
   DEFAULT_DIAL_EFFORTS,
   LEFT_KEYS,
   NEXT_KEYS,
   PREV_KEYS,
   RIGHT_KEYS,
   THEME,
+  TURN_STATUS_FRAMES,
   logoText,
 } from "./ai-agent/theme.ts";
 
@@ -1737,7 +1737,7 @@ ff(() => {
 });
 
 ff(() => {
-  setActivityAnimationEnabled(busy());
+  setActivityAnimationEnabled(busy() || connectionState() === "starting");
 });
 
 ff(() => {
@@ -1760,7 +1760,7 @@ ff(() => {
   composerActivity.setStyle({ height: showActivity ? 1 : 0 });
   composerSteerHint.setText(working && queued > 0 ? "Enter to steer" : "");
   composerSteerHint.setStyle({ width: working && queued > 0 ? 14 : 0 });
-  renderComposerChrome(width, working, frame, showActivity, activity);
+  renderComposerChrome(width, working, frame, activity);
 });
 
 ff(() => {
@@ -1969,7 +1969,6 @@ function renderComposerChrome(
   width: number,
   working: boolean,
   frame: number,
-  showActivity: boolean,
   activity: TurnActivity,
 ): void {
   if (width < 8) {
@@ -1986,20 +1985,16 @@ function renderComposerChrome(
 
   const displayedEffort = dialEffortLabel(selectedEffort);
   let usageLabel = working || entries.length > 0 ? fiveHourLabel(rateLimits) : "";
-  const pulse = working ? BORDER_PULSE_FRAMES[frame % BORDER_PULSE_FRAMES.length]! : "";
-  let topLabel = [pulse, usageLabel, displayedEffort].filter(Boolean).join(" ─ ");
+  let topLabel = usageLabel ? `${usageLabel} ─ ${displayedEffort}` : displayedEffort;
   if (topLabel.length + 5 > width) topLabel = displayedEffort;
   if (topLabel === displayedEffort) usageLabel = "";
-  const visiblePulse = topLabel === displayedEffort ? "" : pulse;
-  const nextTopKey = `${width}\0${visiblePulse}\0${usageLabel}\0${displayedEffort}`;
+  const nextTopKey = `${width}\0${usageLabel}\0${displayedEffort}`;
   if (composerTopKey !== nextTopKey) {
     composerTopKey = nextTopKey;
     const topDashes = "─".repeat(Math.max(0, width - topLabel.length - 5));
     composerTopLine.setText(
       styled([
         { text: `╭${topDashes} `, foreground: THEME.composerLine },
-        { text: visiblePulse, foreground: THEME.blue, bold: true },
-        { text: visiblePulse ? " ─ " : "", foreground: THEME.composerLine },
         { text: usageLabel, foreground: THEME.muted },
         { text: usageLabel ? " ─ " : "", foreground: THEME.composerLine },
         { text: displayedEffort, foreground: dialColor(selectedEffort) },
@@ -2018,20 +2013,15 @@ function renderComposerChrome(
         ? "Thinking"
         : activity.runningAssistant
           ? `Streaming${streamedOutputTokens > 0 ? ` ${streamedOutputTokens} tok` : ""}`
-          : "Sending"
+          : activeTurnId
+            ? "Waiting"
+            : "Sending"
     : connection.text;
-  const statusIcon = working
-    ? hasRunningTool
-      ? showActivity
-        ? ["≋", "≈", "≋", "∼"][frame % 4]!
-        : "∼"
-      : activity.runningReasoning
-        ? "✻"
-        : activity.runningAssistant
-          ? "✦"
-          : "∼"
-    : connection.icon;
-  const statusColor = working ? THEME.blue : connection.color;
+  const statusIcon =
+    working || connectionState() === "starting"
+      ? TURN_STATUS_FRAMES[frame % TURN_STATUS_FRAMES.length]!
+      : connection.icon;
+  const statusColor = working || connectionState() === "starting" ? THEME.blue : connection.color;
   const nextBottomKey = `${width}\0${path}\0${status}\0${statusIcon}\0${statusColor}`;
   if (composerBottomKey === nextBottomKey) return;
   composerBottomKey = nextBottomKey;
@@ -2063,7 +2053,7 @@ function renderComposerChrome(
 function connectionFooter(): { icon: string; text: string; color: number } {
   if (codexVersionWarning) return { icon: "!", text: codexVersionWarning, color: THEME.amber };
   if (connectionState() === "starting")
-    return { icon: "◌", text: "Codex starting", color: THEME.muted };
+    return { icon: "∼", text: "Connecting to Codex", color: THEME.blue };
   if (connectionState() === "error")
     return { icon: "✗", text: "Codex unavailable", color: THEME.red };
   if (account?.type === "chatgpt")
