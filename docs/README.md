@@ -7,6 +7,7 @@
 3. Use `docs/components-and-styling.md` for current public components and props
 4. Use `docs/state-events-lifecycle.md` for signals, focus, input, and cleanup
 5. Use `docs/releasing.md` when cutting a new npm release
+6. Use `docs/lty.md` for the local ChatGPT-backed agent demo
 
 ## Current API shape
 
@@ -39,7 +40,7 @@
 
 - `examples/anitrack.ts`: interactive torrent-search demo
 - `examples/anki.ts`: two-screen Anki-style flashcard UI demo
-- `examples/ai-agent.ts`: chat-style agent UI demo
+- `examples/lty.ts`: local ChatGPT-backed coding agent demo
 - `examples/fuzzy-file-search.ts`: file finder demo backed by `@ff-labs/fff-node`
 - `examples/smoke.ts`: deterministic smoke-test fixture
 - `examples/snake.ts`: keyboard-driven game demo

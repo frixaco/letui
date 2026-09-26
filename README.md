@@ -12,22 +12,24 @@ https://github.com/user-attachments/assets/31f3efcc-0c2b-4b85-8fe1-99129e6b8394
 
 https://github.com/user-attachments/assets/7f4f53f5-deb6-4781-bdfa-bf769cabfbb1
 
-### AI agent
+### Letty Agent (`lty`)
 
-https://github.com/user-attachments/assets/1599de82-146d-4a0d-bc66-86a2b51a77c1
+![Letty Agent running successful and failed tools](docs/assets/lty-demo.gif)
 
-The AI agent demo is a functional Amp-inspired coding agent built entirely with LeTUI. It uses the
-Codex app-server for ChatGPT subscription authentication and agent execution, and keeps its own
-thread index, transcript, archive state, and cross-thread references in local SQLite.
+Letty Agent is a small, local coding agent built entirely with LeTUI. It uses Codex app-server for
+ChatGPT subscription authentication and agent execution, while keeping its thread index,
+transcripts, archive state, and cross-thread references in local SQLite. There are no API keys,
+cloud threads, credits, or remote infrastructure.
 
 ```bash
-# Requires the Codex CLI on PATH. Sign-in can be completed from the command palette.
-bun run ai-agent
+# Requires Codex CLI 0.157.0+ on PATH.
+bun run lty
 ```
 
 Press `Ctrl+O` for commands, `Ctrl+S` to cycle reasoning effort, `Alt+T` to expand tool details,
 `@` to mention files, or `@@` to reference a previous local thread. The footer reports the Codex
-five-hour subscription window instead of API cost or credit data.
+connection and five-hour subscription window instead of API cost or credit data. See the
+[Letty Agent guide](docs/lty.md) for architecture, setup, scope, and verification.
 
 ## Prerequisites
 
