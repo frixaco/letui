@@ -106,7 +106,7 @@ export function formatFileChanges(value: unknown): string {
 
 export function userInputText(value: unknown): string {
   if (!Array.isArray(value)) return "";
-  return value
+  const text = value
     .map((input) => {
       const record = asRecord(input);
       return (
@@ -116,6 +116,7 @@ export function userInputText(value: unknown): string {
     })
     .filter(Boolean)
     .join("\n");
+  return text.replace(/\n\n<referenced_threads>\n[\s\S]*\n<\/referenced_threads>\s*$/, "");
 }
 
 export function asThreadItem(value: unknown): CodexThreadItem | null {

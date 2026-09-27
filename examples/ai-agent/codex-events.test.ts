@@ -52,4 +52,15 @@ describe("Codex event normalization", () => {
       ]),
     ).toBe("hello\n[image: /tmp/example.png]");
   });
+
+  test("hides transport-only referenced thread context from user prompts", () => {
+    expect(
+      userInputText([
+        {
+          type: "text",
+          text: "What token was produced?\n\n<referenced_threads>\nTHREAD hidden\n</referenced_threads>",
+        },
+      ]),
+    ).toBe("What token was produced?");
+  });
 });

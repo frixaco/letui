@@ -97,6 +97,7 @@ let cleanedUp = false;
 let entryRefreshQueued = false;
 let deltaFlushTimer: ReturnType<typeof setTimeout> | null = null;
 let renderedEntryCount = 0;
+let compactHelpVisible = false;
 let composerTopKey = "";
 let composerBottomKey = "";
 let codexVersionWarning = "";
@@ -276,6 +277,28 @@ const helpSeparator = Text({
   foreground: THEME.composerLine,
   wrap: "none",
 });
+const helpWideContent: Node[] = [
+  shortcutRow("Ctrl+O", "command palette", "Ctrl+R", "prompt history"),
+  shortcutRow("Ctrl+S", "reasoning dial", "Alt+T", "expand tool details"),
+  shortcutRow("@ / @@", "mention files/threads", "↑ / ↓", "navigate or scroll"),
+  shortcutRow("Esc Esc", "interrupt active turn", "Ctrl+C Ctrl+C", "quit"),
+  shortcutRow("?", "toggle this help"),
+  helpSeparator,
+  ...Array.from({ length: 7 }, () => Text({ text: "", height: 1 })),
+];
+const helpCompactContent: Node[] = [
+  shortcutRow("Ctrl+O", "command palette"),
+  shortcutRow("Ctrl+R", "prompt history"),
+  shortcutRow("Ctrl+S", "reasoning dial"),
+  shortcutRow("Alt+T", "expand tool details"),
+  shortcutRow("@ / @@", "mention files/threads"),
+  shortcutRow("↑ / ↓", "navigate or scroll"),
+  shortcutRow("Esc Esc", "interrupt active turn"),
+  shortcutRow("Ctrl+C Ctrl+C", "quit"),
+  shortcutRow("?", "toggle this help"),
+  helpSeparator,
+  ...Array.from({ length: 5 }, () => Text({ text: "", height: 1 })),
+];
 const helpComposer = Column(
   {
     height: 15,
@@ -284,21 +307,7 @@ const helpComposer = Column(
     borderLeft: { color: THEME.composerLine },
     borderRight: { color: THEME.composerLine },
   },
-  [
-    shortcutRow("Ctrl+O", "command palette", "Ctrl+R", "prompt history"),
-    shortcutRow("Ctrl+S", "reasoning dial", "Alt+T", "expand tool details"),
-    shortcutRow("@ / @@", "mention files/threads", "↑ / ↓", "navigate or scroll"),
-    shortcutRow("Esc Esc", "interrupt active turn", "Ctrl+C Ctrl+C", "quit"),
-    shortcutRow("?", "toggle this help"),
-    helpSeparator,
-    Text({ text: "", height: 1 }),
-    Text({ text: "", height: 1 }),
-    Text({ text: "", height: 1 }),
-    Text({ text: "", height: 1 }),
-    Text({ text: "", height: 1 }),
-    Text({ text: "", height: 1 }),
-    Text({ text: "", height: 1 }),
-  ],
+  helpWideContent,
 );
 const composerBottomLine = Text({
   text: "",
@@ -1503,18 +1512,30 @@ function renderMentions(): void {
   const bottom =
     Math.floor(composerFrame.frameHeight()) +
     Math.floor(composerActivity.frameHeight()) +
-    Math.floor(toast.frameHeight()) -
-    1;
+    Math.floor(toast.frameHeight());
+  const rootWidth = Math.floor(root.frameWidth());
+  const rootHeight = Math.floor(root.frameHeight());
+  const width = Math.min(MENTION_WIDTH, Math.max(12, rootWidth - 4));
+  const resultCapacity = Math.max(1, rootHeight - Math.max(0, bottom) - 2);
+  const visibleCount = Math.min(mentionSuggestions.length, resultCapacity);
+  const windowStart = clamp(
+    mentionIndex - visibleCount + 1,
+    0,
+    Math.max(0, mentionSuggestions.length - visibleCount),
+  );
+  const visibleSuggestions = mentionSuggestions.slice(windowStart, windowStart + visibleCount);
   mentionBox.setStyle({
-    right: Math.max(0, Math.floor(root.frameWidth()) - MENTION_WIDTH - 2),
+    right: Math.max(0, rootWidth - width - 2),
     bottom: Math.max(0, bottom),
-    width: MENTION_WIDTH,
-    height: mentionSuggestions.length + 2,
+    width,
+    height: visibleSuggestions.length + 2,
     border: { color: THEME.line, style: "rounded" },
   });
   for (const [index, row] of mentionRows.entries()) {
-    const suggestion = mentionSuggestions[index];
-    row.setText(suggestion ? mentionSuggestionText(suggestion, index === mentionIndex) : "");
+    const suggestion = visibleSuggestions[index];
+    row.setText(
+      suggestion ? mentionSuggestionText(suggestion, index + windowStart === mentionIndex) : "",
+    );
     row.setStyle({
       height: suggestion ? 1 : 0,
       foreground: THEME.text,
@@ -1867,36 +1888,49 @@ ff(() => {
   const pickerIsOverlay = currentView === "picker" && usesPickerOverlay();
   helpSeparator.setText("─".repeat(Math.max(0, Math.floor(rootWidth) - 4)));
   const wideWelcome = bodyWidth >= 100;
-  welcomeLogo.setStyle({ position: "relative", right: wideWelcome ? -2 : 0 });
+  const compactWelcome = bodyWidth < 50 || rootHeight < 30;
+  const nextCompactHelpVisible = rootWidth < 64;
+  if (compactHelpVisible !== nextCompactHelpVisible) {
+    compactHelpVisible = nextCompactHelpVisible;
+    helpComposer.setChildren(compactHelpVisible ? helpCompactContent : helpWideContent);
+  }
+  const compactWelcomeWidth = Math.max(20, Math.min(50, Math.floor(bodyWidth) - 4));
+  welcomeLogo.setStyle({
+    position: "relative",
+    right: wideWelcome ? -2 : 0,
+    width: compactWelcome ? 0 : 50,
+    height: compactWelcome ? 0 : undefined,
+  });
   welcomeStack.setStyle({
     direction: wideWelcome ? "row" : "column",
-    width: wideWelcome ? 106 : 50,
-    maxWidth: wideWelcome ? 106 : 50,
-    gap: wideWelcome ? 1 : 5,
+    width: wideWelcome ? 106 : compactWelcome ? compactWelcomeWidth : 50,
+    maxWidth: wideWelcome ? 106 : compactWelcome ? compactWelcomeWidth : 50,
+    gap: wideWelcome ? 1 : compactWelcome ? 1 : 5,
     alignItems: "center",
     justifyContent: wideWelcome ? "start" : "center",
   });
   welcomeDetails.setStyle({
-    width: wideWelcome ? 30 : 50,
-    maxWidth: wideWelcome ? 30 : 50,
+    width: wideWelcome ? 30 : compactWelcome ? compactWelcomeWidth : 50,
+    maxWidth: wideWelcome ? 30 : compactWelcome ? compactWelcomeWidth : 50,
     position: wideWelcome ? "absolute" : "relative",
     right: wideWelcome ? 25 : 0,
     bottom: wideWelcome ? Math.max(0, Math.floor((welcomeHeight - 21) / 2) + 11) : 0,
   });
+  welcomeTitle.setStyle({ alignSelf: compactWelcome ? "center" : undefined });
+  welcomeHints.setStyle({ alignSelf: compactWelcome ? "center" : undefined });
   if (pickerIsOverlay) {
-    const overlayWidth = clamp(Math.floor(rootWidth) - 10, 82, 140);
-    const overlayHeight = clamp(Math.floor(rootHeight) - 4, 24, 45);
     body.setChildren([]);
     pickerOverlay.setStyle({
-      right: Math.floor((rootWidth - overlayWidth) / 2),
-      bottom: Math.floor((rootHeight - overlayHeight) / 2),
-      width: overlayWidth,
-      height: overlayHeight,
+      right: 0,
+      bottom: 0,
+      width: rootWidth,
+      height: rootHeight,
+      background: THEME.shell,
     });
     pickerOverlay.setChildren([pickerView.node]);
   } else {
     pickerOverlay.setChildren([]);
-    pickerOverlay.setStyle({ right: 0, bottom: 0, width: 0, height: 0 });
+    pickerOverlay.setStyle({ right: 0, bottom: 0, width: 0, height: 0, background: undefined });
   }
   const content =
     currentView === "picker"

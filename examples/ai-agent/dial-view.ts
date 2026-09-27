@@ -40,7 +40,7 @@ export class DialView {
       `│${value.slice(0, innerWidth).padEnd(innerWidth, " ")}│`;
     const infoLine = (label: string, value: string): StyledText => {
       const prefix = ` ${label}:  `;
-      const visibleValue = value.slice(0, Math.max(0, innerWidth - prefix.length));
+      const visibleValue = truncate(value, Math.max(0, innerWidth - prefix.length));
       return styled([
         { text: "│", foreground: THEME.line },
         { text: prefix, foreground: THEME.text },
@@ -74,7 +74,10 @@ export class DialView {
     this.rows[4]!.setText(infoLine("Agent", `${state.model} ${selected.reasoningEffort}`));
     this.rows[5]!.setText(infoLine("Limit", state.rateLimit));
     this.rows[6]!.setText(boxLine());
-    const description = ` ${selected.description}`.slice(0, innerWidth).padEnd(innerWidth, " ");
+    const description = ` ${truncate(selected.description, innerWidth - 1)}`.padEnd(
+      innerWidth,
+      " ",
+    );
     this.rows[7]!.setText(
       styled([
         { text: "│", foreground: THEME.line },
@@ -141,4 +144,10 @@ function dialLabelSegments(
   }
   if (cursor < width) segments.push({ text: " ".repeat(width - cursor), foreground: THEME.muted });
   return segments;
+}
+
+function truncate(value: string, width: number): string {
+  if (value.length <= width) return value;
+  if (width <= 1) return "…".slice(0, width);
+  return `${value.slice(0, width - 1)}…`;
 }

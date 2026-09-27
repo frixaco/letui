@@ -143,19 +143,25 @@ export class PickerView {
     state.selectedIndex = clamp(state.selectedIndex, 0, Math.max(0, filtered.length - 1));
     const split = state.layout === "split" && layout.width >= 90 && layout.height >= 26;
     const wide = state.layout === "wide" && layout.width >= 120 && layout.height >= 30;
-    const rowCapacity = wide ? 20 : 15;
+    const availableWidth = Math.max(1, Math.floor(layout.width));
+    const availableHeight = Math.max(1, Math.floor(layout.height));
+    const width = split
+      ? clamp(availableWidth - 10, 82, 140)
+      : wide
+        ? clamp(availableWidth - 66, 80, 110)
+        : clamp(availableWidth - 4, Math.min(38, availableWidth), Math.min(80, availableWidth));
+    const height = split
+      ? clamp(availableHeight - 4, 24, 45)
+      : wide
+        ? 26
+        : Math.min(20, availableHeight);
+    const rowCapacity = wide ? 20 : Math.min(15, Math.max(1, height - 5));
     const windowStart = clamp(
       state.selectedIndex - Math.floor(rowCapacity / 2),
       0,
       Math.max(0, filtered.length - rowCapacity),
     );
     this.visibleOptions = filtered.slice(windowStart, windowStart + rowCapacity);
-    const width = split
-      ? clamp(Math.floor(layout.width) - 10, 82, 140)
-      : wide
-        ? clamp(Math.floor(layout.width) - 66, 80, 110)
-        : clamp(Math.floor(layout.width || 72) - 4, 38, 80);
-    const height = split ? clamp(Math.floor(layout.height) - 4, 24, 45) : wide ? 26 : 20;
     const insideWidth = width - 2;
     const listWidth = split ? Math.floor((insideWidth - 1) * 0.5) : insideWidth;
     const rowWidth = split ? listWidth : insideWidth - 2;
@@ -499,7 +505,17 @@ function framedHistoryBottomLine(width: number): StyledText {
 }
 
 function framedFooterLine(width: number, footer: string): StyledText {
-  const label = ` ${footer} `;
+  const maxLabelWidth = Math.max(1, width - 4);
+  let text = footer;
+  if (text.length > maxLabelWidth) {
+    text = text
+      .replace(/Ctrl\+T (?:all workspaces|this workspace)/, "Ctrl+T scope")
+      .replace(/Alt\+A (?:show|hide) archived/, "Alt+A")
+      .replace("Enter reuse prompt", "Enter reuse")
+      .replace("Esc close", "Esc");
+  }
+  if (text.length > maxLabelWidth) text = `${text.slice(0, Math.max(0, maxLabelWidth - 1))}…`;
+  const label = ` ${text} `;
   return styled([
     { text: "╰", foreground: THEME.line },
     { text: label, foreground: THEME.muted },
