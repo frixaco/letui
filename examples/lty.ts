@@ -1407,13 +1407,19 @@ function handlePickerKey(key: string): boolean {
     movePicker(-1);
     return true;
   }
-  if (key === "\x08" || key === "\x7f") {
-    picker.query = Array.from(picker.query).slice(0, -1).join("");
+  if (key && Array.from(key).every((character) => character === "\x08" || character === "\x7f")) {
+    picker.query = Array.from(picker.query).slice(0, -key.length).join("");
     picker.selectedIndex = 0;
     pickerVersion(pickerVersion() + 1);
     return true;
   }
-  if (key.length === 1 && key >= "!" && key <= "~") {
+  if (
+    key &&
+    Array.from(key).every((character) => {
+      const codePoint = character.codePointAt(0)!;
+      return codePoint >= 32 && codePoint !== 127;
+    })
+  ) {
     picker.query += key;
     picker.selectedIndex = 0;
     pickerVersion(pickerVersion() + 1);
