@@ -97,6 +97,7 @@ let cleanedUp = false;
 let suspendTranscriptSync = false;
 let reconciliationMatches: Set<string> | null = null;
 let entryRefreshQueued = false;
+let deltaFlushTimer: ReturnType<typeof setTimeout> | null = null;
 let composerTopKey = "";
 let composerBottomKey = "";
 let codexVersionWarning = "";
@@ -108,6 +109,7 @@ const MINIMUM_CODEX_VERSION = "0.157.0";
 
 const entries: TranscriptEntry[] = [];
 const entryByItem = new Map<string, TranscriptEntry>();
+const pendingDeltas = new Map<string, PendingDelta>();
 const entryViews = new Map<string, TranscriptEntryView>();
 const pendingEntryRefreshes = new Set<TranscriptEntry>();
 const queuedPrompts: QueuedPrompt[] = [];
@@ -385,10 +387,27 @@ function upsertItem(item: CodexThreadItem, turnId: string | null, completed: boo
 }
 
 function updateDelta(itemId: string, delta: string, target: "text" | "detail"): void {
-  const entry = entryByItem.get(itemId);
-  if (!entry) return;
-  entry[target] = trimStream(`${entry[target]}${delta}`, target === "detail" ? 30_000 : 80_000);
-  refreshEntry(entry);
+  if (!entryByItem.has(itemId) || !delta) return;
+  const pending = pendingDeltas.get(itemId) ?? { text: [], detail: [] };
+  pending[target].push(delta);
+  pendingDeltas.set(itemId, pending);
+  if (deltaFlushTimer) return;
+  deltaFlushTimer = setTimeout(flushPendingDeltas, 16);
+}
+
+function flushPendingDeltas(): void {
+  if (deltaFlushTimer) clearTimeout(deltaFlushTimer);
+  deltaFlushTimer = null;
+  for (const [itemId, pending] of pendingDeltas) {
+    const entry = entryByItem.get(itemId);
+    if (!entry) continue;
+    if (pending.text.length > 0)
+      entry.text = trimStream(`${entry.text}${pending.text.join("")}`, 80_000);
+    if (pending.detail.length > 0)
+      entry.detail = trimStream(`${entry.detail}${pending.detail.join("")}`, 30_000);
+    refreshEntry(entry);
+  }
+  pendingDeltas.clear();
 }
 
 function refreshEntry(entry: TranscriptEntry): void {
@@ -683,6 +702,7 @@ function handleNotification(message: RpcMessage): void {
       updateDelta(stringValue(params.itemId), stringValue(params.delta), "detail");
       break;
     case "item/fileChange/patchUpdated": {
+      flushPendingDeltas();
       const entry = entryByItem.get(stringValue(params.itemId));
       if (entry) {
         entry.detail = formatFileChanges(params.changes);
@@ -692,7 +712,10 @@ function handleNotification(message: RpcMessage): void {
     }
     case "item/completed": {
       const item = asThreadItem(params.item);
-      if (item) upsertItem(item, stringValue(params.turnId) || activeTurnId, true);
+      if (item) {
+        pendingDeltas.delete(item.id);
+        upsertItem(item, stringValue(params.turnId) || activeTurnId, true);
+      }
       break;
     }
     case "turn/plan/updated": {
@@ -733,6 +756,7 @@ function handleNotification(message: RpcMessage): void {
       );
       break;
     case "turn/completed": {
+      flushPendingDeltas();
       const turn = asRecord(params.turn);
       const status = stringValue(turn.status);
       for (const entry of entries) {
@@ -1737,10 +1761,13 @@ function cleanup(): void {
   if (logoAnimationTimer) clearInterval(logoAnimationTimer);
   if (dialAnimationTimer) clearInterval(dialAnimationTimer);
   if (scrollToEndTimer) clearTimeout(scrollToEndTimer);
+  if (deltaFlushTimer) clearTimeout(deltaFlushTimer);
   if (quitPromptTimer) clearTimeout(quitPromptTimer);
   codex?.dispose();
   searchIndex.destroy();
 }
+
+type PendingDelta = { text: string[]; detail: string[] };
 
 ff(() => {
   transcriptVersion();
