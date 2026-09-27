@@ -96,6 +96,7 @@ let dialAnimationTo = 0;
 let cleanedUp = false;
 let entryRefreshQueued = false;
 let deltaFlushTimer: ReturnType<typeof setTimeout> | null = null;
+let renderedEntryCount = 0;
 let composerTopKey = "";
 let composerBottomKey = "";
 let codexVersionWarning = "";
@@ -107,6 +108,7 @@ const MINIMUM_CODEX_VERSION = "0.157.0";
 
 const entries: TranscriptEntry[] = [];
 const entryByItem = new Map<string, TranscriptEntry>();
+const activeTurnEntries = new Set<TranscriptEntry>();
 const pendingDeltas = new Map<string, PendingDelta>();
 const entryViews = new Map<string, TranscriptEntryView>();
 const pendingEntryRefreshes = new Set<TranscriptEntry>();
@@ -340,6 +342,7 @@ let app: ReturnType<typeof run>;
 function appendEntry(entry: TranscriptEntry): TranscriptEntry {
   entries.push(entry);
   entryByItem.set(entry.itemId, entry);
+  trackActiveTurnEntry(entry);
   bumpTranscript();
   return entry;
 }
@@ -353,6 +356,7 @@ function upsertItem(item: CodexThreadItem, turnId: string | null, completed: boo
       existing.turnId = turnId;
       existing.status = completed ? "completed" : existing.status;
       entryByItem.set(item.id, existing);
+      trackActiveTurnEntry(existing);
       refreshEntry(existing);
     } else if (text) {
       appendEntry(itemToTranscriptEntry(item, turnId, completed));
@@ -369,6 +373,7 @@ function upsertItem(item: CodexThreadItem, turnId: string | null, completed: boo
     existing.detail = mapped.detail || existing.detail;
     existing.status = mapped.status;
     existing.turnId = turnId;
+    trackActiveTurnEntry(existing);
     refreshEntry(existing);
     return;
   }
@@ -411,26 +416,44 @@ function refreshEntry(entry: TranscriptEntry): void {
   queueMicrotask(flushEntryRefreshes);
 }
 
-function syncTranscript(): void {
+function syncTranscriptStructure(): void {
   if (entries.length === 0) {
     transcript.setChildren([welcome]);
+    renderedEntryCount = 0;
     return;
   }
 
   const expanded = detailsExpanded();
-  const nodes = entries.map((entry) => {
-    let entryView = entryViews.get(entry.id);
-    if (!entryView) {
-      entryView = createTranscriptEntryView();
+  const width = transcript.frameWidth();
+  if (renderedEntryCount === 0) {
+    const views = entries.map((entry) => {
+      const entryView = createTranscriptEntryView();
       entryViews.set(entry.id, entryView);
+      renderTranscriptEntry(entry, entryView, expanded, 0, width);
+      return entryView;
+    });
+    transcript.setChildren([transcriptSpacer, ...views.map((entryView) => entryView.container)]);
+  } else {
+    for (let index = renderedEntryCount; index < entries.length; index++) {
+      const entry = entries[index]!;
+      const entryView = createTranscriptEntryView();
+      entryViews.set(entry.id, entryView);
+      renderTranscriptEntry(entry, entryView, expanded, 0, width);
+      transcript.appendChild(entryView.container);
     }
-
-    renderTranscriptEntry(entry, entryView, expanded, 0, transcript.frameWidth());
-    return entryView;
-  });
-  transcript.setChildren([transcriptSpacer, ...nodes.map((entryView) => entryView.container)]);
+  }
+  renderedEntryCount = entries.length;
 
   scheduleScrollToEnd();
+}
+
+function refreshTranscriptLayout(): void {
+  const expanded = detailsExpanded();
+  const width = transcript.frameWidth();
+  for (const entry of entries) {
+    const entryView = entryViews.get(entry.id);
+    if (entryView) renderTranscriptEntry(entry, entryView, expanded, 0, width);
+  }
 }
 
 function flushEntryRefreshes(): void {
@@ -556,6 +579,7 @@ async function sendPrompt(prompt: string, queuedEntry?: TranscriptEntry): Promis
     const context = await threadRepository?.referenceContext(references);
     busy(true);
     activeTurnId = null;
+    activeTurnEntries.clear();
     bumpTranscript();
 
     const response = await codex.request<{ turn: { id: string } }>("turn/start", {
@@ -665,7 +689,9 @@ function handleNotification(message: RpcMessage): void {
   switch (method) {
     case "turn/started": {
       const turn = asRecord(params.turn);
-      activeTurnId = stringValue(turn.id) || activeTurnId;
+      const turnId = stringValue(turn.id);
+      if (turnId && turnId !== activeTurnId) activeTurnEntries.clear();
+      activeTurnId = turnId || activeTurnId;
       streamedOutputTokens = 0;
       busy(true);
       break;
@@ -714,6 +740,7 @@ function handleNotification(message: RpcMessage): void {
       const existing = entryByItem.get(id);
       if (existing) {
         existing.text = text;
+        trackActiveTurnEntry(existing);
         refreshEntry(existing);
       } else if (text) {
         appendEntry(createLocalEntry("assistant", "plan", text, "running", id));
@@ -749,14 +776,15 @@ function handleNotification(message: RpcMessage): void {
       flushPendingDeltas();
       const turn = asRecord(params.turn);
       const status = stringValue(turn.status);
-      for (const entry of entries) {
-        if (entry.turnId === stringValue(turn.id) && entry.status === "running") {
+      for (const entry of activeTurnEntries) {
+        if (entry.status === "running") {
           entry.status =
             status === "completed"
               ? "completed"
               : status === "interrupted"
                 ? "interrupted"
                 : "failed";
+          refreshEntry(entry);
         }
       }
       if (status === "failed") {
@@ -766,8 +794,8 @@ function handleNotification(message: RpcMessage): void {
       }
       if (activeThread) threadRepository?.invalidate(activeThread.id);
       activeTurnId = null;
+      activeTurnEntries.clear();
       busy(false);
-      bumpTranscript();
       void refreshRateLimits();
       void drainQueue();
       break;
@@ -1571,10 +1599,12 @@ async function newThread(): Promise<void> {
   }
   activeThread = null;
   activeTurnId = null;
+  activeTurnEntries.clear();
   entries.length = 0;
   queuedPrompts.length = 0;
   entryByItem.clear();
   entryViews.clear();
+  renderedEntryCount = 0;
   activeThreadVersion(activeThreadVersion() + 1);
   bumpTranscript(false);
 }
@@ -1592,8 +1622,10 @@ async function resumeThread(thread: CodexThread): Promise<void> {
     }>("thread/resume", { threadId: thread.id });
     activeThread = response.thread;
     entries.length = 0;
+    activeTurnEntries.clear();
     entryByItem.clear();
     entryViews.clear();
+    renderedEntryCount = 0;
     loadCodexHistory(response.thread);
     const matchingModel = models.find(
       (model) => model.id === thread.model || model.id === response.model,
@@ -1758,9 +1790,13 @@ type PendingDelta = { text: string[]; detail: string[] };
 
 ff(() => {
   transcriptVersion();
+  syncTranscriptStructure();
+});
+
+ff(() => {
   detailsExpanded();
   transcript.frameWidth();
-  syncTranscript();
+  refreshTranscriptLayout();
 });
 
 ff(() => {
@@ -1788,7 +1824,7 @@ ff(() => {
 
 ff(() => {
   const frame = animationFrame();
-  for (const entry of entries) {
+  for (const entry of activeTurnEntries) {
     if (
       entry.status !== "running" ||
       entry.kind === "user" ||
@@ -2152,6 +2188,10 @@ function activityText(frame: number, queued: number, activity: TurnActivity): St
   ]);
 }
 
+function trackActiveTurnEntry(entry: TranscriptEntry): void {
+  if (activeTurnId && entry.turnId === activeTurnId) activeTurnEntries.add(entry);
+}
+
 function summarizeTurnActivity(working: boolean): TurnActivity {
   const activity: TurnActivity = {
     runningToolCount: 0,
@@ -2163,8 +2203,7 @@ function summarizeTurnActivity(working: boolean): TurnActivity {
   };
   if (!working) return activity;
 
-  for (const entry of entries) {
-    if (activeTurnId && entry.turnId !== activeTurnId) continue;
+  for (const entry of activeTurnEntries) {
     if (entry.status === "running") {
       if (entry.role === "tool") {
         activity.runningToolCount++;

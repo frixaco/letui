@@ -53,6 +53,7 @@ export function Box(input: BoxProps, children: Node[]): BoxNode {
     frameHeight,
     children: childrenSignal,
     setChildren: (nodes) => childrenSignal(nodes),
+    appendChild: (child) => childrenSignal([...childrenSignal(), child]),
     setStyle: (newProps) => {
       if (newProps.direction !== undefined) {
         node.type = directionToBoxKind(newProps.direction);
@@ -101,6 +102,7 @@ export function ScrollView(input: ScrollViewProps, children: Node[]): ScrollView
     frameHeight,
     children: childrenSignal,
     setChildren: (nodes) => contentContainer.setChildren(nodes),
+    appendChild: (child) => contentContainer.appendChild(child),
     setStyle: (newProps) => {
       const { scrollY, ...nextStyle } = newProps;
       if (scrollY !== undefined) {
@@ -163,6 +165,7 @@ export function Text(input: TextProps): TextNode {
     frameHeight,
     children: undefined,
     setChildren: undefined,
+    appendChild: undefined,
     setStyle: makeSetStyle(props),
     setText: (v) => setTextSignals(props, v),
     focus: () => focusNode(node),
@@ -190,6 +193,7 @@ export function Input(input: InputProps): InputNode {
     frameHeight,
     children: undefined,
     setChildren: undefined,
+    appendChild: undefined,
     setStyle: makeSetStyle(props),
     setText: (v) => props.text(prepareTextInput(v).text),
     focus: () => focusNode(node),
@@ -218,6 +222,7 @@ export function Button(input: ButtonProps, children: Node[] = []): ButtonNode {
     frameHeight,
     children: childrenSignal,
     setChildren: (nodes) => childrenSignal(nodes),
+    appendChild: (child) => childrenSignal([...childrenSignal(), child]),
     setStyle: makeSetStyle(props),
     setText: (v) => props.text(prepareTextInput(v).text),
     focus: () => focusNode(node),

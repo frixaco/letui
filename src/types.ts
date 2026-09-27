@@ -262,11 +262,13 @@ type CommonFields = {
 type ContainerNode = {
   children: Signal<Node[]>;
   setChildren: (nodes: Node[]) => void;
+  appendChild: (node: Node) => void;
 };
 
 type LeafNode = {
   children: undefined;
   setChildren: undefined;
+  appendChild: undefined;
 };
 
 type NodeBase<K extends NodeKind> = CommonFields & {

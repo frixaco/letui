@@ -26,7 +26,7 @@ export function prepareRenderTreeSync(
   const sentTree = buildSentNodeState(root);
   const textStats: TextOpStats = { opCount: 0, byteCount: 0 };
 
-  if (!previousTree || !hasSameNodeShape(previousTree, sentTree)) {
+  if (!previousTree || !hasAppendCompatibleShape(previousTree, sentTree)) {
     queueFullTreeInsert(sentTree, textStats, ops);
     ops.setRoot(sentTree.id);
 
@@ -301,12 +301,12 @@ function readSentStyleState(node: Node): SentStyleState {
   return style;
 }
 
-function hasSameNodeShape(previous: SentNodeState, current: SentNodeState): boolean {
+function hasAppendCompatibleShape(previous: SentNodeState, current: SentNodeState): boolean {
   if (previous.id !== current.id || previous.type !== current.type) {
     return false;
   }
 
-  if (previous.children.length !== current.children.length) {
+  if (previous.children.length > current.children.length) {
     return false;
   }
 
@@ -316,7 +316,7 @@ function hasSameNodeShape(previous: SentNodeState, current: SentNodeState): bool
     if (!previousChild || !currentChild) {
       return false;
     }
-    if (!hasSameNodeShape(previousChild, currentChild)) {
+    if (!hasAppendCompatibleShape(previousChild, currentChild)) {
       return false;
     }
   }
@@ -366,6 +366,12 @@ function syncRenderTree(
       continue;
     }
     syncRenderTree(previousChild, currentChild, textStats, ops);
+  }
+  for (let i = previous.children.length; i < current.children.length; i++) {
+    const child = current.children[i];
+    if (!child) continue;
+    queueFullTreeInsert(child, textStats, ops);
+    ops.appendChild(child.id, current.id);
   }
 }
 
