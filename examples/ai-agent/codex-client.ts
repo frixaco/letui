@@ -274,6 +274,11 @@ export type CodexThread = {
   preview: string;
   cwd: string;
   name: string | null;
+  model?: string | null;
+  reasoningEffort?: string | null;
+  createdAt?: number;
+  updatedAt?: number;
+  recencyAt?: number | null;
   turns: CodexTurn[];
 };
 
@@ -282,6 +287,8 @@ export type CodexTurn = {
   status: "inProgress" | "completed" | "interrupted" | "failed";
   items: CodexThreadItem[];
   error: { message?: string } | null;
+  startedAt?: number | null;
+  completedAt?: number | null;
 };
 
 export type CodexThreadItem = {

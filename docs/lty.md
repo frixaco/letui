@@ -1,9 +1,9 @@
 # Letty Agent (`lty`)
 
 Letty Agent is a portfolio-sized local coding agent and a real-world LeTUI demo. The terminal UI,
-local thread index, transcript, and search experience live in this repository. Codex app-server
-owns ChatGPT authentication, model execution, tools, sandboxing, `AGENTS.md`, skills, configured
-MCP servers, and subagents.
+transcript projection, and search experience live in this repository. Codex app-server owns ChatGPT
+authentication, durable local threads, model execution, tools, sandboxing, `AGENTS.md`, skills,
+configured MCP servers, and subagents.
 
 ```text
 composer / command palette
@@ -13,7 +13,7 @@ composer / command palette
           │
           ├──── streamed turn and tool events ────▶ LeTUI transcript
           │
-          └──── Codex thread id ◀────────────────▶ local SQLite index
+          └──── thread list and history ─────────▶ local picker and references
 ```
 
 Everything is local except the model request made by Codex. Letty does not implement cloud thread
@@ -34,7 +34,8 @@ bun run lty
 ```
 
 If Codex is signed out, open the command palette with `Ctrl+O` and choose **sign in with ChatGPT**.
-Local data is stored in `~/.lty/threads.sqlite`; set `LTY_HOME` to use another directory.
+Model and effort preferences are stored in `~/.lty/settings.json`; set `LTY_HOME` to use another
+directory. Codex owns the local thread history.
 
 ## Supported experience
 
@@ -67,7 +68,7 @@ changes before committing them.
 ## Verification
 
 ```bash
-bun run test:lty   # deterministic event, version, and SQLite tests
+bun run test:lty   # deterministic event, version, and settings tests
 bun run smoke:lty  # live app-server/account/model handshake; no model turn
 bun run check      # TypeScript and Rust checks
 ```

@@ -17,9 +17,9 @@ https://github.com/user-attachments/assets/7f4f53f5-deb6-4781-bdfa-bf769cabfbb1
 ![Letty Agent moving through connection, streaming, and tool states](docs/assets/lty-demo.gif)
 
 Letty Agent is a small, local coding agent built entirely with LeTUI. It uses Codex app-server for
-ChatGPT subscription authentication and agent execution, while keeping its thread index,
-transcripts, archive state, and cross-thread references in local SQLite. There are no API keys,
-cloud threads, credits, or remote infrastructure.
+ChatGPT subscription authentication, agent execution, and durable local thread history. Letty keeps
+only its current UI projection and model preferences. There are no API keys, cloud threads, credits,
+or remote infrastructure.
 
 ```bash
 # Requires Codex CLI 0.157.0+ on PATH.

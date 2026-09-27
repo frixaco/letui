@@ -3,7 +3,7 @@
  *
  * Data flow:
  * composer / palette -> Codex JSONL RPC -> streamed turn items -> stable transcript nodes
- *                                \-> SQLite transcript + local thread references
+ *                                \-> Codex-owned local thread history
  */
 
 import { Box, Column, Input, ScrollView, Text, $, ff, onKey, run } from "@";
@@ -16,7 +16,6 @@ import {
   renderTranscriptEntry,
   shortcutRow,
   type TranscriptEntry,
-  type TranscriptKind,
   type TranscriptEntryView,
 } from "./ai-agent/transcript-view.ts";
 import {
@@ -40,12 +39,8 @@ import {
   stringValue,
   userInputText,
 } from "./ai-agent/codex-events.ts";
-import {
-  ThreadStore,
-  type LocalMessage,
-  type LocalThread,
-  type StoredMessage,
-} from "./ai-agent/thread-store.ts";
+import { SettingsStore } from "./ai-agent/settings-store.ts";
+import { ThreadRepository, threadLabel, threadTimestamp } from "./ai-agent/thread-repository.ts";
 import { SearchIndex } from "./ai-agent/search-index.ts";
 import {
   PickerView,
@@ -71,16 +66,18 @@ const branch = readGitBranch(cwd);
 const displayCwd = abbreviateHome(cwd);
 const displayPath = `${displayCwd}${branch ? ` (${branch})` : ""}`;
 const fallbackDisplayPath = basename(cwd);
-const store = new ThreadStore();
+const settings = new SettingsStore();
 const searchIndex = new SearchIndex(cwd);
 
 let codex: CodexAppServer | null = null;
+let threadRepository: ThreadRepository | null = null;
+let knownThreads: CodexThread[] = [];
 let account: CodexAccount = null;
 let models: CodexModel[] = [];
 let selectedModel: CodexModel | null = null;
-let selectedEffort = store.getSetting("effort") ?? "high";
+let selectedEffort = settings.get("effort") ?? "high";
 let rateLimits: RateLimitSnapshot | null = null;
-let activeThread: LocalThread | null = null;
+let activeThread: CodexThread | null = null;
 let activeTurnId: string | null = null;
 let picker: PickerState | null = null;
 let mentionSuggestions: MentionSuggestion[] = [];
@@ -340,10 +337,9 @@ const root = Column(
 
 let app: ReturnType<typeof run>;
 
-function appendEntry(entry: TranscriptEntry, persist = false): TranscriptEntry {
+function appendEntry(entry: TranscriptEntry): TranscriptEntry {
   entries.push(entry);
   entryByItem.set(entry.itemId, entry);
-  if (persist) persistEntry(entry);
   if (!suspendTranscriptSync) bumpTranscript();
   return entry;
 }
@@ -357,10 +353,9 @@ function upsertItem(item: CodexThreadItem, turnId: string | null, completed: boo
       existing.turnId = turnId;
       existing.status = completed ? "completed" : existing.status;
       entryByItem.set(item.id, existing);
-      if (completed) persistEntry(existing);
       if (!suspendTranscriptSync) refreshEntry(existing);
     } else if (text) {
-      appendEntry(itemToTranscriptEntry(item, turnId, completed), completed);
+      appendEntry(itemToTranscriptEntry(item, turnId, completed));
     }
     return;
   }
@@ -382,12 +377,11 @@ function upsertItem(item: CodexThreadItem, turnId: string | null, completed: boo
     existing.detail = mapped.detail || existing.detail;
     existing.status = mapped.status;
     existing.turnId = turnId;
-    if (completed) persistEntry(existing);
     if (!suspendTranscriptSync) refreshEntry(existing);
     return;
   }
 
-  appendEntry(mapped, completed);
+  appendEntry(mapped);
 }
 
 function updateDelta(itemId: string, delta: string, target: "text" | "detail"): void {
@@ -547,19 +541,18 @@ async function sendPrompt(prompt: string, queuedEntry?: TranscriptEntry): Promis
     const userEntry = queuedEntry ?? createLocalEntry("user", "user", prompt, "completed");
     userEntry.status = "completed";
     if (!entries.includes(userEntry)) appendEntry(userEntry);
-    persistEntry(userEntry);
     submitted = true;
 
     const references = referencedThreadIds(prompt);
-    const context = store.referenceContext(references, activeThread.id);
+    const context = await threadRepository?.referenceContext(references);
     busy(true);
     activeTurnId = null;
     bumpTranscript();
 
     const response = await codex.request<{ turn: { id: string } }>("turn/start", {
-      threadId: activeThread.codexThreadId,
+      threadId: activeThread.id,
       clientUserMessageId: userEntry.itemId,
-      input: [{ type: "text", text: `${prompt}${context}` }],
+      input: [{ type: "text", text: `${prompt}${context ?? ""}` }],
       model: selectedModel.id,
       effort: selectedEffort,
     });
@@ -586,20 +579,15 @@ async function ensureActiveThread(firstPrompt: string): Promise<void> {
     ephemeral: false,
   });
 
-  activeThread = store.createThread({
-    codexThreadId: response.thread.id,
-    cwd,
-    model: response.model,
-    effort: response.reasoningEffort ?? selectedEffort,
-  });
+  activeThread = response.thread;
   const title = threadTitle(firstPrompt);
-  store.updateThread(activeThread.id, { title });
-  activeThread = { ...activeThread, title };
-  void indexThreads().catch(reportSearchError);
+  try {
+    await codex.request("thread/name/set", { threadId: response.thread.id, name: title });
+    activeThread = { ...activeThread, name: title };
+  } catch {}
+  knownThreads = [activeThread, ...knownThreads.filter((thread) => thread.id !== activeThread?.id)];
+  void indexThreads();
   activeThreadVersion(activeThreadVersion() + 1);
-  void codex
-    .request("thread/name/set", { threadId: response.thread.id, name: title })
-    .catch(() => {});
 }
 
 async function steerLatestQueuedPrompt(): Promise<void> {
@@ -609,14 +597,13 @@ async function steerLatestQueuedPrompt(): Promise<void> {
 
   try {
     await codex.request("turn/steer", {
-      threadId: activeThread.codexThreadId,
+      threadId: activeThread.id,
       expectedTurnId: activeTurnId,
       clientUserMessageId: queued.entry.itemId,
       input: [{ type: "text", text: queued.text }],
     });
     queued.entry.status = "completed";
     if (!entries.includes(queued.entry)) appendEntry(queued.entry);
-    persistEntry(queued.entry);
     bumpTranscript();
     clearComposer();
   } catch (error) {
@@ -664,7 +651,7 @@ function handleNotification(message: RpcMessage): void {
   }
 
   const eventThreadId = stringValue(params.threadId);
-  if (eventThreadId && eventThreadId !== activeThread?.codexThreadId) return;
+  if (eventThreadId && eventThreadId !== activeThread?.id) return;
 
   switch (method) {
     case "turn/started": {
@@ -721,10 +708,7 @@ function handleNotification(message: RpcMessage): void {
       break;
     }
     case "thread/compacted":
-      appendEntry(
-        createLocalEntry("system", "status", "Compacted thread context", "completed"),
-        true,
-      );
+      appendEntry(createLocalEntry("system", "status", "Compacted thread context", "completed"));
       break;
     case "thread/tokenUsage/updated": {
       const usage = asRecord(params.tokenUsage);
@@ -741,7 +725,6 @@ function handleNotification(message: RpcMessage): void {
           stringValue(params.message) || "Codex warning",
           "completed",
         ),
-        true,
       );
       break;
     case "error":
@@ -760,14 +743,14 @@ function handleNotification(message: RpcMessage): void {
               : status === "interrupted"
                 ? "interrupted"
                 : "failed";
-          persistEntry(entry);
         }
       }
       if (status === "failed") {
         appendError(stringValue(asRecord(turn.error).message) || "Turn failed");
       } else if (status === "interrupted") {
-        appendEntry(createLocalEntry("system", "status", "Turn interrupted", "interrupted"), true);
+        appendEntry(createLocalEntry("system", "status", "Turn interrupted", "interrupted"));
       }
+      if (activeThread) threadRepository?.invalidate(activeThread.id);
       activeTurnId = null;
       busy(false);
       bumpTranscript();
@@ -796,21 +779,18 @@ function handleServerRequest(message: RpcMessage): void {
           "Additional permissions were not granted",
           "completed",
         ),
-        activeThread !== null,
       );
       return;
     case "item/tool/requestUserInput":
       codex.respond(message.id, { answers: {} });
       appendEntry(
         createLocalEntry("system", "status", "Interactive agent question skipped", "completed"),
-        activeThread !== null,
       );
       return;
     case "mcpServer/elicitation/request":
       codex.respond(message.id, { action: "cancel", content: null, _meta: null });
       appendEntry(
         createLocalEntry("system", "status", "Interactive MCP request cancelled", "completed"),
-        activeThread !== null,
       );
       return;
     case "applyPatchApproval":
@@ -834,6 +814,7 @@ async function initializeAgent(): Promise<void> {
     }
 
     codex = await CodexAppServer.connect({ cwd });
+    threadRepository = new ThreadRepository(codex, cwd);
     codex.onNotification(handleNotification);
     codex.onServerRequest(handleServerRequest);
     codex.onStderr((line) => {
@@ -845,18 +826,21 @@ async function initializeAgent(): Promise<void> {
       appendError(`Codex app-server stopped unexpectedly with status ${code}`);
     });
 
-    const [accountResult, modelResult, rateResult] = await Promise.all([
+    const [accountResult, modelResult, rateResult, threads] = await Promise.all([
       codex.request<{ account: CodexAccount }>("account/read", { refreshToken: false }),
       codex.request<{ data: CodexModel[] }>("model/list", { includeHidden: false }),
       codex.request<RateLimitResponse>("account/rateLimits/read"),
+      threadRepository.list(),
     ]);
     account = accountResult.account;
     models = modelResult.data;
+    knownThreads = threads;
     selectInitialModel();
     rateLimits = selectFiveHourSnapshot(rateResult);
     connectionState("ready");
     modelVersion(modelVersion() + 1);
     rateLimitVersion(rateLimitVersion() + 1);
+    void indexThreads();
     if (codexVersionWarning) showToast(`${codexVersionWarning}. Update Codex for best results`);
   } catch (error) {
     connectionState("error");
@@ -933,9 +917,7 @@ function commandPaletteOptions(): PickerOption[] {
     {
       category: "thread",
       title: "switch",
-      description: ready
-        ? `${store.listThreads().length} local SQLite threads`
-        : unavailableDescription,
+      description: ready ? `${knownThreads.length} local Codex threads` : unavailableDescription,
       enabled: ready,
       run: openThreadPicker,
     },
@@ -951,7 +933,7 @@ function commandPaletteOptions(): PickerOption[] {
       description: !ready
         ? unavailableDescription
         : activeThread
-          ? activeThread.title
+          ? threadLabel(activeThread)
           : "No active thread",
       enabled: ready && activeThread !== null,
       run: archiveActiveThread,
@@ -1053,38 +1035,39 @@ function openCommandPalette(): void {
 }
 
 function openThreadPicker(): void {
-  const threads = store.listThreads();
+  const threads = knownThreads;
   openPicker(
     "Switch Thread",
     threads.length > 0
       ? threads.map((thread) => ({
-          category: relativeTime(thread.updatedAt),
-          title: thread.title,
+          category: relativeTime(threadTimestamp(thread)),
+          title: threadLabel(thread),
           description: `${abbreviateHome(thread.cwd)} · ${shortId(thread.id)}`,
           preview: (width: number) => threadPreview(thread, width),
           run: () => resumeThread(thread),
         }))
-      : [emptyOption("No local threads yet", "Send a message to create one")],
+      : [emptyOption("No Codex threads yet", "Send a message to create one")],
     "split",
   );
 }
 
-function threadPreview(thread: LocalThread, width: number): Node[] {
-  const messages = store.listMessages(thread.id);
-  const seen = new Set<string>();
-  const nodes = messages
-    .filter((message) => {
-      const fingerprint = `${message.turnId}\0${message.role}\0${message.kind}\0${message.text}`;
-      if (message.itemId.startsWith("item-") && seen.has(fingerprint)) return false;
-      seen.add(fingerprint);
-      return true;
-    })
-    .map((message) => {
-      const entry = { ...message, kind: message.kind as TranscriptKind };
+function threadPreview(thread: CodexThread, width: number): Node[] {
+  const history = threadRepository?.peek(thread.id);
+  if (!history) {
+    void threadRepository
+      ?.read(thread.id)
+      .then(() => pickerVersion(pickerVersion() + 1))
+      .catch((error) => showToast(errorMessage(error)));
+    return [Text({ text: "Loading preview…", foreground: THEME.muted })];
+  }
+  const nodes = history.turns.flatMap((turn) =>
+    turn.items.map((item) => {
+      const entry = itemToTranscriptEntry(item, turn.id, true);
       const entryView = createTranscriptEntryView();
       renderTranscriptEntry(entry, entryView, false, 0, width);
       return entryView.container;
-    });
+    }),
+  );
   return nodes.length > 0 ? nodes : [Text({ text: "No transcript yet", foreground: THEME.muted })];
 }
 
@@ -1093,24 +1076,24 @@ function openReferencePicker(): void {
 }
 
 function openMentionThreadPicker(): void {
-  const threads = store.listThreads().filter((thread) => thread.id !== activeThread?.id);
+  const threads = knownThreads.filter((thread) => thread.id !== activeThread?.id);
   openPicker(
     "Mention Thread",
     threads.length > 0
       ? threads.map((thread) => ({
-          category: relativeTime(thread.updatedAt),
-          title: thread.title,
-          description: `${shortId(thread.id)} · inserted as @${thread.id}`,
+          category: relativeTime(threadTimestamp(thread)),
+          title: threadLabel(thread),
+          description: `${shortId(thread.id)} · inserted as @T-${thread.id}`,
           preview: (width: number) => threadPreview(thread, width),
           run: () => insertThreadMention(thread),
         }))
-      : [emptyOption("No other local threads", "Create another thread first")],
+      : [emptyOption("No other Codex threads", "Create another thread first")],
     "split",
   );
 }
 
-function insertThreadMention(thread: LocalThread): void {
-  restoreComposer(`${draft().replace(/@@[^\s@]*$/, `@${thread.id}`)} `);
+function insertThreadMention(thread: CodexThread): void {
+  restoreComposer(`${draft().replace(/@@[^\s@]*$/, `@T-${thread.id}`)} `);
 }
 
 function openModelPicker(): void {
@@ -1126,30 +1109,45 @@ function openModelPicker(): void {
 }
 
 function openPromptHistory(): void {
-  const storedPrompts = store
-    .listThreads()
-    .flatMap((thread) => store.listMessages(thread.id))
-    .filter((message) => message.role === "user" && message.status !== "queued");
-  const prompts = [
-    ...entries.filter((entry) => entry.role === "user" && entry.status !== "queued"),
-    ...storedPrompts,
-  ]
-    .sort((left, right) => (right.createdAt ?? 0) - (left.createdAt ?? 0))
-    .filter(
-      (entry, index, all) => all.findIndex((candidate) => candidate.text === entry.text) === index,
-    );
   openPicker(
     "Prompt History",
-    prompts.length > 0
-      ? prompts.map((entry) => ({
+    [emptyOption("Loading prompt history…", "Reading local Codex threads")],
+    "wide",
+  );
+  const state = picker;
+  void threadRepository
+    ?.promptHistory(knownThreads)
+    .then((storedPrompts) => {
+      if (!state || picker !== state) return;
+      const prompts = [
+        ...entries
+          .filter((entry) => entry.role === "user" && entry.status !== "queued")
+          .map((entry) => ({ text: entry.text, createdAt: entry.createdAt ?? Date.now() })),
+        ...storedPrompts,
+      ];
+      const seen = new Set<string>();
+      state.options = prompts
+        .sort((left, right) => right.createdAt - left.createdAt)
+        .filter((entry) => {
+          if (seen.has(entry.text)) return false;
+          seen.add(entry.text);
+          return true;
+        })
+        .map((entry) => ({
           category: "",
           title: firstLine(entry.text),
           description: entry.text.replaceAll("\n", " "),
           run: () => restoreComposer(entry.text),
-        }))
-      : [emptyOption("No prompt history", "Send a message first")],
-    "wide",
-  );
+        }));
+      if (state.options.length === 0)
+        state.options = [emptyOption("No prompt history", "Send a message first")];
+      state.search = undefined;
+      void preparePickerSearch(state);
+      pickerVersion(pickerVersion() + 1);
+    })
+    .catch((error) => {
+      if (state && picker === state) showToast(errorMessage(error));
+    });
 }
 
 function openHelp(): void {
@@ -1362,13 +1360,13 @@ function refreshMentions(value: string): void {
   mentionKind = threadMatch ? "thread" : "file";
   mentionSuggestions =
     mentionKind === "thread"
-      ? (query ? searchIndex.search<LocalThread>("threads", query, 10) : store.listThreads())
+      ? (query ? searchIndex.search<CodexThread>("threads", query, 10) : knownThreads)
           .filter((thread) => thread.id !== activeThread?.id)
           .slice(0, MENTION_RESULT_COUNT)
           .map((thread) => ({
-            label: thread.title,
+            label: threadLabel(thread),
             detail: shortId(thread.id),
-            insert: `@${thread.id}`,
+            insert: `@T-${thread.id}`,
             kind: "thread" as const,
           }))
       : [
@@ -1472,9 +1470,7 @@ async function newThread(): Promise<void> {
     return;
   }
   if (codex && activeThread) {
-    void codex
-      .request("thread/unsubscribe", { threadId: activeThread.codexThreadId })
-      .catch(() => {});
+    void codex.request("thread/unsubscribe", { threadId: activeThread.id }).catch(() => {});
   }
   activeThread = null;
   activeTurnId = null;
@@ -1486,7 +1482,7 @@ async function newThread(): Promise<void> {
   bumpTranscript(false);
 }
 
-async function resumeThread(thread: LocalThread): Promise<void> {
+async function resumeThread(thread: CodexThread): Promise<void> {
   if (!codex || busy()) {
     showToast(busy() ? "Finish the active turn before switching threads" : "Codex is not ready");
     return;
@@ -1496,18 +1492,17 @@ async function resumeThread(thread: LocalThread): Promise<void> {
       thread: CodexThread;
       model: string;
       reasoningEffort: string | null;
-    }>("thread/resume", { threadId: thread.codexThreadId });
-    activeThread = thread;
+    }>("thread/resume", { threadId: thread.id });
+    activeThread = response.thread;
     entries.length = 0;
     entryByItem.clear();
     entryViews.clear();
-    for (const message of store.listMessages(thread.id)) loadStoredMessage(message);
     loadCodexHistory(response.thread);
     const matchingModel = models.find(
       (model) => model.id === thread.model || model.id === response.model,
     );
     if (matchingModel) selectedModel = matchingModel;
-    selectedEffort = response.reasoningEffort ?? thread.effort;
+    selectedEffort = response.reasoningEffort ?? thread.reasoningEffort ?? selectedEffort;
     activeThreadVersion(activeThreadVersion() + 1);
     modelVersion(modelVersion() + 1);
     stickToBottom = true;
@@ -1524,11 +1519,11 @@ async function archiveActiveThread(): Promise<void> {
     return;
   }
   try {
-    await codex.request("thread/archive", { threadId: activeThread.codexThreadId });
-    store.archiveThread(activeThread.id);
-    void indexThreads().catch(reportSearchError);
+    await codex.request("thread/archive", { threadId: activeThread.id });
+    knownThreads = knownThreads.filter((thread) => thread.id !== activeThread?.id);
+    void indexThreads();
     await newThread();
-    showToast("Thread archived locally");
+    showToast("Thread archived");
   } catch (error) {
     showToast(errorMessage(error));
   }
@@ -1547,19 +1542,8 @@ function loadCodexHistory(thread: CodexThread): void {
   }
 }
 
-function loadStoredMessage(message: LocalMessage): void {
-  const entry: TranscriptEntry = { ...message, kind: message.kind as TranscriptKind };
-  const duplicate = entries.find((candidate) => sameSemanticEntry(candidate, entry));
-  if (duplicate && message.itemId.startsWith("item-")) {
-    entryByItem.set(message.itemId, duplicate);
-    return;
-  }
-  entries.push(entry);
-  entryByItem.set(entry.itemId, entry);
-}
-
 function selectInitialModel(): void {
-  const savedModel = store.getSetting("model");
+  const savedModel = settings.get("model");
   selectedModel =
     models.find((model) => model.id === savedModel) ??
     models.find((model) => model.isDefault) ??
@@ -1578,18 +1562,15 @@ function selectModel(model: CodexModel): void {
   selectedModel = model;
   const efforts = model.supportedReasoningEfforts.map((option) => option.reasoningEffort);
   if (!efforts.includes(selectedEffort)) selectedEffort = model.defaultReasoningEffort;
-  store.setSetting("model", model.id);
-  store.setSetting("effort", selectedEffort);
-  if (activeThread)
-    store.updateThread(activeThread.id, { model: model.id, effort: selectedEffort });
+  settings.set("model", model.id);
+  settings.set("effort", selectedEffort);
   modelVersion(modelVersion() + 1);
   showToast(`${model.displayName} · ${selectedEffort}`);
 }
 
 function setEffort(effort: string, notify = true): void {
   selectedEffort = effort;
-  store.setSetting("effort", effort);
-  if (activeThread) store.updateThread(activeThread.id, { effort });
+  settings.set("effort", effort);
   modelVersion(modelVersion() + 1);
   if (notify) showToast(`Reasoning effort: ${effort}`);
 }
@@ -1607,7 +1588,7 @@ async function interruptTurn(): Promise<void> {
   if (!codex || !activeThread || !activeTurnId) return;
   try {
     await codex.request("turn/interrupt", {
-      threadId: activeThread.codexThreadId,
+      threadId: activeThread.id,
       turnId: activeTurnId,
     });
     showToast("Interrupting after the current step…");
@@ -1623,14 +1604,8 @@ function bumpTranscript(autoScroll = true): void {
   transcriptVersion(transcriptVersion() + 1);
 }
 
-function persistEntry(entry: TranscriptEntry): void {
-  if (!activeThread || entry.status === "queued") return;
-  const message: StoredMessage = { ...entry };
-  store.saveMessage(activeThread.id, message);
-}
-
 function appendError(message: string): void {
-  appendEntry(createLocalEntry("system", "error", message, "failed"), activeThread !== null);
+  appendEntry(createLocalEntry("system", "error", message, "failed"));
 }
 
 function createLocalEntry(
@@ -1682,7 +1657,6 @@ function cleanup(): void {
   if (quitPromptTimer) clearTimeout(quitPromptTimer);
   codex?.dispose();
   searchIndex.destroy();
-  store.close();
 }
 
 ff(() => {
@@ -2156,7 +2130,7 @@ function trimStream(value: string, maxLength: number): string {
 }
 
 function referencedThreadIds(prompt: string): string[] {
-  return prompt.match(/@T-[0-9a-f-]{36}/gi)?.map((value) => value.slice(1)) ?? [];
+  return prompt.match(/@T-[0-9a-f-]{36}/gi)?.map((value) => value.slice(3)) ?? [];
 }
 
 function selectFiveHourSnapshot(response: RateLimitResponse): RateLimitSnapshot | null {
@@ -2235,9 +2209,9 @@ async function initializeSearch(): Promise<void> {
 function indexThreads(): Promise<void> {
   return searchIndex.index(
     "threads",
-    store.listThreads().map((thread) => ({
+    knownThreads.map((thread) => ({
       value: thread,
-      text: `${thread.title} ${thread.id} ${thread.cwd}`,
+      text: `${threadLabel(thread)} ${thread.id} ${thread.cwd}`,
     })),
   );
 }
