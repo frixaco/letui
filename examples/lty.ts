@@ -94,8 +94,6 @@ let quitPromptTimer: ReturnType<typeof setTimeout> | null = null;
 let dialAnimationFrom = 0;
 let dialAnimationTo = 0;
 let cleanedUp = false;
-let suspendTranscriptSync = false;
-let reconciliationMatches: Set<string> | null = null;
 let entryRefreshQueued = false;
 let deltaFlushTimer: ReturnType<typeof setTimeout> | null = null;
 let composerTopKey = "";
@@ -342,7 +340,7 @@ let app: ReturnType<typeof run>;
 function appendEntry(entry: TranscriptEntry): TranscriptEntry {
   entries.push(entry);
   entryByItem.set(entry.itemId, entry);
-  if (!suspendTranscriptSync) bumpTranscript();
+  bumpTranscript();
   return entry;
 }
 
@@ -355,7 +353,7 @@ function upsertItem(item: CodexThreadItem, turnId: string | null, completed: boo
       existing.turnId = turnId;
       existing.status = completed ? "completed" : existing.status;
       entryByItem.set(item.id, existing);
-      if (!suspendTranscriptSync) refreshEntry(existing);
+      refreshEntry(existing);
     } else if (text) {
       appendEntry(itemToTranscriptEntry(item, turnId, completed));
     }
@@ -363,23 +361,15 @@ function upsertItem(item: CodexThreadItem, turnId: string | null, completed: boo
   }
 
   const mapped = itemToTranscriptEntry(item, turnId, completed);
-  const identityMatch = entryByItem.get(item.id);
-  const semanticMatch = reconciliationMatches
-    ? entries.find(
-        (entry) => !reconciliationMatches!.has(entry.id) && sameSemanticEntry(entry, mapped),
-      )
-    : undefined;
-  const existing = identityMatch ?? semanticMatch;
+  const existing = entryByItem.get(item.id);
   if (existing) {
-    entryByItem.set(item.id, existing);
-    reconciliationMatches?.add(existing.id);
     existing.role = mapped.role;
     existing.kind = mapped.kind;
     existing.text = mapped.text || existing.text;
     existing.detail = mapped.detail || existing.detail;
     existing.status = mapped.status;
     existing.turnId = turnId;
-    if (!suspendTranscriptSync) refreshEntry(existing);
+    refreshEntry(existing);
     return;
   }
 
@@ -1637,15 +1627,12 @@ async function archiveActiveThread(): Promise<void> {
 }
 
 function loadCodexHistory(thread: CodexThread): void {
-  suspendTranscriptSync = true;
-  reconciliationMatches = new Set();
-  try {
-    for (const turn of thread.turns) {
-      for (const item of turn.items) upsertItem(item, turn.id, true);
+  for (const turn of thread.turns) {
+    for (const item of turn.items) {
+      const entry = itemToTranscriptEntry(item, turn.id, true);
+      entries.push(entry);
+      entryByItem.set(item.id, entry);
     }
-  } finally {
-    suspendTranscriptSync = false;
-    reconciliationMatches = null;
   }
 }
 
@@ -2224,15 +2211,6 @@ function fiveHourLabel(snapshot: RateLimitSnapshot | null): string {
         ? snapshot.secondary
         : snapshot.primary;
   return window ? `5h ${clamp(Math.round(100 - window.usedPercent), 0, 100)}%` : "5h —";
-}
-
-function sameSemanticEntry(left: TranscriptEntry, right: TranscriptEntry): boolean {
-  return (
-    left.turnId === right.turnId &&
-    left.role === right.role &&
-    left.kind === right.kind &&
-    left.text === right.text
-  );
 }
 
 function trimStream(value: string, maxLength: number): string {
