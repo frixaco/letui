@@ -1021,34 +1021,6 @@ function commandPaletteOptions(): PickerOption[] {
       run: signedIn ? logout : loginWithChatGPT,
     },
     {
-      category: "account",
-      title: "refresh 5h limit",
-      description: !ready
-        ? unavailableDescription
-        : signedIn
-          ? formatRateLimit(rateLimits)
-          : "Sign in with ChatGPT first",
-      enabled: ready && signedIn,
-      run: refreshRateLimits,
-    },
-    {
-      category: "account",
-      title: "subscription status",
-      description: !ready
-        ? unavailableDescription
-        : signedInAccount
-          ? `${signedInAccount.planType} · ${formatRateLimit(rateLimits)}`
-          : "Not signed in",
-      enabled: ready,
-      run: () => showToast(signedIn ? formatRateLimit(rateLimits) : "Not signed in"),
-    },
-    {
-      category: "lty",
-      title: "show welcome",
-      description: "Return to the welcome screen",
-      run: newThread,
-    },
-    {
       category: "lty",
       title: "show version",
       description: "Letty Agent powered by Codex app-server",
