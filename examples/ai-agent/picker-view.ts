@@ -181,16 +181,18 @@ export class PickerView {
     } else {
       this.listBody.setStyle({ height: height - 2 });
     }
-    const nextFrameKey = `${state.title}\0${width}\0${split ? 1 : 0}\0${wide ? 1 : 0}`;
+    const nextFrameKey = `${state.title}\0${state.footer ?? ""}\0${width}\0${split ? 1 : 0}\0${wide ? 1 : 0}`;
     if (this.frameKey !== nextFrameKey) {
       this.frameKey = nextFrameKey;
       this.topLine.setText(framedTopLine(state.title, width));
       this.bottomLine.setText(
-        split
-          ? framedBottomLine(width)
-          : wide
-            ? framedHistoryBottomLine(width)
-            : `╰${"─".repeat(Math.max(0, width - 2))}╯`,
+        state.footer
+          ? framedFooterLine(width, state.footer)
+          : split
+            ? framedBottomLine(width)
+            : wide
+              ? framedHistoryBottomLine(width)
+              : `╰${"─".repeat(Math.max(0, width - 2))}╯`,
       );
     }
     if (this.queryKey !== state.query) {
@@ -285,6 +287,10 @@ export class PickerView {
 
   animateLogo(frame: number): void {
     if (!this.wide) this.logo.setText(logoText(frame, 0, 3));
+  }
+
+  invalidatePreview(): void {
+    this.previewOption = undefined;
   }
 
   private readonly logo: ReturnType<typeof Text>;
@@ -392,6 +398,10 @@ export type PickerState = {
   selectedIndex: number;
   layout?: "list" | "split" | "wide";
   search?: (query: string) => PickerOption[];
+  searchScope?: string;
+  footer?: string;
+  onToggleWorkspace?: () => void;
+  onToggleArchived?: () => void;
 };
 
 type PickerRowView = {
@@ -403,7 +413,35 @@ type PickerRowView = {
 export function filteredPickerOptions(state: PickerState): PickerOption[] {
   const query = state.query.trim().toLowerCase();
   if (!query) return state.options;
-  return state.search?.(query) ?? [];
+  return state.search?.(query) ?? fuzzyPickerOptions(state.options, query);
+}
+
+function fuzzyPickerOptions(options: readonly PickerOption[], query: string): PickerOption[] {
+  return options
+    .map((option) => ({
+      option,
+      score: fuzzyScore(
+        `${option.category} ${option.title} ${option.description}`.toLowerCase(),
+        query,
+      ),
+    }))
+    .filter((entry) => entry.score >= 0)
+    .sort((left, right) => right.score - left.score)
+    .map((entry) => entry.option);
+}
+
+function fuzzyScore(value: string, query: string): number {
+  let queryIndex = 0;
+  let score = 0;
+  let previousMatch = -2;
+  for (let index = 0; index < value.length && queryIndex < query.length; index++) {
+    if (value[index] !== query[queryIndex]) continue;
+    score += index === previousMatch + 1 ? 4 : 1;
+    if (index === 0 || /[\s._-]/.test(value[index - 1]!)) score += 3;
+    previousMatch = index;
+    queryIndex++;
+  }
+  return queryIndex === query.length ? score - value.length * 0.001 : -1;
 }
 
 export function emptyOption(title: string, description: string): PickerOption {
@@ -457,6 +495,15 @@ function framedHistoryBottomLine(width: number): StyledText {
     { text: firstKey, foreground: THEME.shortcut },
     { text: suffix, foreground: THEME.muted },
     { text: " ─╯", foreground: THEME.line },
+  ]);
+}
+
+function framedFooterLine(width: number, footer: string): StyledText {
+  const label = ` ${footer} `;
+  return styled([
+    { text: "╰", foreground: THEME.line },
+    { text: label, foreground: THEME.muted },
+    { text: `${"─".repeat(Math.max(0, width - label.length - 2))}╯`, foreground: THEME.line },
   ]);
 }
 

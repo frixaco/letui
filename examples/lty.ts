@@ -849,8 +849,6 @@ async function initializeAgent(): Promise<void> {
 
   if (picker?.title === "Command Palette") {
     picker.options = commandPaletteOptions();
-    picker.search = undefined;
-    void preparePickerSearch(picker);
     pickerVersion(pickerVersion() + 1);
   }
 }
@@ -1035,20 +1033,7 @@ function openCommandPalette(): void {
 }
 
 function openThreadPicker(): void {
-  const threads = knownThreads;
-  openPicker(
-    "Switch Thread",
-    threads.length > 0
-      ? threads.map((thread) => ({
-          category: relativeTime(threadTimestamp(thread)),
-          title: threadLabel(thread),
-          description: `${abbreviateHome(thread.cwd)} · ${shortId(thread.id)}`,
-          preview: (width: number) => threadPreview(thread, width),
-          run: () => resumeThread(thread),
-        }))
-      : [emptyOption("No Codex threads yet", "Send a message to create one")],
-    "split",
-  );
+  showThreadPicker("switch", false, false);
 }
 
 function threadPreview(thread: CodexThread, width: number): Node[] {
@@ -1056,7 +1041,10 @@ function threadPreview(thread: CodexThread, width: number): Node[] {
   if (!history) {
     void threadRepository
       ?.read(thread.id)
-      .then(() => pickerVersion(pickerVersion() + 1))
+      .then(() => {
+        pickerView.invalidatePreview();
+        pickerVersion(pickerVersion() + 1);
+      })
       .catch((error) => showToast(errorMessage(error)));
     return [Text({ text: "Loading preview…", foreground: THEME.muted })];
   }
@@ -1076,20 +1064,81 @@ function openReferencePicker(): void {
 }
 
 function openMentionThreadPicker(): void {
-  const threads = knownThreads.filter((thread) => thread.id !== activeThread?.id);
+  showThreadPicker("mention", false, false);
+}
+
+function showThreadPicker(
+  kind: "switch" | "mention",
+  allWorkspaces: boolean,
+  includeArchived: boolean,
+): void {
+  const needsLoad = allWorkspaces || includeArchived;
   openPicker(
-    "Mention Thread",
-    threads.length > 0
-      ? threads.map((thread) => ({
-          category: relativeTime(threadTimestamp(thread)),
-          title: threadLabel(thread),
-          description: `${shortId(thread.id)} · inserted as @T-${thread.id}`,
-          preview: (width: number) => threadPreview(thread, width),
-          run: () => insertThreadMention(thread),
-        }))
-      : [emptyOption("No other Codex threads", "Create another thread first")],
+    kind === "mention" ? "Mention Thread" : "Switch Thread",
+    needsLoad
+      ? [emptyOption("Loading Codex threads…", "Reading local thread history")]
+      : threadPickerOptions(kind, knownThreads),
     "split",
+    {
+      searchScope: "thread-picker",
+      footer: `${allWorkspaces ? "Ctrl+T this workspace" : "Ctrl+T all workspaces"} · ${includeArchived ? "Alt+A hide archived" : "Alt+A show archived"} · Esc close`,
+      onToggleWorkspace: () => showThreadPicker(kind, !allWorkspaces, includeArchived),
+      onToggleArchived: () => showThreadPicker(kind, allWorkspaces, !includeArchived),
+    },
   );
+  const state = picker;
+  if (needsLoad && state) void loadThreadPicker(state, kind, allWorkspaces, includeArchived);
+}
+
+function threadPickerOptions(
+  kind: "switch" | "mention",
+  source: readonly CodexThread[],
+): PickerOption[] {
+  const threads =
+    kind === "mention" ? source.filter((thread) => thread.id !== activeThread?.id) : source;
+  if (threads.length === 0) {
+    return [
+      emptyOption(
+        kind === "mention" ? "No other Codex threads" : "No Codex threads yet",
+        kind === "mention" ? "Create another thread first" : "Send a message to create one",
+      ),
+    ];
+  }
+  return threads.map((thread) => ({
+    category: relativeTime(threadTimestamp(thread)),
+    title: threadLabel(thread),
+    description:
+      kind === "mention"
+        ? `${shortId(thread.id)} · inserted as @T-${thread.id}`
+        : `${abbreviateHome(thread.cwd)} · ${shortId(thread.id)}`,
+    preview: (width: number) => threadPreview(thread, width),
+    run: () => (kind === "mention" ? insertThreadMention(thread) : resumeThread(thread)),
+  }));
+}
+
+async function loadThreadPicker(
+  state: PickerState,
+  kind: "switch" | "mention",
+  allWorkspaces: boolean,
+  includeArchived: boolean,
+): Promise<void> {
+  if (!threadRepository) return;
+  try {
+    const active = allWorkspaces
+      ? await threadRepository.list({ allWorkspaces: true })
+      : knownThreads;
+    const archived = includeArchived
+      ? await threadRepository.list({ allWorkspaces, archived: true })
+      : [];
+    if (picker !== state) return;
+    state.options = threadPickerOptions(kind, uniqueThreads([...active, ...archived]));
+    state.selectedIndex = 0;
+    state.search = undefined;
+    void preparePickerSearch(state);
+    pickerVersion(pickerVersion() + 1);
+  } catch (error) {
+    if (picker === state) showToast(errorMessage(error));
+  }
 }
 
 function insertThreadMention(thread: CodexThread): void {
@@ -1108,46 +1157,57 @@ function openModelPicker(): void {
   );
 }
 
-function openPromptHistory(): void {
+function openPromptHistory(allWorkspaces = false): void {
   openPicker(
     "Prompt History",
     [emptyOption("Loading prompt history…", "Reading local Codex threads")],
     "wide",
+    {
+      searchScope: "history",
+      footer: `${allWorkspaces ? "Ctrl+T this workspace" : "Ctrl+T all workspaces"} · Enter reuse prompt · Esc close`,
+      onToggleWorkspace: () => openPromptHistory(!allWorkspaces),
+    },
   );
   const state = picker;
-  void threadRepository
-    ?.promptHistory(knownThreads)
-    .then((storedPrompts) => {
-      if (!state || picker !== state) return;
-      const prompts = [
-        ...entries
-          .filter((entry) => entry.role === "user" && entry.status !== "queued")
-          .map((entry) => ({ text: entry.text, createdAt: entry.createdAt ?? Date.now() })),
-        ...storedPrompts,
-      ];
-      const seen = new Set<string>();
-      state.options = prompts
-        .sort((left, right) => right.createdAt - left.createdAt)
-        .filter((entry) => {
-          if (seen.has(entry.text)) return false;
-          seen.add(entry.text);
-          return true;
-        })
-        .map((entry) => ({
-          category: "",
-          title: firstLine(entry.text),
-          description: entry.text.replaceAll("\n", " "),
-          run: () => restoreComposer(entry.text),
-        }));
-      if (state.options.length === 0)
-        state.options = [emptyOption("No prompt history", "Send a message first")];
-      state.search = undefined;
-      void preparePickerSearch(state);
-      pickerVersion(pickerVersion() + 1);
-    })
-    .catch((error) => {
-      if (state && picker === state) showToast(errorMessage(error));
-    });
+  if (state) void loadPromptHistory(state, allWorkspaces);
+}
+
+async function loadPromptHistory(state: PickerState, allWorkspaces: boolean): Promise<void> {
+  if (!threadRepository) return;
+  try {
+    const threads = allWorkspaces
+      ? await threadRepository.list({ allWorkspaces: true })
+      : knownThreads;
+    const storedPrompts = await threadRepository.promptHistory(threads);
+    if (picker !== state) return;
+    const prompts = [
+      ...entries
+        .filter((entry) => entry.role === "user" && entry.status !== "queued")
+        .map((entry) => ({ text: entry.text, createdAt: entry.createdAt ?? Date.now() })),
+      ...storedPrompts,
+    ];
+    const seen = new Set<string>();
+    state.options = prompts
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .filter((entry) => {
+        if (seen.has(entry.text)) return false;
+        seen.add(entry.text);
+        return true;
+      })
+      .map((entry) => ({
+        category: "",
+        title: firstLine(entry.text),
+        description: entry.text.replaceAll("\n", " "),
+        run: () => restoreComposer(entry.text),
+      }));
+    if (state.options.length === 0)
+      state.options = [emptyOption("No prompt history", "Send a message first")];
+    state.search = undefined;
+    void preparePickerSearch(state);
+    pickerVersion(pickerVersion() + 1);
+  } catch (error) {
+    if (picker === state) showToast(errorMessage(error));
+  }
 }
 
 function openHelp(): void {
@@ -1238,21 +1298,33 @@ function openPicker(
   title: string,
   options: PickerOption[],
   layout: PickerState["layout"] = "list",
+  configuration: Pick<
+    PickerState,
+    "searchScope" | "footer" | "onToggleWorkspace" | "onToggleArchived"
+  > = {},
 ): void {
-  const state: PickerState = { title, options, query: "", selectedIndex: 0, layout };
+  const state: PickerState = {
+    title,
+    options,
+    query: "",
+    selectedIndex: 0,
+    layout,
+    ...configuration,
+  };
   picker = state;
   view("picker");
   pickerVersion(pickerVersion() + 1);
   hideMentions();
   composer.blur();
-  void preparePickerSearch(state);
+  if (state.searchScope) void preparePickerSearch(state);
 }
 
 async function preparePickerSearch(state: PickerState): Promise<void> {
+  if (!state.searchScope) return;
   const options = state.options;
   try {
     await searchIndex.index(
-      "picker",
+      state.searchScope,
       options.map((option) => ({
         value: option,
         text: `${option.category} ${option.title} ${option.description}`,
@@ -1263,13 +1335,12 @@ async function preparePickerSearch(state: PickerState): Promise<void> {
     return;
   }
   if (picker !== state || state.options !== options) return;
-  state.search = (query) => searchIndex.search("picker", query, options.length);
+  state.search = (query) => searchIndex.search(state.searchScope!, query, options.length);
   pickerVersion(pickerVersion() + 1);
 }
 
 function closePicker(): void {
   picker = null;
-  void searchIndex.clear("picker").catch(reportSearchError);
   view("main");
   pickerVersion(pickerVersion() + 1);
   setTimeout(() => {
@@ -1302,6 +1373,18 @@ function usesPickerOverlay(): boolean {
 
 function handlePickerKey(key: string): boolean {
   if (!picker) return false;
+  if (key === "\x14" || key === "\x1bw" || key === "\x1bW") {
+    const toggle = picker.onToggleWorkspace;
+    if (!toggle) return false;
+    toggle();
+    return true;
+  }
+  if (key === "\x1ba" || key === "\x1bA") {
+    const toggle = picker.onToggleArchived;
+    if (!toggle) return false;
+    toggle();
+    return true;
+  }
   if (NEXT_KEYS.has(key)) {
     movePicker(1);
     return true;
@@ -2193,6 +2276,15 @@ function relativeTime(timestamp: number): string {
   if (seconds < 3_600) return `${Math.floor(seconds / 60)}m`;
   if (seconds < 86_400) return `${Math.floor(seconds / 3_600)}h`;
   return `${Math.floor(seconds / 86_400)}d`;
+}
+
+function uniqueThreads(threads: readonly CodexThread[]): CodexThread[] {
+  const seen = new Set<string>();
+  return threads.filter((thread) => {
+    if (seen.has(thread.id)) return false;
+    seen.add(thread.id);
+    return true;
+  });
 }
 
 async function initializeSearch(): Promise<void> {
