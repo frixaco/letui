@@ -15,6 +15,8 @@ Workflow source: `.github/workflows/release.yml`
 
 Each package must trust GitHub Actions for repository `frixaco/letui`, workflow `release.yml`, with `npm publish` permission. The workflow does not use an `NPM_TOKEN` secret.
 
+A new trusted publisher starts as "Pending validation" and expires unless a publish uses it before the deadline npm shows. An expired config cannot be edited: delete it and add a new one. When OIDC is not accepted, `npm publish` fails with `E404 Not Found - PUT`, not an auth error.
+
 ## Version bump
 
 Pick the next version, written below as `X.Y.Z`. The tag `vX.Y.Z` is the source of truth for every
