@@ -17,34 +17,28 @@ Each package must trust GitHub Actions for repository `frixaco/letui`, workflow 
 
 ## Version bump
 
-Pick the next version, written below as `X.Y.Z`.
+Pick the next version, written below as `X.Y.Z`. The tag `vX.Y.Z` is the source of truth for every
+published version.
 
-Update all of these to the same version before tagging:
+Update these in a release commit so the repo matches what ships:
 
 1. Root package version in `package.json`
-2. Binary package pins in `package.json` `optionalDependencies`
-3. Rust crate version in `core/Cargo.toml`
+2. Rust crate version in `core/Cargo.toml` (refresh `core/Cargo.lock` with `bun run check:rust`)
 
-Why binary pins matter:
-
-- The release workflow rewrites the root `package.json` version from the tag.
-- The release workflow does not rewrite `optionalDependencies`.
-- If the pins stay old, the new `@frixaco/letui` release points at old native binaries.
+Leave the binary pins in `package.json` `optionalDependencies` alone. Before publishing the root
+package, the workflow runs `scripts/set-release-version.ts`, which sets the root version and every
+`@frixaco/letui-*` pin to the tag version. The root release always points at the binaries built
+from the same tag.
 
 ## Verify locally
 
 Run:
 
 ```bash
-bun install
 bun run check
 ```
 
-Expected:
-
-- `bun.lock` refreshed if package versions changed
-- `core/Cargo.lock` may refresh after Rust commands
-- typecheck and Rust check pass
+Expected: typecheck and Rust check pass.
 
 ## Publish
 
@@ -53,13 +47,14 @@ From a clean local state:
 ```bash
 git checkout master
 git pull --ff-only
-git add package.json bun.lock core/Cargo.toml core/Cargo.lock
-git commit -m "release: X.Y.Z"
+git add package.json core/Cargo.toml core/Cargo.lock
+git commit -m "release: vX.Y.Z"
 git tag vX.Y.Z
 git push --atomic origin master vX.Y.Z
 ```
 
-The tag must point to the commit containing version `X.Y.Z`. A tag push runs the release workflow. npm rejects a version that already exists.
+A tag push runs the release workflow. npm rejects a version that already exists, so a failed
+release that already published some packages needs a new patch version.
 
 ## What the workflow does
 
@@ -71,8 +66,9 @@ On tag `v*`:
    - `win32-x64`
 2. Generate each binary package manifest with `scripts/build-npm.ts`.
 3. Publish each binary package through GitHub OpenID Connect.
-4. Publish the root package `@frixaco/letui`.
-5. Attach signed provenance to the public packages.
+4. Set the root version and binary pins from the tag with `scripts/set-release-version.ts`.
+5. Publish the root package `@frixaco/letui` if all binary packages published.
+6. Attach signed provenance to the public packages.
 
 ## Post-release checks
 

@@ -11,7 +11,6 @@ permissions:
   contents: read
   id-token: write
 
-
 jobs:
   build-and-publish-binary:
     name: Build ${{ matrix.platform }}-${{ matrix.arch }}
@@ -109,8 +108,8 @@ jobs:
 
       - name: Publish Main Package
         run: |
-          # Update version in package.json to match tag
+          # Point version and binary pins at the packages published above (v1.0.0 -> 1.0.0)
           VERSION=${GITHUB_REF#refs/tags/v}
-          npm version $VERSION --no-git-tag-version --allow-same-version
+          bun scripts/set-release-version.ts $VERSION
 
           npm publish --access public
