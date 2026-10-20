@@ -6,6 +6,7 @@ use crate::shared::{
     TEXT_ATTR_UNDERLINE,
 };
 use crossterm::{
+    Command,
     cursor::{Hide, MoveTo, Show},
     event::{DisableMouseCapture, EnableMouseCapture},
     execute, queue,
@@ -47,7 +48,7 @@ pub extern "C" fn init_letui() -> c_int {
     if execute!(
         stdout(),
         EnterAlternateScreen,
-        EnableMouseCapture,
+        Print(ansi(EnableMouseCapture)),
         Clear(ClearType::All),
         Hide
     )
@@ -68,7 +69,7 @@ pub extern "C" fn deinit_letui() -> c_int {
         stdout(),
         EndSynchronizedUpdate,
         Show,
-        DisableMouseCapture,
+        Print(ansi(DisableMouseCapture)),
         SetAttribute(Attribute::Reset),
         SetBackgroundColor(Color::Reset),
         SetForegroundColor(Color::Reset),
@@ -80,6 +81,14 @@ pub extern "C" fn deinit_letui() -> c_int {
     }
 
     1
+}
+
+/// Mouse capture as escape codes on every platform. On Windows, crossterm's command calls
+/// SetConsoleMode instead, dropping VT input, so stdin never sees arrow keys or mouse events.
+fn ansi(command: impl Command) -> String {
+    let mut out = String::new();
+    let _ = command.write_ansi(&mut out);
+    out
 }
 
 #[unsafe(no_mangle)]

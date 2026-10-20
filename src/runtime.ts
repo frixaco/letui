@@ -48,7 +48,11 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
   if (api.init_buffer() !== 1) {
     throw new Error("Failed to initialize letui buffer");
   }
+  // Bun's raw mode turns on VT input on Windows, so arrow keys and mouse events reach stdin as
+  // escape sequences. It must come first: init_letui keeps the flags it finds.
+  process.stdin.setRawMode?.(true);
   if (api.init_letui() !== 1) {
+    process.stdin.setRawMode?.(false);
     api.free_buffer();
     throw new Error("Failed to initialize letui terminal");
   }
@@ -101,6 +105,7 @@ export function run(root: Node, options?: RunOptions): { quit: () => void } {
     try {
       api.deinit_letui();
     } catch {}
+    process.stdin.setRawMode?.(false);
 
     writeDebugMetrics();
   };
